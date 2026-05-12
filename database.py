@@ -1,27 +1,17 @@
 """
-CraftLife — database.py  v2.2  (Kivy/Android compatible)
-Works in Kivy (Android/iOS/Desktop) and standalone desktop.
+CraftLife — database.py  v2.1  (fixed & complete)
+Works both in VSCode and as PyInstaller .exe
 """
 import sqlite3, hashlib, os, sys
 from datetime import datetime, date
 
-# ── Path auto-detect (Kivy Android + desktop fallback) ──────────────────────
-_DB_PATH_OVERRIDE: str = None  # set by main_kivy.py via setup_db_path()
-
-def setup_db_path(base_dir: str):
-    """Call this from CraftLifeApp.build() with self.user_data_dir."""
-    global _DB_PATH_OVERRIDE, DB_PATH
-    _DB_PATH_OVERRIDE = base_dir
-    DB_PATH = os.path.join(base_dir, "craftlife.db")
-    print(f"[DB] Path set to: {DB_PATH}")
-
-# Default fallback path for non-Kivy / desktop use
+# ── Path auto-detect (VSCode + .exe) ─────────────────────────────────────────
 if getattr(sys, "frozen", False):
-    _BASE_DIR = os.path.dirname(sys.executable)
+    BASE_DIR = os.path.dirname(sys.executable)
 else:
-    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DB_PATH = os.path.join(_BASE_DIR, "craftlife.db")
+DB_PATH = os.path.join(BASE_DIR, "craftlife.db")
 
 
 def get_conn():
@@ -38,12 +28,61 @@ def _safe_alter(cur, table, col, defn):
     except Exception:
         pass
 
+def migrate_party_to_guild():
+    conn = get_conn()
+    c = conn.cursor()
+    # 1. Rename tabel
+    try: c.execute("ALTER TABLE parties RENAME TO guilds")
+    except: pass
+    try: c.execute("ALTER TABLE party_members RENAME TO guild_members")
+    except: pass
+    try: c.execute("ALTER TABLE boss_battles RENAME COLUMN party_id TO guild_id")
+    except: pass
+    try: c.execute("ALTER TABLE users RENAME COLUMN party_id TO guild_id")
+    except: pass
+    try:
+        c.execute("ALTER TABLE guild_members RENAME COLUMN party_id TO guild_id")
+    except Exception:
+        pass
+
+    # 2. Tambah kolom untuk guild level
+    for col, defn in [("level", "INTEGER DEFAULT 1"),
+                      ("exp", "INTEGER DEFAULT 0"),
+                      ("buff_xp", "REAL DEFAULT 0"),
+                      ("buff_gold", "REAL DEFAULT 0"),
+                      ("buff_damage", "REAL DEFAULT 0")]:
+        try: c.execute(f"ALTER TABLE guilds ADD COLUMN {col} {defn}")
+        except: pass
+
+    # Tambah kolom untuk user_pets jika belum ada
+    for col, defn in [("level", "INTEGER DEFAULT 1"),
+                    ("exp", "INTEGER DEFAULT 0"),
+                    ("hunger", "INTEGER DEFAULT 100"),
+                    ("last_fed", "TEXT")]:
+        try:
+            c.execute(f"ALTER TABLE user_pets ADD COLUMN {col} {defn}")
+        except Exception:
+            pass
+
+    # 3. Buat tabel guild_invites jika belum
+    c.execute("""CREATE TABLE IF NOT EXISTS guild_invites(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(guild_id) REFERENCES guilds(id),
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )""")
+    conn.commit()
+    conn.close()
 
 def init_db():
     conn = get_conn()
     c = conn.cursor()
 
     c.execute("""CREATE TABLE IF NOT EXISTS users(
+        
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
@@ -147,6 +186,10 @@ def init_db():
         pet_id TEXT NOT NULL,
         is_active INTEGER DEFAULT 0,
         happiness INTEGER DEFAULT 50,
+        level INTEGER DEFAULT 1,
+        exp INTEGER DEFAULT 0,
+        hunger INTEGER DEFAULT 100,
+        last_fed TEXT,
         adopted_at TEXT DEFAULT(datetime('now')),
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
@@ -206,6 +249,7 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id)
     )""")
 
+    # Safe migration for older databases
     migrate_cols = [
         ("bio","TEXT DEFAULT ''"),
         ("avatar_emoji","TEXT DEFAULT '⚔️'"),
@@ -231,6 +275,8 @@ def init_db():
 
     conn.commit()
     conn.close()
+    # Panggil migrasi di akhir (sebelum print)
+    migrate_party_to_guild()   # fungsi baru
     print(f"[DB] Ready: {DB_PATH}")
 
 
@@ -305,11 +351,11 @@ def update_user(user_id, **kw):
     conn.close()
 
 
-def recalculate_buffs(user_id):
+def recalculate_all_buffs(user_id):
+    # 1. Hitung buff dari item
     inv = get_inventory(user_id)
     owned = {i["item_id"] for i in inv}
-    dmg = 0.0; xp_pct = 0.0; gold_pct = 0.0
-    reduc = 0.0; mp = 0; revive = 0
+    dmg = 0.0; xp_pct = 0.0; gold_pct = 0.0; reduc = 0.0; mp = 0; revive = 0
     for iid in owned:
         b = SHOP_ITEMS.get(iid, {}).get("buff", {})
         dmg      += b.get("boss_dmg", 0)
@@ -319,6 +365,31 @@ def recalculate_buffs(user_id):
         mp       += b.get("mp_bonus", 0)
         if b.get("revive"):
             revive = 1
+
+    # 2. Tambah buff dari pet aktif
+    conn = get_conn()
+    active_pet = conn.execute("SELECT * FROM user_pets WHERE user_id=? AND is_active=1", (user_id,)).fetchone()
+    if active_pet:
+        pid = active_pet["pet_id"]
+        base = PETS_DATA.get(pid, {}).get("base_buff", {})
+        level = active_pet["level"]
+        scale = 1 + (level-1) * 0.02   # +2% per level
+        xp_pct   += base.get("xp_pct", 0) * scale / 100
+        gold_pct += base.get("gold_pct", 0) * scale / 100
+        dmg      += base.get("boss_dmg", 0) * scale
+        reduc    += base.get("hp_reduc", 0) * scale
+
+    # 3. Tambah buff dari guild
+    u = get_user(user_id)
+    gid = u.get("guild_id")
+    if gid:
+        guild = conn.execute("SELECT buff_xp, buff_gold, buff_damage FROM guilds WHERE id=?", (gid,)).fetchone()
+        if guild:
+            xp_pct   += guild["buff_xp"] / 100
+            gold_pct += guild["buff_gold"] / 100
+            dmg      += guild["buff_damage"]
+    conn.close()
+
     update_user(user_id,
                 boss_damage_bonus=dmg,
                 xp_multiplier=round(1.0 + xp_pct, 4),
@@ -346,15 +417,19 @@ def gain_xp_gold(user_id, xp_base, gold_base):
         mhp = 50 + (new_lvl - 1) * 10
         mmp = 30 + (new_lvl - 1) * 5
         update_user(user_id, max_hp=mhp, hp=mhp, max_mp=mmp, mp=mmp)
-        add_notification(user_id,
-                         f"🎉 Level Up! Kamu sekarang Level {new_lvl}!", "levelup")
+        add_notification(user_id, f"🎉 Level Up! Kamu sekarang Level {new_lvl}!", "levelup")
         needed = new_lvl * 150
     update_user(user_id,
                 xp=new_xp, level=new_lvl, gold=new_gold,
                 total_xp_earned=u.get("total_xp_earned", 0) + xp,
                 total_gold_earned=u.get("total_gold_earned", 0.0) + gold)
-    log_activity(user_id, "reward",
-                 f"+{xp} XP, +{gold:.1f} Gold", xp, gold)
+    # Catat aktivitas (PASTIKAN SELALU DIPANGGIL)
+    log_activity(user_id, "reward", f"+{xp} XP, +{gold:.1f} Gold", xp, gold)
+    # Jika user punya guild, tambahkan EXP guild
+    u2 = get_user(user_id)
+    if u2.get("guild_id"):
+        add_guild_exp(u2["guild_id"], xp_base // 5)
+    # SELALU RETURN dictionary
     return {"ok": True, "leveled_up": leveled, "new_level": new_lvl,
             "new_xp": new_xp, "xp_gained": xp, "gold_gained": gold}
 
@@ -367,7 +442,7 @@ def lose_hp(user_id, amount):
     if new_hp == 0 and u.get("has_revive"):
         new_hp = int(u["max_hp"] * 0.3)
         update_user(user_id, hp=new_hp, has_revive=0)
-        recalculate_buffs(user_id)
+        recalculate_all_buffs(user_id)
         add_notification(user_id,
                          "🗿 Totem of Life menyelamatkanmu! HP dipulihkan 30%.",
                          "success")
@@ -462,24 +537,19 @@ def add_habit(user_id, name, icon="⚔️", difficulty="medium",
 
 def complete_habit(user_id, habit_id, direction="up"):
     conn = get_conn()
-    h = conn.execute(
-        "SELECT * FROM habits WHERE id=? AND user_id=?",
-        (habit_id, user_id)).fetchone()
+    h = conn.execute("SELECT * FROM habits WHERE id=? AND user_id=?", (habit_id, user_id)).fetchone()
     if not h:
         conn.close()
         return {"ok": False}
     today = date.today().isoformat()
-    if h["done_today"] and direction == "up":
+    # Jika sudah done_today, tolak action apa pun (baik up maupun down)
+    if h["done_today"]:
         conn.close()
-        return {"ok": False, "msg": "Sudah selesai hari ini!"}
+        return {"ok": False, "msg": "Kamu sudah melakukan action untuk habit ini hari ini!"}
     new_streak = h["streak"] + 1 if direction == "up" else 0
-    conn.execute(
-        "UPDATE habits SET done_today=1,streak=?,last_done=?,"
-        "counter_up=counter_up+? WHERE id=?",
-        (new_streak, today, 1 if direction == "up" else 0, habit_id))
-    conn.execute(
-        "UPDATE users SET total_habits_done=total_habits_done+1 WHERE id=?",
-        (user_id,))
+    conn.execute("UPDATE habits SET done_today=1, streak=?, last_done=?, counter_up=counter_up+?, counter_down=counter_down+? WHERE id=?",
+                 (new_streak, today, 1 if direction=="up" else 0, 1 if direction=="down" else 0, habit_id))
+    conn.execute("UPDATE users SET total_habits_done=total_habits_done+1 WHERE id=?", (user_id,))
     conn.commit()
     conn.close()
     if direction == "up":
@@ -492,6 +562,35 @@ def complete_habit(user_id, habit_id, direction="up"):
         lose_hp(user_id, 5)
         return {"ok": True, "lost_hp": 5}
 
+def add_guild_exp(guild_id, amount):
+    conn = get_conn()
+    g = conn.execute("SELECT * FROM guilds WHERE id=?", (guild_id,)).fetchone()
+    if not g:
+        conn.close()
+        return
+    new_exp = g["exp"] + amount
+    new_level = g["level"]
+    needed = new_level * 500
+    leveled = False
+    while new_exp >= needed:
+        new_exp -= needed
+        new_level += 1
+        leveled = True
+        needed = new_level * 500
+    if leveled:
+        buff_xp = new_level * 2
+        buff_gold = new_level * 1
+        buff_damage = new_level * 1
+        conn.execute("UPDATE guilds SET level=?, exp=?, buff_xp=?, buff_gold=?, buff_damage=? WHERE id=?", 
+                     (new_level, new_exp, buff_xp, buff_gold, buff_damage, guild_id))
+        members = conn.execute("SELECT user_id FROM guild_members WHERE guild_id=?", (guild_id,)).fetchall()
+        for m in members:
+            add_notification(m["user_id"], f"🏆 Guild {g['name']} naik level {new_level}!", "levelup")
+            recalculate_all_buffs(m["user_id"])
+    else:
+        conn.execute("UPDATE guilds SET exp=? WHERE id=?", (new_exp, guild_id))
+    conn.commit()
+    conn.close()
 
 def delete_habit(user_id, habit_id):
     conn = get_conn()
@@ -560,7 +659,6 @@ def complete_daily(user_id, daily_id):
     restore_mp(user_id, 5)
     return gain_xp_gold(user_id, d["xp_reward"], d["gold_reward"])
 
-
 def delete_daily(user_id, daily_id):
     conn = get_conn()
     conn.execute("DELETE FROM dailies WHERE id=? AND user_id=?",
@@ -611,7 +709,6 @@ def complete_todo(user_id, todo_id):
     conn.close()
     restore_mp(user_id, 4)
     return gain_xp_gold(user_id, t["xp_reward"], t["gold_reward"])
-
 
 def delete_todo(user_id, todo_id):
     conn = get_conn()
@@ -720,6 +817,7 @@ PETS_DATA = {
 }
 
 BOSSES = {
+    # Beginner
     "zombie":         {"name": "Zombie",          "icon": "🧟",
                        "tier": "beginner", "hp": 200,  "atk": 5,
                        "xp": 80,   "gold": 20,  "min_level": 1},
@@ -729,6 +827,7 @@ BOSSES = {
     "creeper":        {"name": "Creeper",         "icon": "💥",
                        "tier": "beginner", "hp": 250,  "atk": 12,
                        "xp": 100,  "gold": 25,  "min_level": 2},
+    # Normal
     "zombie_king":    {"name": "Zombie King",     "icon": "👑",
                        "tier": "normal",   "hp": 600,  "atk": 15,
                        "xp": 250,  "gold": 60,  "min_level": 3},
@@ -738,6 +837,7 @@ BOSSES = {
     "blaze_lord":     {"name": "Blaze Lord",      "icon": "🔥",
                        "tier": "normal",   "hp": 700,  "atk": 18,
                        "xp": 300,  "gold": 70,  "min_level": 4},
+    # Hard
     "iron_golem":     {"name": "Iron Golem Boss", "icon": "⚙️",
                        "tier": "hard",    "hp": 1500, "atk": 25,
                        "xp": 600,  "gold": 150, "min_level": 8},
@@ -747,12 +847,14 @@ BOSSES = {
     "spider_queen":   {"name": "Spider Queen",    "icon": "🕷️",
                        "tier": "hard",    "hp": 1000, "atk": 22,
                        "xp": 500,  "gold": 120, "min_level": 7},
+    # Elite
     "wither":         {"name": "The Wither",      "icon": "💀",
                        "tier": "elite",   "hp": 2500, "atk": 40,
                        "xp": 1200, "gold": 300, "min_level": 15},
     "ender_dragon":   {"name": "Ender Dragon",    "icon": "🐲",
                        "tier": "elite",   "hp": 3000, "atk": 50,
                        "xp": 1500, "gold": 400, "min_level": 20},
+    # Legendary
     "elder_guardian": {"name": "Elder Guardian",  "icon": "👁️",
                        "tier": "legendary", "hp": 5000, "atk": 70,
                        "xp": 3000, "gold": 800, "min_level": 30},
@@ -806,7 +908,7 @@ def buy_item(user_id, item_id):
                  (item["cost"], user_id))
     conn.commit()
     conn.close()
-    recalculate_buffs(user_id)
+    recalculate_all_buffs(user_id)
     log_activity(user_id, "buy", f"Membeli {item['name']}", 0, -item["cost"])
     return {"ok": True,
             "msg": (f"{item['icon']} {item['name']} berhasil dibeli!\n"
@@ -841,14 +943,11 @@ def use_item(user_id, item_id):
 
 
 # ── Pets ──────────────────────────────────────────────────────────────────────
-
 def get_user_pets(user_id):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM user_pets WHERE user_id=?", (user_id,)).fetchall()
+    rows = conn.execute("SELECT * FROM user_pets WHERE user_id=?", (user_id,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
-
 
 def adopt_pet(user_id, pet_id):
     pet = PETS_DATA.get(pet_id)
@@ -856,113 +955,216 @@ def adopt_pet(user_id, pet_id):
         return {"ok": False, "msg": "Pet tidak ditemukan!"}
     u = get_user(user_id)
     if u["gold"] < pet["cost"]:
-        return {"ok": False,
-                "msg": f"Gold tidak cukup! Butuh {pet['cost']} G."}
+        return {"ok": False, "msg": f"Gold tidak cukup! Butuh {pet['cost']} G."}
     conn = get_conn()
-    if conn.execute(
-            "SELECT 1 FROM user_pets WHERE user_id=? AND pet_id=?",
-            (user_id, pet_id)).fetchone():
+    if conn.execute("SELECT 1 FROM user_pets WHERE user_id=? AND pet_id=?", (user_id, pet_id)).fetchone():
         conn.close()
         return {"ok": False, "msg": "Pet sudah diadopsi!"}
-    conn.execute("UPDATE users SET gold=gold-? WHERE id=?",
-                 (pet["cost"], user_id))
-    conn.execute("INSERT INTO user_pets(user_id,pet_id) VALUES(?,?)",
-                 (user_id, pet_id))
+    conn.execute("UPDATE users SET gold=gold-? WHERE id=?", (pet["cost"], user_id))
+    conn.execute("INSERT INTO user_pets(user_id, pet_id, hunger, happiness) VALUES(?,?,100,50)", (user_id, pet_id))
     conn.commit()
     conn.close()
-    return {"ok": True,
-            "msg": f"{pet['icon']} {pet['name']} berhasil diadopsi!"}
-
+    return {"ok": True, "msg": f"{pet['icon']} {pet['name']} berhasil diadopsi!"}
 
 def equip_pet(user_id, pet_id):
     conn = get_conn()
-    conn.execute("UPDATE user_pets SET is_active=0 WHERE user_id=?",
-                 (user_id,))
-    conn.execute(
-        "UPDATE user_pets SET is_active=1 WHERE user_id=? AND pet_id=?",
-        (user_id, pet_id))
+    conn.execute("UPDATE user_pets SET is_active=0 WHERE user_id=?", (user_id,))
+    conn.execute("UPDATE user_pets SET is_active=1 WHERE user_id=? AND pet_id=?", (user_id, pet_id))
     conn.commit()
     conn.close()
-    p = PETS_DATA.get(pet_id, {})
-    return {"ok": True,
-            "msg": f"{p.get('icon','🐾')} {p.get('name', pet_id)} diaktifkan!"}
+    recalculate_all_buffs(user_id)   # fungsi baru, lihat di bawah
+    return {"ok": True, "msg": f"Pet {pet_id} diaktifkan!"}
 
+def feed_pet(user_id, pet_id):
+    pet = get_user_pet_by_id(user_id, pet_id)  # kita buat fungsi helper, atau query langsung
+    if not pet:
+        return {"ok": False, "msg": "Pet tidak ditemukan!"}
+    u = get_user(user_id)
+    cost = 10  # biaya makan 10 gold
+    if u["gold"] < cost:
+        return {"ok": False, "msg": f"Gold tidak cukup! Butuh {cost} G untuk memberi makan."}
+    new_hunger = min(100, pet["hunger"] + 30)
+    exp_gain = 0
+    conn = get_conn()
+    conn.execute("UPDATE user_pets SET hunger=?, last_fed=? WHERE id=?", (new_hunger, datetime.now().isoformat(), pet["id"]))
+    add_pet_exp(conn, pet["id"], exp_gain)
+    conn.execute("UPDATE users SET gold=gold-? WHERE id=?", (cost, user_id))
+    conn.commit()
+    conn.close()
+    recalculate_all_buffs(user_id)
+    return {"ok": True, "msg": f"🍖 {PETS_DATA[pet_id]['name']} kenyang! +{exp_gain} EXP pet. ({cost} G)"}
+
+def train_pet(user_id, pet_id):
+    pet = get_user_pet_by_id(user_id, pet_id)
+    if not pet:
+        return {"ok": False, "msg": "Pet tidak ditemukan!"}
+    if pet["hunger"] < 20:
+        return {"ok": False, "msg": "Pet lapar! Beri makan dulu."}
+    u = get_user(user_id)
+    cost = 5  # biaya latih 5 gold
+    if u["gold"] < cost:
+        return {"ok": False, "msg": f"Gold tidak cukup! Butuh {cost} G untuk latih."}
+    new_hunger = max(0, pet["hunger"] - 20)
+    exp_gain = 15
+    conn = get_conn()
+    conn.execute("UPDATE user_pets SET hunger=? WHERE id=?", (new_hunger, pet["id"]))
+    add_pet_exp(conn, pet["id"], exp_gain)
+    conn.execute("UPDATE users SET gold=gold-? WHERE id=?", (cost, user_id))
+    conn.commit()
+    conn.close()
+    recalculate_all_buffs(user_id)
+    return {"ok": True, "msg": f"🏋️ {PETS_DATA[pet_id]['name']} latihan! +{exp_gain} EXP pet. ({cost} G)"}
+
+def add_pet_exp(conn, pet_row_id, amount):
+    pet = conn.execute("SELECT * FROM user_pets WHERE id=?", (pet_row_id,)).fetchone()
+    new_exp = pet["exp"] + amount
+    new_level = pet["level"]
+    needed = pet["level"] * 100
+    while new_exp >= needed:
+        new_exp -= needed
+        new_level += 1
+        needed = new_level * 100
+    conn.execute("UPDATE user_pets SET exp=?, level=? WHERE id=?", (new_exp, new_level, pet_row_id))
+
+def get_user_pet_by_id(user_id, pet_id):
+    conn = get_conn()
+    pet = conn.execute("SELECT * FROM user_pets WHERE user_id=? AND pet_id=?", (user_id, pet_id)).fetchone()
+    conn.close()
+    return pet
 
 # ── Party / Boss ──────────────────────────────────────────────────────────────
 
-def create_party(leader_id, name, description=""):
+def create_guild(leader_id, name, description=""):
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO parties(name,description,leader_id) VALUES(?,?,?)",
+        "INSERT INTO guilds(name,description,leader_id) VALUES(?,?,?)",
         (name, description, leader_id))
-    pid = cur.lastrowid
+    gid = cur.lastrowid
     conn.execute(
-        "INSERT INTO party_members(party_id,user_id) VALUES(?,?)",
-        (pid, leader_id))
-    conn.execute("UPDATE users SET party_id=? WHERE id=?", (pid, leader_id))
+        "INSERT INTO guild_members(guild_id,user_id) VALUES(?,?)",
+        (gid, leader_id))
+    conn.execute("UPDATE users SET guild_id=? WHERE id=?", (gid, leader_id))
     conn.commit()
     conn.close()
-    return {"ok": True, "party_id": pid,
-            "msg": f"Party '{name}' dibuat! ID: {pid}"}
+    return {"ok": True, "guild_id": gid,
+            "msg": f"Guild '{name}' dibuat! ID: {gid}"}
 
 
-def join_party(user_id, party_id):
+def join_guild(user_id, guild_id):
     conn = get_conn()
-    p = conn.execute("SELECT * FROM parties WHERE id=?",
-                     (party_id,)).fetchone()
-    if not p:
+    g = conn.execute("SELECT * FROM guilds WHERE id=?", (guild_id,)).fetchone()
+    if not g:
         conn.close()
-        return {"ok": False, "msg": "Party tidak ditemukan!"}
-    conn.execute(
-        "INSERT OR IGNORE INTO party_members(party_id,user_id) VALUES(?,?)",
-        (party_id, user_id))
-    conn.execute("UPDATE users SET party_id=? WHERE id=?",
-                 (party_id, user_id))
+        return {"ok": False, "msg": "Guild tidak ditemukan!"}
+    # Cek apakah sudah menjadi member
+    existing = conn.execute("SELECT 1 FROM guild_members WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
+    if existing:
+        conn.close()
+        return {"ok": False, "msg": "Kamu sudah menjadi anggota guild ini!"}
+    conn.execute("INSERT INTO guild_members(guild_id, user_id) VALUES(?,?)", (guild_id, user_id))
+    conn.execute("UPDATE users SET guild_id=? WHERE id=?", (guild_id, user_id))
     conn.commit()
     conn.close()
-    return {"ok": True, "msg": f"Berhasil bergabung ke '{p['name']}'!"}
+    recalculate_all_buffs(user_id)
+    return {"ok": True, "msg": f"Berhasil bergabung ke {g['name']}!"}
 
 
-def leave_party(user_id):
+def leave_guild(user_id):
     u = get_user(user_id)
-    pid = u.get("party_id")
-    if not pid:
-        return {"ok": False, "msg": "Kamu tidak di dalam party."}
+    gid = u.get("guild_id")
+    if not gid:
+        return {"ok": False, "msg": "Kamu tidak di dalam guild."}
     conn = get_conn()
     conn.execute(
-        "DELETE FROM party_members WHERE user_id=? AND party_id=?",
-        (user_id, pid))
-    conn.execute("UPDATE users SET party_id=NULL WHERE id=?", (user_id,))
+        "DELETE FROM guild_members WHERE user_id=? AND guild_id=?",
+        (user_id, gid))
+    conn.execute("UPDATE users SET guild_id=NULL WHERE id=?", (user_id,))
     conn.commit()
     conn.close()
-    return {"ok": True, "msg": "Kamu telah keluar dari party."}
+    return {"ok": True, "msg": "Kamu telah keluar dari guild."}
 
 
-def get_party(party_id):
+def get_guild(guild_id):
     conn = get_conn()
-    p = conn.execute("SELECT * FROM parties WHERE id=?",
-                     (party_id,)).fetchone()
-    if not p:
+    g = conn.execute("SELECT * FROM guilds WHERE id=?",
+                     (guild_id,)).fetchone()
+    if not g:
         conn.close()
         return {}
     members = conn.execute(
         "SELECT u.id,u.display_name,u.level,u.avatar_class,"
         "u.avatar_emoji,u.hp,u.max_hp"
-        " FROM users u JOIN party_members pm ON u.id=pm.user_id"
-        " WHERE pm.party_id=?",
-        (party_id,)).fetchall()
-    boss = conn.execute(
-        "SELECT * FROM boss_battles WHERE party_id=? AND status='active'",
-        (party_id,)).fetchone()
+        " FROM users u JOIN guild_members gm ON u.id=gm.user_id"
+        " WHERE gm.guild_id=?",
+        (guild_id,)).fetchall()
+    boss = conn.execute("SELECT * FROM boss_battles WHERE guild_id=? AND status='active'", (guild_id,)).fetchone()
     conn.close()
     return {
-        "party":   dict(p),
+        "guild":   dict(g),
         "members": [dict(m) for m in members],
         "boss":    dict(boss) if boss else None,
     }
 
+def send_invite(guild_id, leader_id, target_username):
+    conn = get_conn()
+    guild = conn.execute("SELECT leader_id, name FROM guilds WHERE id=?", (guild_id,)).fetchone()
+    if not guild or guild["leader_id"] != leader_id:
+        conn.close()
+        return {"ok": False, "msg": "Hanya leader yang bisa mengundang!"}
+    target = conn.execute("SELECT id FROM users WHERE username=?", (target_username.lower(),)).fetchone()
+    if not target:
+        conn.close()
+        return {"ok": False, "msg": "User tidak ditemukan!"}
+    if target["id"] == leader_id:
+        conn.close()
+        return {"ok": False, "msg": "Tidak bisa mengundang diri sendiri!"}
+    existing = conn.execute("SELECT 1 FROM guild_members WHERE guild_id=? AND user_id=?", (guild_id, target["id"])).fetchone()
+    if existing:
+        conn.close()
+        return {"ok": False, "msg": "User sudah menjadi anggota!"}
+    pending = conn.execute("SELECT 1 FROM guild_invites WHERE guild_id=? AND user_id=? AND status='pending'", (guild_id, target["id"])).fetchone()
+    if pending:
+        conn.close()
+        return {"ok": False, "msg": "Undangan sudah terkirim!"}
+    conn.execute("INSERT INTO guild_invites(guild_id, user_id) VALUES(?,?)", (guild_id, target["id"]))
+    conn.commit()
+    conn.close()
+    add_notification(target["id"], f"📩 Kamu diundang ke guild '{guild['name']}' oleh leader. Cek menu Guild.", "info")
+    return {"ok": True, "msg": f"Undangan dikirim ke {target_username}!"}
 
-def start_boss(party_id, boss_id, user_level=1):
+def get_guild_invites(user_id):
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT gi.*, g.name as guild_name 
+        FROM guild_invites gi 
+        JOIN guilds g ON gi.guild_id = g.id 
+        WHERE gi.user_id=? AND gi.status='pending'
+    """, (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def accept_invite(user_id, invite_id):
+    conn = get_conn()
+    inv = conn.execute("SELECT * FROM guild_invites WHERE id=? AND user_id=? AND status='pending'", (invite_id, user_id)).fetchone()
+    if not inv:
+        conn.close()
+        return {"ok": False, "msg": "Undangan tidak valid."}
+    conn.execute("UPDATE guild_invites SET status='accepted' WHERE id=?", (invite_id,))
+    conn.execute("INSERT INTO guild_members(guild_id, user_id) VALUES(?,?)", (inv["guild_id"], user_id))
+    conn.execute("UPDATE users SET guild_id=? WHERE id=?", (inv["guild_id"], user_id))
+    conn.commit()
+    conn.close()
+    add_notification(user_id, "✅ Kamu sekarang bergabung ke guild!", "success")
+    return {"ok": True, "msg": "Selamat bergabung!"}
+
+def reject_invite(user_id, invite_id):
+    conn = get_conn()
+    conn.execute("UPDATE guild_invites SET status='rejected' WHERE id=? AND user_id=?", (invite_id, user_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "msg": "Undangan ditolak."}
+
+def start_boss(guild_id, boss_id, user_level=1):
     boss = BOSSES.get(boss_id)
     if not boss:
         return {"ok": False, "msg": "Boss tidak ditemukan!"}
@@ -973,19 +1175,19 @@ def start_boss(party_id, boss_id, user_level=1):
     conn = get_conn()
     if conn.execute(
             "SELECT 1 FROM boss_battles"
-            " WHERE party_id=? AND status='active'",
-            (party_id,)).fetchone():
+            " WHERE guild_id=? AND status='active'",
+            (guild_id,)).fetchone():
         conn.close()
         return {"ok": False, "msg": "Sudah ada boss aktif!"}
     conn.execute(
         "INSERT INTO boss_battles"
-        "(party_id,boss_id,boss_name,boss_icon,boss_tier,"
+        "(guild_id,boss_id,boss_name,boss_icon,boss_tier,"
         "boss_hp,boss_max_hp,boss_attack)"
         " VALUES(?,?,?,?,?,?,?,?)",
-        (party_id, boss_id, boss["name"], boss["icon"], boss["tier"],
+        (guild_id, boss_id, boss["name"], boss["icon"], boss["tier"],
          boss["hp"], boss["hp"], boss["atk"]))
-    conn.execute("UPDATE parties SET quest_id=? WHERE id=?",
-                 (boss_id, party_id))
+    conn.execute("UPDATE guilds SET quest_id=? WHERE id=?",
+                 (boss_id, guild_id))
     conn.commit()
     conn.close()
     return {"ok": True,
@@ -993,8 +1195,9 @@ def start_boss(party_id, boss_id, user_level=1):
                     f"Tier: {boss['tier'].upper()}")}
 
 
-def attack_boss(user_id, party_id, base_damage=25):
+def attack_boss(user_id, guild_id, base_damage=25):
     u = get_user(user_id)
+    # ── FIX: Hard HP check ────────────────────────────────────────────────────
     if u["hp"] <= 0:
         return {
             "ok": False,
@@ -1003,8 +1206,8 @@ def attack_boss(user_id, party_id, base_damage=25):
         }
     conn = get_conn()
     boss = conn.execute(
-        "SELECT * FROM boss_battles WHERE party_id=? AND status='active'",
-        (party_id,)).fetchone()
+        "SELECT * FROM boss_battles WHERE guild_id=? AND status='active'",
+        (guild_id,)).fetchone()
     if not boss:
         conn.close()
         return {"ok": False, "msg": "Tidak ada boss aktif!"}
@@ -1019,8 +1222,8 @@ def attack_boss(user_id, party_id, base_damage=25):
             (datetime.now().isoformat(), boss["id"]))
         bdata = BOSSES.get(boss["boss_id"], {})
         members = conn.execute(
-            "SELECT user_id FROM party_members WHERE party_id=?",
-            (party_id,)).fetchall()
+            "SELECT user_id FROM guild_members WHERE guild_id=?",
+            (guild_id,)).fetchall()
         cnt = max(1, len(members))
         conn.commit()
         conn.close()
@@ -1082,8 +1285,8 @@ def get_stats(user_id):
         (user_id,)).fetchone()["c"]
     bk = conn.execute(
         "SELECT COUNT(*) c FROM boss_battles bb"
-        " JOIN party_members pm ON bb.party_id=pm.party_id"
-        " WHERE pm.user_id=? AND bb.status='defeated'",
+        " JOIN guild_members gm ON bb.guild_id=gm.guild_id"
+        " WHERE gm.user_id=? AND bb.status='defeated'",
         (user_id,)).fetchone()["c"]
     log = conn.execute(
         "SELECT * FROM activity_log WHERE user_id=?"
@@ -1227,7 +1430,6 @@ def set_avatar(user_id, avatar_class=None, color=None,
         update_user(user_id, **kw)
     return {"ok": True, "msg": "Avatar diperbarui!"}
 
-
 def change_class(user_id, new_class):
     """Ganti class avatar — maksimal sekali sehari."""
     if new_class not in AVATAR_CLASSES:
@@ -1238,9 +1440,8 @@ def change_class(user_id, new_class):
     if last_change == today:
         return {"ok": False, "msg": "Kamu sudah mengganti class hari ini. Coba lagi besok! ⏳"}
     update_user(user_id, avatar_class=new_class, last_class_change=today)
-    recalculate_buffs(user_id)
+    recalculate_all_buffs(user_id)
     return {"ok": True, "msg": f"Class berhasil diubah menjadi {AVATAR_CLASSES[new_class]['name']}!"}
-
 
 def set_user_settings(user_id, sound_enabled=None):
     kw = {}
