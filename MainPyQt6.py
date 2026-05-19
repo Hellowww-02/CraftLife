@@ -1,5 +1,5 @@
 """
-CraftLife Desktop  —  main_pyqt6.py  v3.0  (all bugs fixed)
+CraftLife Desktop  —  main_pyqt6.py  v1.0  (all bugs fixed)
 PyQt6 Windows / Linux / macOS
 Install : pip install PyQt6
 Run     : python main_pyqt6.py
