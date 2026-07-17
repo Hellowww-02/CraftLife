@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Database & session
+craftlife.db
+session.json
+
+# Logs
+Error.txt
+crash.log
+db_error.log
+init_db_error.log
+
+# Backup
+backups/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
