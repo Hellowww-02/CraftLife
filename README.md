@@ -214,9 +214,9 @@ Running from source is also supported on Linux and macOS.
 ## Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/CraftLife-Desktop.git
+git clone https://github.com/Hellowww-02/CraftLife.git
 
-cd CraftLife-Desktop
+cd CraftLife
 ```
 
 ---
@@ -250,7 +250,10 @@ pip install -r requirements.txt
 If you don't have the requirements file yet:
 
 ```bash
-pip install PyQt6 requests tzlocal matplotlib openpyxl python-docx reportlab
+pip install -r requirements.txt
+
+# Alternatif instalasi manual:
+pip install PyQt6 PyQtDarkTheme requests tzlocal mutagen python-dateutil matplotlib openpyxl python-docx reportlab
 ```
 
 ---
@@ -262,6 +265,8 @@ python MainPyQt6.py
 ```
 
 The application will automatically create its local database during the first launch.
+
+> **Dependency note:** `mutagen` is required by the Music page for audio metadata and embedded lyrics. `python-dateutil` is used for monthly/yearly subscription date calculation. Both are included in `requirements.txt`.
 
 ---
 
@@ -835,9 +840,9 @@ Click the **Fork** button on GitHub.
 ### 2. Clone your fork
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/CraftLife-Desktop.git
+git clone https://github.com/Hellowww-02/CraftLife.git
 
-cd CraftLife-Desktop
+cd CraftLife
 ```
 
 ---
