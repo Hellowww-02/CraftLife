@@ -17,8 +17,19 @@ crash.log
 db_error.log
 init_db_error.log
 
-# Backup
+# Backup & generated Learning audio
 backups/
+learning_audio/
+
+# Node/Supabase CLI
+node_modules/
+npm-debug.log*
+
+# Cloud credentials and local Supabase state
+.env
+.env.*
+!.env.example
+supabase/.temp/
 
 # IDE
 .vscode/
