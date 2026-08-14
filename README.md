@@ -2,9 +2,9 @@
 
 <div align="center">
 
-**Offline-first productivity, personal management, learning, and social RPG desktop app built with PyQt6.**
+**An offline-first productivity, personal management, learning, and social RPG desktop application built with PyQt6.**
 
-Turn daily progress into XP, Gold, streaks, achievements, Guild contribution, and a stronger character—without giving up ownership of your local data.
+Turn everyday progress into XP, Gold, streaks, achievements, Guild contributions, and character growth—without giving up ownership of your local data.
 
 ![Release](https://img.shields.io/badge/release-v1.0.0-5a8a2e?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
@@ -13,305 +13,316 @@ Turn daily progress into XP, Gold, streaks, achievements, Guild contribution, an
 ![Supabase](https://img.shields.io/badge/Supabase-optional%20cloud-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 
-[Quick Start](#-quick-start-offline) · [Features](#-feature-set) · [Cloud Setup](#%EF%B8%8F-optional-cloud--supabase-setup) · [Build](#-build-windows-release) · [Troubleshooting](#-troubleshooting)
+[Quick Start](#-quick-start-offline) · [Features](#-feature-set) · [Cloud Setup](#%EF%B8%8F-optional-cloud--supabase-setup) · [Build](#-build-a-windows-release) · [Troubleshooting](#-troubleshooting)
 
 </div>
 
 ---
 
-## Language
+## Language support
 
-Dokumentasi utama menggunakan **Bahasa Indonesia**. Aplikasi mendukung Bahasa Indonesia dan English.
+This README is written in English. The CraftLife user interface supports:
 
-> **English summary:** CraftLife is an offline-first PyQt6 desktop productivity RPG. It combines tasks, health, finance, learning, notes, reminders, Love Space, friends, realtime chat, PvP, Guilds, and optional Supabase multi-device sync. SQLite remains the local store and the app can run without cloud configuration.
+- English (`en`)
+- Indonesian (`id`)
+
+The language can be changed from Settings without restarting the application.
 
 ---
 
 ## 📌 Release scope
 
-CraftLife v1.0.0 menyediakan pengalaman desktop lengkap yang dapat dipakai secara lokal tanpa internet. Integrasi Supabase bersifat opsional dan additive.
+CraftLife v1.0.0 provides a complete desktop experience that works locally without an internet connection. Supabase integration is optional and additive.
 
 | Area | Status |
 |---|---|
-| Desktop offline/local | ✅ Siap digunakan |
-| SQLite cache dan backup | ✅ Aktif |
-| Cloud Phase 1–4 source | ✅ Tersedia |
-| Supabase deployment | ⚙️ Harus diterapkan oleh operator project |
-| Realtime + periodic fallback | ✅ Tersedia setelah cloud dikonfigurasi |
-| Cloud game wallet/inventory penuh | 🗺️ Phase 5 |
-| Push notification saat aplikasi tertutup | 🗺️ Phase 6 |
-| Production operations/purge scheduler | 🗺️ Phase 6 |
+| Offline/local desktop application | ✅ Ready to use |
+| SQLite cache and backup | ✅ Available |
+| Cloud Phase 1–4 source code | ✅ Available |
+| Supabase deployment | ⚙️ Must be applied by the project operator |
+| Realtime with periodic fallback | ✅ Available after cloud configuration |
+| Fully authoritative cloud game wallet/inventory | 🗺️ Planned for Phase 5 |
+| Push notifications while the app is closed | 🗺️ Planned for Phase 6 |
+| Production operations and purge scheduler | 🗺️ Planned for Phase 6 |
 
-**“Full Release” pada repository ini berarti aplikasi desktop offline-first dapat berjalan penuh.** Operator yang mengaktifkan cloud wajib menerapkan migration, RLS test, Storage policy, dan Edge Function sesuai panduan sebelum membuka project untuk pengguna publik.
+**“Full Release” in this repository means the offline-first desktop application is complete and usable.** Operators enabling cloud services must apply all migrations, run RLS authorization tests, verify Storage policies, and deploy the required Edge Function before opening a cloud project to public users.
 
 ---
 
 ## 📚 Table of contents
 
 - [Overview](#-overview)
+- [Design principles](#-design-principles)
 - [Feature set](#-feature-set)
 - [Offline-first architecture](#-offline-first-architecture)
 - [System requirements](#%EF%B8%8F-system-requirements)
 - [Quick start](#-quick-start-offline)
 - [Optional AI setup](#-optional-ai-learning-setup)
 - [Optional cloud setup](#%EF%B8%8F-optional-cloud--supabase-setup)
-- [Cloud migrations](#-cloud-migration-order)
+- [Cloud migration order](#-cloud-migration-order)
 - [Project structure](#-project-structure)
-- [Data locations and backup](#-data-locations--backup)
-- [Security and privacy](#-security--privacy)
-- [Build Windows release](#-build-windows-release)
-- [Updating an installation](#-updating-an-existing-installation)
-- [Testing](#-testing--validation)
+- [Data locations and backup](#-data-locations-and-backup)
+- [Security and privacy](#-security-and-privacy)
+- [Realtime and sync](#-realtime-and-sync-behavior)
+- [Build a Windows release](#-build-a-windows-release)
+- [Update an installation](#-updating-an-existing-installation)
+- [Testing](#-testing-and-validation)
 - [Troubleshooting](#-troubleshooting)
 - [Known limitations](#-known-limitations)
 - [Roadmap](#%EF%B8%8F-roadmap)
 - [Contributing](#-contributing)
+- [FAQ](#-frequently-asked-questions)
 - [License](#-license)
 
 ---
 
 # 📖 Overview
 
-CraftLife adalah aplikasi desktop all-in-one yang menggabungkan:
+CraftLife is an all-in-one desktop application that combines:
 
-- produktivitas dan task management;
-- gamifikasi RPG;
-- health, food, water, dan sport tracking;
+- productivity and task management;
+- RPG-style gamification;
+- health, food, water, and sport tracking;
 - personal finance;
-- learning workspace berbantuan AI;
-- notes, calendar, reminders, Pomodoro, dan music;
-- Love Space;
-- friends, realtime chat, PvP, Guild, dan leaderboard;
-- SQLite offline cache;
-- Supabase Auth, Database, Storage, RPC, RLS, dan Realtime sebagai cloud opsional.
+- an AI-assisted learning workspace;
+- notes, calendar, reminders, Pomodoro, and music;
+- a private Love Space;
+- friends, realtime chat, PvP, Guilds, and leaderboards;
+- a local SQLite offline cache;
+- optional Supabase Auth, Database, Storage, RPC, RLS, and Realtime services.
 
-CraftLife tidak memaksa pengguna membuat akun cloud. Tanpa `.env`, aplikasi tetap dapat digunakan secara lokal.
+CraftLife does not require users to create a cloud account. Without a `.env` file, the application continues to work locally.
 
-## Prinsip desain
+---
 
-1. **Local first** — UI selalu menggunakan SQLite untuk pengalaman cepat dan tahan putus koneksi.
-2. **Cloud optional** — pengguna lokal tidak kehilangan fitur hanya karena tidak menautkan akun.
-3. **No fake success** — aksi sosial online baru dianggap sukses setelah Supabase mengonfirmasi.
-4. **Server authority** — Friends, Couple, online Guild, online PvP, attachment registration, dan reward claim dikontrol RPC/RLS.
-5. **Private by default** — Storage bucket cloud tidak public.
-6. **Backward compatible** — migration dan fitur cloud bersifat additive terhadap sistem lokal.
+# 🧭 Design principles
+
+1. **Local first** — the desktop UI uses SQLite for a fast and resilient experience.
+2. **Cloud optional** — local users do not lose features because they have not linked an account.
+3. **No fake success** — an online social action is successful only after Supabase confirms it.
+4. **Server authority** — Friends, Couple membership, online Guilds, online PvP, attachment registration, and online reward claims are controlled by RPCs and RLS.
+5. **Private by default** — cloud Storage buckets are never public.
+6. **Backward compatible** — cloud migrations are additive to the existing local application.
+7. **Retry safely** — queued operations use idempotency keys or stable cloud IDs.
+8. **Never overwrite silently** — multi-device personal-data conflicts require an explicit choice.
 
 ---
 
 # ✨ Feature set
 
-## 🏠 Dashboard dan character progression
+## 🏠 Dashboard and character progression
 
-- ringkasan level, XP, HP, MP, Gold, dan streak;
-- widget dashboard yang dapat dikonfigurasi;
-- daily progress;
-- activity summary;
-- onboarding;
-- quick add;
-- command palette;
+- player level, XP, HP, MP, Gold, and streak summaries;
+- configurable dashboard widgets;
+- daily progress and activity overview;
+- onboarding wizard;
+- Quick Add;
+- Command Palette;
 - rank progression;
 - annual “Year Wrapped” summary;
-- talent tree dan class passive buffs.
+- talent tree;
+- character classes and passive buffs.
 
-## ✅ Habits, Dailies, dan Quests
+## ✅ Habits, Dailies, and Quests
 
-- positive/negative habits;
+- positive and negative Habits;
 - recurring Dailies;
 - one-time Quests/Todos;
-- tingkat kesulitan dan reward;
-- folder;
-- drag-and-drop/reordering;
-- repeat days;
-- streak dan fail tracking;
+- difficulty-based rewards;
+- folders;
+- drag-and-drop and manual reordering;
+- repeat-day configuration;
+- completion streaks and failure tracking;
 - task history;
-- template kebiasaan;
-- trash/restore;
-- productivity event cloud yang idempotent.
+- built-in habit templates;
+- trash and restore;
+- idempotent cloud productivity events.
 
 ## 🍅 Pomodoro
 
 - focus timer;
 - break timer;
-- looping alarm sampai dikonfirmasi;
-- task label;
-- XP dan Gold lokal;
-- history sesi;
-- productivity point cloud dengan limit server.
+- looping alarms until acknowledged;
+- task labels;
+- local XP and Gold rewards;
+- session history;
+- server-limited productivity points in cloud mode.
 
 ## 🏃 SportTrack
 
 - custom sport activities;
-- duration dan calories burned;
-- completion streak;
-- reps dan sets log;
+- duration and calories burned;
+- completion streaks;
+- reps and sets logs;
 - weekly series;
-- sport rank;
-- sport level dan statistics;
-- cloud productivity event.
+- sport ranks;
+- sport level and statistics;
+- cloud productivity events.
 
-## 💚 Health & Food
+## 💚 Health and Food
 
-- food database bawaan dengan ratusan entri nutrisi;
-- custom food;
-- calories, protein, carbohydrates, dan fat;
+- a built-in nutrition database with hundreds of food entries;
+- custom foods;
+- calories, protein, carbohydrates, and fat;
 - meal logs;
 - recipes;
-- nutrition goals;
-- water intake dan target;
-- weight, height, BMI, age, gender, dan activity factor;
-- steps, sleep, resting heart rate, stress, dan mood;
-- health trends dan chart;
-- offline storage di SQLite.
+- nutrition targets;
+- water intake and daily goals;
+- weight, height, BMI, age, gender, and activity factor;
+- steps, sleep, resting heart rate, stress, and mood;
+- health trends and charts;
+- local SQLite storage.
 
-> CraftLife bukan perangkat medis. Prediksi dan ringkasan kesehatan hanya untuk pencatatan pribadi, bukan diagnosis.
+> CraftLife is not a medical device. Predictions and summaries are intended for personal tracking only and must not be treated as medical advice or diagnosis.
 
 ## 💰 Economy
 
-- income dan expense;
-- categories dan folders;
-- debt;
-- debt notes/piutang;
+- income and expenses;
+- categories and folders;
+- debts;
+- debt notes and receivables;
 - savings goals;
-- investments dan returns;
-- subscriptions;
-- charts dan daily series;
-- currency preference;
-- export report.
+- investments and returns;
+- recurring subscriptions;
+- daily series and charts;
+- currency display preferences;
+- report export.
 
 ## 📚 Learning workspace
 
 - learning notebooks;
-- PDF/text/document sources;
-- source chunking dan local retrieval;
-- AI chat berbasis context;
+- PDF, text, and document sources;
+- source chunking and local retrieval;
+- contextual AI chat;
 - flashcards;
-- quiz/generation;
-- mind map;
+- quizzes and generated study material;
+- mind maps;
 - two-host podcast generation;
 - multilingual Edge TTS;
-- export learning output;
+- learning-output export;
 - optional Gemini integration;
-- graceful fallback ketika library/provider AI tidak tersedia.
+- graceful fallback when optional AI libraries or providers are unavailable.
 
 ## 📝 Notes
 
-- rich text editor;
-- folders dan nested folders;
+- rich-text editing;
+- folders and nested folders;
 - archive;
 - search;
-- zoom level;
-- local JSON import/export integration.
+- adjustable zoom level;
+- integration with tracker JSON export/import.
 
 ## ⏰ Reminders
 
-- date/time reminder;
-- repeat type dan repeat days;
-- system tray notification;
-- looping beep;
-- custom MP3 sound;
-- automatic next occurrence;
-- local-only custom sound path.
+- date and time reminders;
+- repeat types and repeat days;
+- system-tray notifications;
+- looping beep alarms;
+- custom MP3 sounds;
+- automatic next-occurrence calculation;
+- device-local custom sound paths.
 
 ## 📅 Calendar
 
 - monthly calendar;
-- Indonesian/international holiday data;
+- Indonesian and international holiday data;
 - per-day notes;
 - task and event context;
 - Love Space event integration.
 
 ## 🎵 Music
 
-Music tersedia melalui Command Palette:
+Music is available through the Command Palette:
 
 - local playlists;
 - favorite playlists;
 - local file playback;
-- metadata melalui Mutagen;
-- MP3/FLAC/MP4/Ogg support tergantung codec OS;
-- file musik tetap lokal dan tidak diunggah ke Supabase.
+- metadata through Mutagen;
+- MP3, FLAC, MP4, and Ogg support depending on OS codecs;
+- music files remain local and are not uploaded to Supabase.
 
-## 🛒 Shop, Inventory, Crafting, dan Pets
+## 🛒 Shop, Inventory, Crafting, and Pets
 
 - local item shop;
-- weapons, armor, consumables, dan buffs;
-- inventory quantity/equipment;
+- weapons, armor, consumables, and buffs;
+- inventory quantities and equipment;
 - enchant state;
 - crafting recipes;
-- pets, active pet, hunger, happiness, level, dan EXP;
-- class skill dan boss bonuses;
-- achievements dan redeem codes.
+- pet ownership and active-pet selection;
+- pet hunger, happiness, level, and EXP;
+- class skills and boss bonuses;
+- achievements and redeem codes.
 
-> Pada v1.0.0, game wallet/inventory utama tetap local-authoritative. Server reward ledger penuh direncanakan pada Phase 5.
+> In v1.0.0, the main game wallet and inventory remain local-authoritative. A full server reward ledger is planned for Phase 5.
 
-## 👤 Profile dan personalization
+## 👤 Profile and personalization
 
-- display name;
-- username;
-- bio;
-- avatar class, color, dan emoji;
-- profile photo BLOB lokal;
-- private profile-photo Storage cloud;
-- themes;
-- high contrast;
-- font scale;
-- Indonesian/English;
-- IDR/USD/EUR display preference.
+- display name and username;
+- biography;
+- avatar class, color, and emoji;
+- local profile-photo BLOB;
+- private profile-photo cloud Storage;
+- multiple themes;
+- high-contrast mode;
+- font scaling;
+- English and Indonesian;
+- IDR, USD, and EUR display preferences.
 
 ## 💞 Love Space
 
-### Local dan cloud-aware relationship
+### Local and cloud-aware relationship features
 
-- explicit Couple request/accept/reject/cancel;
-- satu accepted partner per user;
-- satu shared Love Space per Couple;
-- shared profile dan start date;
-- days together;
-- events/plans;
+- explicit Couple request, acceptance, rejection, and cancellation;
+- one accepted partner per user;
+- one shared Love Space per Couple;
+- shared relationship profile and start date;
+- days-together calculation;
+- events and plans;
 - memories;
 - daily check-ins;
 - connection score;
-- Connection Prompts dan favorites;
+- Connection Prompts and favorites;
 - weekly reviews;
 - bucket list;
-- menstrual/cycle tracker dan prediction;
-- shared/private Gallery;
-- image decode validation dan local BLOB cache.
+- menstrual/cycle tracker and prediction;
+- shared and private Gallery;
+- actual image decode validation;
+- local image BLOB cache.
 
 ### Cloud privacy rules
 
-- hanya member Love Space yang dapat membaca shared data;
-- write hanya saat relationship `accepted`;
-- relationship ended memiliki 30-day read-only grace period;
-- uploader tetap dapat mengelola fotonya sesuai policy;
-- Gallery image diproses dan cloud maximum 5 MB;
-- Love Space Gallery quota 1 GB;
-- cycle data adalah data sensitif—gunakan hanya dengan persetujuan pasangan.
+- only Love Space members can read shared data;
+- writes are allowed only while the relationship is `accepted`;
+- an ended relationship receives a 30-day read-only grace period;
+- uploaders retain photo-management rights according to policy;
+- Gallery images are processed before upload and limited to 5 MB;
+- Love Space Gallery quota is 1 GB;
+- cycle information is sensitive and should be used only with the tracked person’s consent.
 
-## 👥 Friends dan realtime Direct Chat
+## 👥 Friends and realtime Direct Chat
 
-- server-authoritative friend request;
-- friend profile;
-- online/away/offline presence;
-- typing indicator;
-- Direct Chat local fallback;
+- server-authoritative friend requests;
+- friend profiles;
+- online, away, and offline presence;
+- typing indicators;
+- local Direct Chat fallback;
 - cloud message cache;
 - offline send queue;
-- reply;
-- edit pesan sendiri;
-- soft-delete/tombstone;
-- reaction;
-- unread count;
+- replies;
+- sender-only edits;
+- sender-only soft delete and tombstones;
+- reactions;
+- unread counters;
 - pagination;
-- 30-message/minute server limit;
-- Realtime update;
+- 30-message-per-minute server limit;
+- Realtime updates;
 - periodic pull fallback.
 
 ### Private chat attachments
 
-Supported:
+Supported file types:
 
-- JPG/JPEG/PNG/WebP → diproses menjadi WebP;
+- JPG, JPEG, PNG, and WebP → processed to WebP;
 - PDF;
 - UTF-8 TXT;
 - DOCX;
@@ -322,79 +333,79 @@ Limits:
 
 | Rule | Limit |
 |---|---:|
-| Attachment per message | 5 |
+| Attachments per message | 5 |
 | Processed image | 5 MB |
 | Document | 10 MB |
 | Active quota per uploader | 250 MB |
 | Upload slots | 50 files/hour |
-| Image dimensions after processing | max 1600×1600 |
+| Processed image dimensions | maximum 1600×1600 |
 
-Hardening:
+Hardening includes:
 
 - server-authorized upload slots;
-- deterministic private Storage path;
-- slot expiry;
+- deterministic private Storage paths;
+- upload-slot expiration;
 - SHA-256 verification;
-- idempotent retry;
+- idempotent retries;
 - SQLite BLOB cache;
 - thumbnail cache;
 - deleted-attachment retention;
-- orphan cleanup Edge Function.
+- orphan cleanup through an Edge Function.
 
 ## ⚔️ Online PvP
 
-- challenge request/accept/reject/cancel;
-- server time window;
-- score dihitung dari validated productivity events;
-- client tidak mengirim skor;
-- automatic/opportunistic finalization;
-- one-time reward claim;
-- local reward application hanya setelah cloud claim sukses;
+- challenge request, acceptance, rejection, and cancellation;
+- server-controlled challenge time windows;
+- scores calculated from validated productivity events;
+- the client never submits a score;
+- automatic or opportunistic finalization;
+- one-time reward claims;
+- local reward application only after cloud claim confirmation;
 - Realtime challenge state.
 
 ## 🛡️ Online Guild
 
-- create, request join, cancel request, accept, dan reject;
-- leave, kick, ban, dan unban;
+- create Guild, request join, cancel request, accept, and reject;
+- leave, kick, ban, and unban;
 - leader transfer;
-- disband;
-- one-user-one-Guild;
+- Guild disband;
+- one-user-one-Guild constraint;
 - one-leader invariant;
-- `leader`, `officer`, dan `member` permissions;
-- Guild description;
-- Guild chat reply/edit/delete/reaction/pagination/unread;
-- moderation delete oleh leader/officer;
-- SQLite Guild chat cache;
+- `leader`, `officer`, and `member` permissions;
+- editable Guild description;
+- Guild Chat replies, edits, deletes, reactions, pagination, and unread counts;
+- moderation delete for leaders and officers;
+- SQLite Guild Chat cache;
 - productivity contribution feed;
-- server boss catalog;
-- server-computed boss HP, duration, expiry, dan damage;
+- server-controlled boss catalog;
+- server-computed boss HP, duration, expiration, and damage;
 - one-time boss rewards;
-- Guild EXP/level;
+- Guild EXP and level;
 - online Guild leaderboard.
 
 ## 🔔 Notification Center
 
 - durable cloud notification cache;
 - unread badge;
-- filters: message, social, Love Space, PvP, Guild, security;
+- filters for messages, social, Love Space, PvP, Guild, and security;
 - pagination;
-- mark one/all read;
-- deep-link ke entity terkait;
-- Realtime + periodic fallback;
-- new-device dan revoked-device events.
+- mark one or all as read;
+- deep-link navigation to related entities;
+- Realtime with periodic fallback;
+- new-device and revoked-device security events.
 
 ## 💻 Device Manager
 
-- list cloud devices;
-- identify current device;
-- rename;
+- list linked cloud devices;
+- identify the current device;
+- rename a device;
 - revoke one other device;
 - revoke all other devices;
-- device first/last seen;
-- platform dan app version;
-- current device protection.
+- first-seen and last-seen timestamps;
+- platform and app version;
+- current-device protection.
 
-> Device registry revoke menghentikan UUID tersebut melakukan personal sync. Global Supabase Auth session revocation belum setara dengan device revoke dan masuk production hardening Phase 6.
+> Revoking a device registry UUID stops that UUID from performing personal sync. It is not equivalent to global Supabase Auth session revocation, which is planned for Phase 6.
 
 ## 🏆 Leaderboards
 
@@ -423,19 +434,19 @@ flowchart LR
 
 ## Source of truth by feature
 
-| Feature | Offline/local | Cloud-linked mode |
+| Feature | Offline/local mode | Cloud-linked mode |
 |---|---|---|
-| Habits/Dailies/Quests | SQLite | SQLite + personal snapshot/productivity event |
-| Notes/Health/Economy | SQLite | SQLite + private personal snapshot |
-| Profile | SQLite | Profile cloud mirror + SQLite cache |
+| Habits, Dailies, Quests | SQLite | SQLite + private snapshot/productivity events |
+| Notes, Health, Economy | SQLite | SQLite + private personal snapshot |
+| Profile | SQLite | Cloud profile mirror + SQLite cache |
 | Friends | Local fallback | Supabase authoritative |
 | Couple membership | Local fallback | Supabase authoritative |
 | Shared Love Space | SQLite cache | Supabase authoritative |
 | Direct Chat | Local fallback | Supabase authoritative + SQLite cache |
 | Online PvP | Local PvP fallback | Supabase authoritative |
 | Online Guild | Local Guild fallback | Supabase authoritative |
-| Profile/Gallery/Chat files | SQLite cache | Private Storage + RLS |
-| Game wallet/inventory | SQLite | Server ledger planned Phase 5 |
+| Profile, Gallery, Chat files | SQLite cache | Private Storage + RLS |
+| Game wallet and inventory | SQLite | Server ledger planned for Phase 5 |
 
 ## Personal multi-device sync
 
@@ -444,7 +455,7 @@ flowchart LR
 - optimistic revisions;
 - semantic SHA-256 hash;
 - maximum 8 MB payload;
-- conflict detection;
+- explicit conflict detection;
 - no silent overwrite;
 - **Keep Local Data** or **Restore Cloud Data** resolution;
 - ten historical server versions;
@@ -458,14 +469,14 @@ flowchart LR
 
 | Component | Minimum | Recommended |
 |---|---:|---:|
-| OS | Windows 10 64-bit | Windows 11 64-bit |
-| Python source mode | 3.10 | 3.11/3.12 |
+| Operating system | Windows 10 64-bit | Windows 11 64-bit |
+| Python in source mode | 3.10 | 3.11 or 3.12 |
 | RAM | 4 GB | 8 GB+ |
-| Free disk | 500 MB | 2 GB+ for Learning/audio/cache |
+| Free disk space | 500 MB | 2 GB+ for Learning, audio, and cache |
 | Display | 1080×700 | 1280×720 or larger |
-| Internet | Optional | Required for cloud/AI/TTS |
+| Internet | Optional | Required for cloud, AI, and online TTS |
 
-Windows is the primary tested target. Linux/macOS may run from source, but multimedia codecs, keyring backend, tray behavior, and packaging can differ.
+Windows is the primary tested platform. Linux and macOS may run from source, but multimedia codecs, credential backends, tray behavior, and packaging can differ.
 
 ## Cloud development
 
@@ -473,8 +484,8 @@ Windows is the primary tested target. Linux/macOS may run from source, but multi
 - npm 10+;
 - Supabase CLI 2.113+;
 - Docker Desktop for local Supabase tests;
-- Supabase project for staging/production;
-- Singapore region recommended for users near Indonesia.
+- a Supabase project for staging/production;
+- Singapore region is recommended for users near Indonesia.
 
 ---
 
@@ -482,7 +493,7 @@ Windows is the primary tested target. Linux/macOS may run from source, but multi
 
 Cloud configuration is not required.
 
-## 1. Clone
+## 1. Clone the repository
 
 ```bash
 git clone https://github.com/Hellowww-02/CraftLife.git
@@ -498,14 +509,14 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-If execution policy blocks activation:
+If PowerShell blocks activation:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 ```
 
-### Linux/macOS
+### Linux or macOS
 
 ```bash
 python3 -m venv .venv
@@ -519,27 +530,27 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## 4. Run
+## 4. Launch CraftLife
 
 ```bash
 python MainPyQt6.py
 ```
 
-At first launch, CraftLife initializes its SQLite schema and built-in data.
+CraftLife initializes its SQLite schema and built-in data on first launch.
 
 ---
 
 # 🤖 Optional AI Learning setup
 
-Learning features that use Gemini require a valid provider API key configured by the user in CraftLife. AI-related packages are included in `requirements.txt`, but the application handles missing/failed optional imports gracefully.
+Learning features that use Gemini require a valid provider API key configured by the user in CraftLife. AI-related packages are listed in `requirements.txt`, but the application handles missing or failed optional imports gracefully.
 
-Important:
+Important rules:
 
 - never commit an AI API key;
-- do not include it in screenshots/issues;
-- source documents and prompts sent to an AI provider are subject to that provider’s privacy policy;
-- Gemini keys are not included in CraftLife personal cloud snapshots;
-- local Learning features and stored notebook data remain available without cloud account linking.
+- never include a key in screenshots or issues;
+- documents and prompts sent to an AI provider are governed by that provider’s privacy policy;
+- Gemini keys are excluded from CraftLife personal cloud snapshots;
+- local notebook data remains available without a linked cloud account.
 
 Podcast TTS and transcript retrieval require internet access.
 
@@ -547,7 +558,7 @@ Podcast TTS and transcript retrieval require internet access.
 
 # ☁️ Optional Cloud — Supabase setup
 
-For the complete operator guide, see [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md).
+For the full operator guide, see [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md).
 
 ## 1. Install cloud dependencies
 
@@ -556,7 +567,7 @@ pip install -r requirements.txt
 npm install
 ```
 
-## 2. Create local `.env`
+## 2. Create a local `.env`
 
 ```powershell
 Copy-Item .env.example .env
@@ -572,9 +583,9 @@ CRAFTLIFE_CLOUD_ENABLED=true
 CRAFTLIFE_SYNC_INTERVAL_SECONDS=60
 ```
 
-Compatibility aliases are accepted, but the names above are recommended.
+Compatibility aliases are supported, but the names above are recommended.
 
-### Never put these in desktop `.env`
+### Never place these values in the desktop `.env`
 
 ```text
 sb_secret_*
@@ -586,21 +597,21 @@ CHAT_MAINTENANCE_SECRET
 SMTP credentials
 ```
 
-`.env` is ignored by Git.
+`.env` is excluded by `.gitignore`.
 
-## 3. Auth configuration
+## 3. Configure Supabase Auth
 
-In Supabase Dashboard:
+In the Supabase Dashboard:
 
 1. enable Email/Password Auth;
 2. require email verification;
-3. set a non-localhost Site URL suitable for your release;
+3. configure a non-localhost Site URL for your release;
 4. configure the verification redirect allowlist;
-5. request a fresh verification email after changing redirect settings.
+5. request a new verification email after changing redirect settings.
 
-CraftLife does not store the Supabase password in SQLite. Refresh tokens use the OS credential store through `keyring`.
+CraftLife never stores the Supabase password in SQLite. Refresh tokens are stored through the operating system credential store using `keyring`.
 
-## 4. Link CLI
+## 4. Link the Supabase CLI
 
 ```powershell
 npx supabase login
@@ -608,7 +619,7 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase migration list
 ```
 
-The CLI may ask for the database password. Enter it only in the CLI prompt—never commit it.
+The CLI may request your database password. Enter it only in the CLI prompt and never commit it.
 
 ## 5. Validate locally
 
@@ -627,7 +638,7 @@ Local Studio is normally available at:
 http://localhost:54323
 ```
 
-## 6. Dry-run and push staging
+## 6. Dry-run and push to staging
 
 ```powershell
 npx supabase db push --dry-run
@@ -636,11 +647,11 @@ npx supabase migration list
 npx supabase db lint --linked --level warning
 ```
 
-Always use a staging project first. Do not push directly to production before Alice/Bob/Carol authorization tests pass.
+Always use a staging project first. Do not push directly to production before the Alice/Bob/Carol authorization matrix passes.
 
-## 7. Deploy attachment cleanup Edge Function
+## 7. Deploy the attachment cleanup Edge Function
 
-Generate a secret locally without pasting it into chat/source:
+Generate a secret locally without exposing it in chat or source code:
 
 ```powershell
 $secret = -join (
@@ -653,19 +664,19 @@ npx supabase secrets set CHAT_MAINTENANCE_SECRET=$secret
 npx supabase functions deploy chat-attachment-maintenance
 ```
 
-The function uses `SUPABASE_SERVICE_ROLE_KEY` only inside Supabase Edge Runtime. Scheduler configuration is a production Phase 6 operation.
+The function uses `SUPABASE_SERVICE_ROLE_KEY` only inside the Supabase Edge Runtime. Automatic scheduling belongs to the Phase 6 production setup.
 
 ## 8. Link a CraftLife account
 
 1. run CraftLife with `.env` beside the source or executable;
 2. open **Settings → Cloud & Sync**;
 3. choose **Link Cloud Account**;
-4. create account;
-5. verify email;
+4. create an account;
+5. verify the email address;
 6. return and choose **Sign In & Link**;
 7. choose **Migrate Local Data**;
 8. choose **Sync Now**;
-9. inspect Device Manager and sync status.
+9. inspect Device Manager and the sync status.
 
 ---
 
@@ -685,24 +696,24 @@ Migrations must remain in this exact order:
 20260813235900_phase4d_e_final.sql
 ```
 
-Do not rename an applied migration. Do not use `migration repair` only to hide an SQL error.
+Do not rename an applied migration. Do not use `migration repair` merely to hide an SQL error.
 
 If a migration fails:
 
 1. read the first SQLSTATE and statement number;
-2. confirm whether it is listed as applied remotely;
+2. confirm whether the migration appears as applied remotely;
 3. correct the unapplied local file;
 4. run `db push --dry-run` again;
-5. use repair only when remote history and actual schema are known to differ.
+5. use repair only when remote history and the actual remote schema are known to differ.
 
-### Fixed attachment migration syntax
+## Fixed attachment migration syntax
 
 The final attachment migration uses:
 
 ```sql
 p_size_bytes > (
-  case when p_mime_type like 'image/%'
-    then 5242880
+  case
+    when p_mime_type like 'image/%' then 5242880
     else 10485760
   end
 )
@@ -717,16 +728,16 @@ This fixes the earlier PL/pgSQL `SQLSTATE 42601` caused by an unparenthesized `C
 ```text
 CraftLife/
 ├── MainPyQt6.py              # PyQt6 application and pages/dialogs
-├── database.py               # SQLite schema, migrations, local domain logic
-├── translations.py           # Indonesian/English text
-├── learning_helper.py        # Learning/AI/TTS helpers
+├── database.py               # SQLite schema, migrations, and local domain logic
+├── translations.py           # English and Indonesian translations
+├── learning_helper.py        # Learning, AI, and TTS helpers
 ├── cloud_config.py           # External .env configuration
 ├── cloud_service.py          # Supabase client boundary
-├── sync_service.py           # Queue, pull/push, conflict orchestration
+├── sync_service.py           # Queue, pull/push, and conflict orchestration
 ├── applog.py                 # Application logging
 ├── food_data.py              # Built-in nutrition data
-├── holidays.py               # Calendar/holiday helpers
-├── mathtools.py              # Learning math helper
+├── holidays.py               # Calendar and holiday helpers
+├── mathtools.py              # Learning math helpers
 ├── requirements.txt
 ├── package.json
 ├── .env.example
@@ -743,15 +754,15 @@ CraftLife/
             └── index.ts
 ```
 
-Generated folders/files such as `.venv`, `node_modules`, `build`, `dist`, `.env`, `craftlife.db`, logs, and backups are ignored.
+Generated files and folders such as `.venv`, `node_modules`, `build`, `dist`, `.env`, `craftlife.db`, logs, and backups are ignored.
 
 ---
 
-# 💾 Data locations & backup
+# 💾 Data locations and backup
 
 ## Source mode
 
-When run with:
+When running:
 
 ```bash
 python MainPyQt6.py
@@ -759,26 +770,24 @@ python MainPyQt6.py
 
 `craftlife.db` is stored beside the source files.
 
-## PyInstaller Windows build
+## Frozen Windows build
 
-The frozen application stores its database under:
+A PyInstaller build stores the user database under:
 
 ```text
 %APPDATA%\CraftLife\craftlife.db
 ```
 
-`.env` remains external beside the executable:
+The cloud `.env` remains external beside the executable:
 
 ```text
 dist\CraftLife\CraftLife.exe
 dist\CraftLife\.env
 ```
 
-Do not put `.env` inside `_internal`.
+Do not place `.env` inside `_internal`.
 
-## Backup
-
-Before every update:
+## Back up before updating
 
 ```powershell
 Copy-Item .\craftlife.db .\craftlife.before-update.db -Force
@@ -791,13 +800,13 @@ Never distribute a user’s:
 
 - `craftlife.db`;
 - `.env`;
-- backup folder;
-- logs containing personal information;
+- backup directory;
+- logs containing private information;
 - generated Learning audio unless explicitly intended.
 
 ---
 
-# 🔐 Security & privacy
+# 🔐 Security and privacy
 
 ## Local authentication
 
@@ -805,16 +814,16 @@ Never distribute a user’s:
 - random salt;
 - 260,000 iterations;
 - temporary login lockout;
-- local session token hashing;
+- hashed local session tokens;
 - security questions and backup codes;
 - profile lock.
 
 ## Cloud authentication
 
 - Supabase Email/Password Auth;
-- email verification required;
+- required email verification;
 - refresh tokens stored through `keyring`;
-- publishable key only in desktop client;
+- publishable key only in the desktop client;
 - RLS and RPC authorization;
 - private Storage buckets;
 - 30-day soft-delete request.
@@ -827,7 +836,7 @@ love-space-photos
 chat-attachments
 ```
 
-All must have:
+All buckets must have:
 
 ```text
 public = false
@@ -835,37 +844,37 @@ public = false
 
 ## Realtime security
 
-Realtime does not replace authorization. PostgreSQL RLS decides which rows a client may receive.
+Realtime never replaces authorization. PostgreSQL RLS decides which rows a client can receive.
 
-Manual test accounts:
+Required manual test accounts:
 
-- **Alice** and **Bob**: valid shared relationship/conversation/Guild flow;
-- **Carol**: non-member denial test.
+- **Alice** and **Bob** — valid shared relationship, conversation, and Guild flows;
+- **Carol** — non-member denial testing.
 
 Carol must not be able to read or receive:
 
-- Alice/Bob Direct Chat;
-- attachment metadata/object;
+- Alice and Bob’s Direct Chat;
+- attachment metadata or objects;
 - private Love Space records;
-- private Guild chat/contributions/boss actions;
+- private Guild chat, contributions, or boss actions;
 - personal snapshots;
 - device records;
 - owner notifications.
 
 ## Encryption scope
 
-CraftLife cloud traffic uses TLS and data access is protected by Auth/RLS/private Storage. Direct Chat is **not end-to-end encrypted**. Do not describe it as E2EE.
+CraftLife cloud traffic uses TLS, and access is protected by Auth, RLS, and private Storage. Direct Chat is **not end-to-end encrypted**. Do not describe CraftLife Chat as E2EE.
 
 ## Sensitive data
 
-Health, finance, cycle, relationship, and Learning data may be sensitive. Users should:
+Health, finance, cycle, relationship, and Learning information may be sensitive. Users should:
 
 - use a trusted device;
-- protect the OS account;
+- protect the operating system account;
 - enable disk encryption;
 - avoid public screenshots;
 - review third-party AI privacy policies;
-- avoid uploading unnecessary personal documents.
+- avoid uploading documents that are not needed.
 
 ---
 
@@ -873,30 +882,30 @@ Health, finance, cycle, relationship, and Learning data may be sensitive. Users 
 
 Realtime subscriptions cover social requests, messages, reactions, typing, presence, notifications, PvP, Guild state, Love Space, attachments, and personal snapshots.
 
-Reliability mechanisms:
+Reliability mechanisms include:
 
-- async Supabase client;
-- dedicated background thread;
+- the asynchronous Supabase client;
+- a dedicated background thread;
 - exponential reconnect backoff;
-- event debounce;
-- sync lock;
+- event debouncing;
+- a sync lock;
 - periodic sync fallback;
-- queue retry with exponential delay;
+- queued retry with exponential delay;
 - idempotency keys;
-- local cloud cache;
+- local cloud caches;
 - optimistic personal snapshot revisions.
 
-When internet is unavailable:
+When the network is unavailable:
 
 - local modules continue to work;
-- cloud cache remains readable;
-- eligible personal changes queue;
-- queued Direct Chat text/attachments retry;
-- server-authoritative social mutations are not falsely reported as successful.
+- existing cloud cache remains readable;
+- eligible personal changes are queued;
+- queued Direct Chat messages and attachments retry;
+- server-authoritative social mutations are never falsely reported as successful.
 
 ---
 
-# 📦 Build Windows release
+# 📦 Build a Windows release
 
 Install PyInstaller:
 
@@ -904,7 +913,7 @@ Install PyInstaller:
 pip install --upgrade pyinstaller
 ```
 
-Recommended onedir build:
+Recommended `onedir` build:
 
 ```powershell
 python -m PyInstaller `
@@ -923,7 +932,7 @@ python -m PyInstaller `
   MainPyQt6.py
 ```
 
-If an icon exists, add:
+If an application icon is available, add:
 
 ```powershell
 --icon path\to\craftlife.ico
@@ -938,7 +947,7 @@ Do not use:
 --strip
 ```
 
-`--optimize 2` is equivalent to Python `-OO` and removes docstrings. Some Google Generative AI packages inspect docstrings at runtime and can crash with:
+`--optimize 2` is equivalent to Python `-OO` and removes docstrings. Some Google Generative AI packages inspect docstrings at runtime and may crash with:
 
 ```text
 AttributeError: 'NoneType' object has no attribute 'splitlines'
@@ -956,25 +965,25 @@ After building:
 Copy-Item .\.env .\dist\CraftLife\.env -Force
 ```
 
-Only copy `.env` for a controlled deployment. Never publish a real `.env` in GitHub Release assets.
+Only copy `.env` for a controlled deployment. Never publish a real `.env` as a GitHub Release asset.
 
 ---
 
 # 🔄 Updating an existing installation
 
 1. close CraftLife;
-2. backup `.env` and database;
-3. replace application source/binaries only;
+2. back up `.env` and the database;
+3. replace only source/application files;
 4. preserve local user data;
-5. copy new additive migrations;
+5. copy additive migrations;
 6. run Python validation;
-7. run Supabase dry-run;
-8. apply staging migration;
-9. test Alice/Bob/Carol;
-10. deploy Edge Functions if included;
-11. only then distribute the update.
+7. run a Supabase dry-run;
+8. apply migrations to staging;
+9. test Alice, Bob, and Carol;
+10. deploy included Edge Functions;
+11. distribute the update only after validation.
 
-Example source update backup:
+Example source-mode backup:
 
 ```powershell
 $Project = 'D:\Path\To\CraftLife'
@@ -987,11 +996,11 @@ if (Test-Path .\.env) {
 }
 ```
 
-Never overwrite `%APPDATA%\CraftLife\craftlife.db` when installing a new EXE build.
+Never overwrite `%APPDATA%\CraftLife\craftlife.db` when installing a new executable build.
 
 ---
 
-# 🧪 Testing & validation
+# 🧪 Testing and validation
 
 ## Python syntax
 
@@ -1005,14 +1014,14 @@ python -m py_compile MainPyQt6.py database.py cloud_config.py cloud_service.py s
 python -c "import database as db; db.init_db(); c=db.get_conn(); print(c.execute('pragma integrity_check').fetchone()[0]); print('FK errors:', len(c.execute('pragma foreign_key_check').fetchall()))"
 ```
 
-Expected:
+Expected result:
 
 ```text
 ok
 FK errors: 0
 ```
 
-A fresh final Phase 4 schema currently contains approximately 88 SQLite tables, including cloud caches.
+A fresh final Phase 4 schema currently contains approximately 88 SQLite tables, including cloud cache tables.
 
 ## Local Supabase
 
@@ -1037,51 +1046,51 @@ npx supabase db lint --linked --level warning
 | Test | Alice | Bob | Carol |
 |---|---:|---:|---:|
 | Read own profile/private data | Allow | Allow | Own only |
-| Read Alice/Bob shared Love Space | Allow | Allow | Deny |
-| Read Alice/Bob Direct Chat | Allow | Allow | Deny |
-| Download Alice/Bob chat attachment | Allow | Allow | Deny |
+| Read the Alice/Bob shared Love Space | Allow | Allow | Deny |
+| Read the Alice/Bob Direct Chat | Allow | Allow | Deny |
+| Download an Alice/Bob chat attachment | Allow | Allow | Deny |
 | Edit another sender’s message | Deny | Deny | Deny |
-| Read Guild private chat as member | Allow if member | Allow if member | Deny if non-member |
+| Read private Guild chat as a member | Allow if member | Allow if member | Deny if not a member |
 | Promote self to Guild leader | Deny | Deny | Deny |
 | Supply Guild boss HP | Deny | Deny | Deny |
 | Read another user’s tracker snapshot | Deny | Deny | Deny |
-| Manage another user’s device | Deny | Deny | Deny |
+| Manage another user’s devices | Deny | Deny | Deny |
 
-## Long-run test
+## Long-running validation
 
 Before production:
 
-- run Realtime for 8–24 hours;
-- sleep/resume Windows;
-- disconnect/reconnect internet;
-- expire/refresh Auth token;
-- simultaneous edit/delete/reaction;
-- attachment upload interruption;
-- duplicate queue retry;
-- Guild leader transfer race;
-- PvP/Guild reward double-claim;
-- database backup/restore rehearsal.
+- run Realtime continuously for 8–24 hours;
+- test Windows sleep and resume;
+- disconnect and reconnect the network;
+- expire and refresh Auth tokens;
+- test simultaneous edit, delete, and reaction events;
+- interrupt attachment uploads;
+- retry duplicate queue jobs;
+- race Guild leader transfers;
+- attempt duplicate PvP and Guild reward claims;
+- perform database backup and restore rehearsals.
 
 ---
 
 # 🐞 Troubleshooting
 
-## Supabase is “Configured: False”
+## Supabase reports `Configured: False`
 
-Verify `.env` is beside `MainPyQt6.py` in source mode or beside `CraftLife.exe` in frozen mode.
+Verify that `.env` is beside `MainPyQt6.py` in source mode or beside `CraftLife.exe` in frozen mode.
 
-Recommended names:
+Recommended variable names:
 
 ```env
 SUPABASE_URL=...
 SUPABASE_PUBLISHABLE_KEY=...
 ```
 
-Restart CraftLife after editing `.env`.
+Restart CraftLife after changing `.env`.
 
-## `PGRST205` / table `public.profiles` missing
+## `PGRST205`: `public.profiles` is missing
 
-The initial Supabase migration has not been applied to the linked project.
+The initial Supabase migration has not been applied to the linked project:
 
 ```powershell
 npx supabase migration list
@@ -1089,9 +1098,9 @@ npx supabase db push --dry-run
 npx supabase db push
 ```
 
-## RLS error inserting `profiles`
+## RLS error while inserting `profiles`
 
-Ensure this migration has been applied:
+Ensure this migration is applied:
 
 ```text
 20260812010000_fix_profiles_insert_policy.sql
@@ -1099,93 +1108,93 @@ Ensure this migration has been applied:
 
 ## Verification link opens localhost or reports `otp_expired`
 
-- configure Auth Site URL/redirect allowlist;
+- configure the Auth Site URL and redirect allowlist;
 - request a new verification email;
 - use the newest link;
 - return to CraftLife and sign in after verification.
 
-## Attachment migration `SQLSTATE 42601`
+## Attachment migration fails with `SQLSTATE 42601`
 
-Ensure the final corrected file is present:
+Ensure the final corrected migration is present:
 
 ```text
 supabase/migrations/20260813220000_phase4b2_b3_chat_attachments.sql
 ```
 
-Verify:
+Verify it:
 
 ```powershell
 Select-String .\supabase\migrations\20260813220000_phase4b2_b3_chat_attachments.sql -Pattern 'p_size_bytes > \(case'
 ```
 
-Do not repair a migration that never succeeded remotely. Replace the file, dry-run, then push again.
+Do not repair a migration that never succeeded remotely. Replace the file, dry-run, and push again.
 
-## CLI warning: `.supabase\profile` not found
+## CLI warns that `.supabase\profile` is missing
 
-If the CLI still says it is using an access token, initializes the login role, and connects to the remote database, this warning is non-fatal. The SQLSTATE that follows is the real migration result.
+If the CLI still reports that it is using an access token, initializes the login role, and connects to the remote database, this warning is non-fatal. The following SQLSTATE is the actual migration result.
 
-## Docker missing
+## Docker is missing
 
-Supabase local development requires Docker Desktop. Remote push does not start the local stack.
+Supabase local development requires Docker Desktop. A remote database push does not start the local Supabase stack.
 
-## Realtime sync-client `NotImplementedError`
+## Realtime sync client raises `NotImplementedError`
 
-CraftLife uses Supabase’s async client for Realtime. Ensure `cloud_service.py` is current and reinstall:
+CraftLife uses Supabase’s asynchronous client for Realtime. Ensure `cloud_service.py` is current and reinstall:
 
 ```powershell
 pip install --upgrade supabase realtime
 ```
 
-## `QThread has been deleted`
+## `QThread` has been deleted
 
-Use the current `MainPyQt6.py`, which safely resets deleted cloud worker references and follows `worker.finished → thread.quit → deleteLater` lifecycle.
+Use the current `MainPyQt6.py`, which safely resets deleted cloud-worker references and follows the `worker.finished → thread.quit → deleteLater` lifecycle.
 
-## Google Generative AI `splitlines` crash after build
+## Google Generative AI crashes with `splitlines` after building
 
-Rebuild without `--optimize 2` and without `--strip`.
+Rebuild without `--optimize 2` and without `--strip`:
 
 ```powershell
 Remove-Item build,dist,CraftLife.spec -Recurse -Force -ErrorAction SilentlyContinue
 ```
 
-Then build with `--optimize 1`.
+Then rebuild with `--optimize 1`.
 
-## Database locked
+## Database is locked
 
 - close duplicate CraftLife processes;
 - wait for backup/export to finish;
-- do not open `craftlife.db` in another writer;
+- do not open `craftlife.db` in another application with write access;
 - restart CraftLife;
 - preserve WAL/SHM files while the app is running.
 
 ## Music does not play
 
-Check:
+Check that:
 
-- file path still exists;
-- OS multimedia codec supports the format;
-- audio output device is available;
+- the file still exists;
+- the operating system has a codec for the format;
+- an audio output device is available;
 - Mutagen is installed.
 
-## AI/TTS unavailable
+## AI or TTS is unavailable
 
-Check optional packages and internet access. CraftLife should continue running without AI provider availability.
+Check optional packages and internet access. CraftLife should continue to run without AI-provider availability.
 
 ---
 
 # ⚠️ Known limitations
 
-- Direct Chat uses TLS/Auth/RLS, not E2EE.
-- Push notifications while CraftLife is closed are not implemented yet.
-- Device UUID revoke is not full global Auth-session revoke.
+- Direct Chat uses TLS, Auth, and RLS, but is not E2EE.
+- Push notifications while CraftLife is closed are not implemented.
+- Device UUID revocation is not full global Auth-session revocation.
 - Permanent account purge after the 30-day grace period requires Phase 6 scheduling.
-- PvP/Guild automatic maintenance is currently also triggered opportunistically by active clients; full scheduler is Phase 6.
-- Attachment cleanup Edge Function must be scheduled by the production operator.
-- Server-side antivirus/content scanning is not yet included; client signature checks and server metadata validation are not a substitute for malware scanning.
-- Cloud game wallet, inventory, shop, crafting, pets, achievements, and Learning sync are not fully server-authoritative yet.
-- A modified desktop client cannot forge server-scored productivity points directly, but complete anti-cheat requires the Phase 5 reward ledger.
-- Linux/macOS multimedia, tray, credential backend, and packaging behavior may differ from Windows.
-- Very large tracker datasets can exceed the `tracker_v1` 8 MB document limit and will need granular sync planned for Phase 5.
+- PvP and Guild maintenance is also triggered opportunistically by active clients; the full scheduler is a Phase 6 task.
+- The attachment cleanup Edge Function must be scheduled by the production operator.
+- Server-side antivirus/content scanning is not included; client signature checks and server metadata validation are not substitutes for malware scanning.
+- Cloud game wallet, inventory, shop, crafting, pets, achievements, and Learning sync are not fully server-authoritative.
+- A modified desktop client cannot directly forge server-scored productivity points, but complete anti-cheat requires the Phase 5 reward ledger.
+- Linux and macOS multimedia, tray, credential backend, and packaging behavior may differ from Windows.
+- Very large tracker datasets may exceed the `tracker_v1` 8 MB document limit and require the granular sync planned for Phase 5.
 
 ---
 
@@ -1195,14 +1204,14 @@ Detailed planning is maintained in [`CLOUD_FINALIZATION_PLAN.md`](CLOUD_FINALIZA
 
 ## Completed in source
 
-- [x] Phase 1 — Auth, Profiles, Friends, Couple, Love Space, Gallery, Storage, RLS
-- [x] Phase 2 — Chat, Presence, Notifications, Productivity, PvP, Guild, Leaderboards
-- [x] Phase 3 — Device registry, private multi-device tracker sync, conflict resolution
+- [x] Phase 1 — Auth, Profiles, Friends, Couple, Love Space, Gallery, Storage, and RLS
+- [x] Phase 2 — Chat, Presence, Notifications, Productivity, PvP, Guilds, and Leaderboards
+- [x] Phase 3 — Device registry, private multi-device tracker sync, and conflict resolution
 - [x] Phase 4A — Cloud-native shared Love Space
-- [x] Phase 4B — Direct Chat core, reactions, attachments, hardening
-- [x] Phase 4C — Complete online Guild lifecycle/chat/boss/reward
+- [x] Phase 4B — Direct Chat core, reactions, attachments, and hardening
+- [x] Phase 4C — Complete online Guild lifecycle, chat, boss, and rewards
 - [x] Phase 4D — Notification Center and Device Manager
-- [x] Phase 4E — Final RLS/privilege/rate-limit hardening
+- [x] Phase 4E — Final RLS, privilege, and rate-limit hardening
 
 ## Planned
 
@@ -1210,23 +1219,23 @@ Detailed planning is maintained in [`CLOUD_FINALIZATION_PLAN.md`](CLOUD_FINALIZA
 
 - server reward ledger;
 - cloud wallet;
-- inventory/shop/crafting transactions;
-- pets, achievements, and redeem;
-- Learning notebooks/sources/generations Storage;
+- inventory, shop, and crafting transactions;
+- pets, achievements, and redeem codes;
+- Learning notebooks, sources, generated content, and Storage;
 - granular per-row sync;
-- full data export/delete.
+- full cloud data export and deletion.
 
 ### Phase 6 — Production operations
 
 - scheduled maintenance;
 - permanent account purge;
-- global session revocation;
-- push notification when app is closed;
-- abuse/report/moderation;
-- malware scanning strategy;
-- monitoring and alerts;
-- backup/restore drill;
-- migration rollback rehearsal;
+- global Auth session revocation;
+- push notifications while the application is closed;
+- abuse reports and moderation;
+- malware-scanning strategy;
+- monitoring and alerting;
+- backup and restore drills;
+- migration rollback rehearsals;
 - staged production rollout.
 
 ---
@@ -1257,11 +1266,11 @@ npm run supabase:test
 npm run supabase:lint
 ```
 
-Pull request descriptions should include:
+A pull request should explain:
 
-- problem and solution;
-- affected local/cloud modules;
-- migration/RLS impact;
+- the problem and solution;
+- affected local and cloud modules;
+- migration and RLS impact;
 - backward-compatibility impact;
 - test steps;
 - screenshots for UI changes;
@@ -1270,78 +1279,78 @@ Pull request descriptions should include:
 ## Coding guidelines
 
 - preserve SQLite local fallback;
-- do not perform network requests on data-only database helpers;
+- keep network operations out of data-only SQLite helpers;
 - keep social state server-authoritative in cloud mode;
-- use RPC/RLS for sensitive mutations;
+- use RPC and RLS for sensitive mutations;
 - use idempotency keys for retryable operations;
-- do not silently overwrite sync conflicts;
+- never silently overwrite sync conflicts;
 - use `_card`, `_btn`, `_lbl`, and `PageHeader` for UI consistency;
-- update Indonesian and English translations;
+- update both English and Indonesian translations;
 - keep private buckets private;
-- never add `service_role` to desktop code.
+- never add a service-role key to desktop code.
 
 ---
 
-# ❓ FAQ
+# ❓ Frequently asked questions
 
-## Apakah CraftLife wajib online?
+## Does CraftLife require internet access?
 
-Tidak. Semua modul utama dapat digunakan lokal dengan SQLite.
+No. Core modules work locally with SQLite.
 
-## Apakah akun Supabase wajib?
+## Is a Supabase account required?
 
-Tidak. Akun cloud hanya diperlukan untuk multi-device dan fitur sosial online.
+No. A cloud account is required only for multi-device sync and online social features.
 
-## Apakah publishable key aman di desktop?
+## Is a publishable key safe in a desktop application?
 
-Publishable key memang ditujukan untuk client, tetapi bukan pengganti RLS. Jangan gunakan secret/service-role key di desktop.
+A publishable key is intended for clients, but it is not a substitute for RLS. Never use a secret or service-role key in the desktop app.
 
-## Apakah chat terenkripsi end-to-end?
+## Is Direct Chat end-to-end encrypted?
 
-Tidak. Chat dilindungi TLS, Auth, RLS, dan private Storage, tetapi bukan E2EE.
+No. Chat is protected by TLS, Auth, RLS, and private Storage, but it is not E2EE.
 
-## Di mana password cloud disimpan?
+## Where is the cloud password stored?
 
-Password ditangani Supabase Auth dan tidak disimpan di SQLite. Refresh token menggunakan OS credential store melalui `keyring`.
+Supabase Auth handles the password. It is not stored in SQLite. Refresh tokens use the OS credential store through `keyring`.
 
-## Apakah data lokal hilang ketika cloud gagal?
+## Will local data disappear when cloud sync fails?
 
-Tidak seharusnya. SQLite tetap menjadi cache/offline store. Social mutation cloud tidak dilaporkan sukses jika server menolak.
+It should not. SQLite remains the offline store and cache. Cloud social mutations are not reported as successful when the server rejects them.
 
-## Bagaimana memindahkan data ke PC lain?
+## How can data be moved to another computer?
 
-- offline-only: copy database dengan aplikasi tertutup atau gunakan export/import;
-- cloud-linked: link akun yang sama, lalu sync/restore;
-- selalu buat backup sebelum restore.
+- local-only mode: copy the database while CraftLife is closed, or use export/import;
+- cloud-linked mode: link the same verified cloud account, then sync or restore;
+- always create a backup before restoring.
 
-## Apakah update EXE menghapus database?
+## Does updating the EXE delete the database?
 
-Tidak jika installer/distribusi tidak menghapus `%APPDATA%\CraftLife`. Jangan pernah memasukkan database pengguna ke paket update.
+Not when the release preserves `%APPDATA%\CraftLife`. Never package or overwrite a user’s database during an application update.
 
-## Apakah Supabase Free cukup?
+## Is the Supabase Free plan enough?
 
-Cukup untuk staging dan test kecil. Review database, Storage, Realtime, egress, dan function limits sebelum production.
+It is suitable for staging and small tests. Review database, Storage, Realtime, egress, and Edge Function limits before production.
 
 ---
 
 # 📄 License
 
-CraftLife dilisensikan di bawah [MIT License](LICENSE).
+CraftLife is licensed under the [MIT License](LICENSE).
 
 ```text
 Copyright (c) 2026 CraftLife
 ```
 
-Software diberikan “AS IS”, tanpa jaminan. Lihat `LICENSE` untuk teks lengkap.
+The software is provided “AS IS”, without warranty. See `LICENSE` for the complete text.
 
 ---
 
 # 🙏 Acknowledgements
 
-CraftLife menggunakan atau terinspirasi oleh:
+CraftLife uses or is inspired by:
 
 - Python;
-- PyQt6 / Qt;
+- PyQt6 and Qt;
 - SQLite;
 - Supabase;
 - Pillow;
@@ -1350,9 +1359,9 @@ CraftLife menggunakan atau terinspirasi oleh:
 - python-docx;
 - ReportLab;
 - Mutagen;
-- PyMuPDF / pypdf;
+- PyMuPDF and pypdf;
 - Edge TTS;
-- Google Generative AI SDK;
+- Google Generative AI SDKs;
 - Minecraft-inspired progression aesthetics;
 - Habitica-style productivity gamification;
 - notebook and knowledge-work applications.
@@ -1371,9 +1380,9 @@ https://github.com/Hellowww-02/CraftLife/issues
 
 Include:
 
-- OS and version;
-- Python/CraftLife version;
-- source or EXE mode;
+- operating system and version;
+- Python and CraftLife versions;
+- source or executable mode;
 - local-only or cloud-linked mode;
 - exact reproduction steps;
 - complete error text;
@@ -1382,13 +1391,13 @@ Include:
 Never attach:
 
 - `.env`;
-- `craftlife.db` containing personal data;
-- publishable key screenshots;
-- database password;
-- service-role key;
+- a personal `craftlife.db`;
+- screenshots containing keys;
+- a database password;
+- a service-role key;
 - `sb_secret_*`;
-- CLI access token;
-- maintenance secret.
+- a CLI access token;
+- the attachment maintenance secret.
 
 ---
 
