@@ -232,14 +232,18 @@ CraftLife does not require users to create a cloud account. Without a `.env` fil
 
 ## 🎵 Music
 
-Music is available through the Command Palette:
+Music is available as a full primary sidebar page with a polished Spotify-inspired interface:
 
-- local playlists;
-- favorite playlists;
-- local file playback;
-- metadata through Mutagen;
-- MP3, FLAC, MP4, and Ogg support depending on OS codecs;
-- music files remain local and are not uploaded to Supabase.
+- professional library sidebar and now-playing hero;
+- local playlists and a protected Favorite playlist;
+- title, artist, album, duration, and embedded cover-art metadata;
+- track search;
+- shuffle, repeat, previous, next, seek, and volume controls;
+- embedded lyrics panel;
+- add individual files or scan a folder recursively;
+- move, copy, favorite, or remove tracks through a context menu;
+- MP3, WAV, FLAC, M4A/MP4, and Ogg support depending on OS codecs;
+- music files remain local and are never uploaded to Supabase.
 
 ## 🛒 Shop, Inventory, Crafting, and Pets
 
