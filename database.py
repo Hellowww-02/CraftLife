@@ -1525,6 +1525,9 @@ def init_db():
     _safe_alter(c, "friends", "cloud_id", "TEXT")
     _safe_alter(c, "notifications", "cloud_id", "TEXT")
     _safe_alter(c, "couple_relationships", "cloud_id", "TEXT")
+    _safe_alter(c, "couple_relationships", "cloud_status", "TEXT")
+    _safe_alter(c, "couple_relationships", "cloud_ended_at", "TEXT")
+    _safe_alter(c, "couple_relationships", "cloud_grace_ends_at", "TEXT")
     _safe_alter(c, "love_spaces", "cloud_id", "TEXT")
     _safe_alter(c, "love_space_photos", "cloud_id", "TEXT")
     _safe_alter(c, "love_space_photos", "cloud_storage_path", "TEXT")
@@ -6191,10 +6194,12 @@ def get_active_couple_relationship(user_id):
         SELECT cr.*, ls.id AS love_space_id
         FROM couple_relationships cr
         LEFT JOIN love_spaces ls ON ls.couple_relationship_id=cr.id
-        WHERE cr.status='accepted' AND (cr.user_a_id=? OR cr.user_b_id=?)
-        LIMIT 1
+        WHERE (cr.status='accepted' OR (cr.cloud_status='ended' AND datetime(cr.cloud_grace_ends_at)>datetime('now')))
+          AND (cr.user_a_id=? OR cr.user_b_id=?)
+        ORDER BY CASE WHEN cr.status='accepted' THEN 0 ELSE 1 END LIMIT 1
     """, (user_id, user_id)).fetchone(); conn.close()
-    return dict(row) if row else None
+    if not row:return None
+    result=dict(row);result["read_only_grace"]=result.get("cloud_status")=="ended";return result
 
 
 def get_couple_context(user_id):
@@ -6214,6 +6219,7 @@ def get_couple_status_between(user_id, other_user_id):
     if not row:
         return {"status": "friend"}
     data = dict(row)
+    if data.get("cloud_status")=="ended":data["status"]="ended"
     if data["status"] == "pending":
         data["direction"] = "outgoing" if data["requested_by"] == user_id else "incoming"
     return data
@@ -6327,6 +6333,13 @@ def cancel_couple_request(user_id, relationship_id):
         WHERE id=? AND requested_by=? AND status='pending'""", (relationship_id, user_id))
     conn.commit(); conn.close()
     return {"ok": cur.rowcount > 0, "code": "cancelled" if cur.rowcount else "invalid_request"}
+
+
+def end_local_couple_relationship(user_id,relationship_id):
+    """End a local-only Couple immediately; cloud relationships use the server RPC/grace policy."""
+    conn=get_conn();cur=conn.execute("""UPDATE couple_relationships SET status='cancelled',responded_at=datetime('now')
+      WHERE id=? AND status='accepted' AND (user_a_id=? OR user_b_id=?)""",(relationship_id,user_id,user_id));conn.commit();changed=cur.rowcount;conn.close()
+    return {"ok":bool(changed),"code":"ended" if changed else "invalid_relationship"}
 
 
 def _love_scope_user_ids(user_id):
@@ -13388,14 +13401,15 @@ def mirror_cloud_couple(cloud_row,profile_by_cloud):
     a,b=sorted((a,b));requested=get_local_user_id_for_cloud(cloud_row["requested_by"])
     status="cancelled" if cloud_row.get("status")=="ended" else cloud_row.get("status","pending")
     conn=get_conn();row=conn.execute("SELECT id FROM couple_relationships WHERE cloud_id=?",(cloud_row["id"],)).fetchone()
-    if row: conn.execute("UPDATE couple_relationships SET user_a_id=?,user_b_id=?,requested_by=?,status=?,responded_at=? WHERE id=?",
-                         (a,b,requested or a,status,cloud_row.get("responded_at"),row["id"]));local_rel=row["id"]
+    cloud_status=cloud_row.get("status");ended_at=cloud_row.get("ended_at");grace_ends=cloud_row.get("grace_ends_at")
+    if row: conn.execute("UPDATE couple_relationships SET user_a_id=?,user_b_id=?,requested_by=?,status=?,responded_at=?,cloud_status=?,cloud_ended_at=?,cloud_grace_ends_at=? WHERE id=?",
+                         (a,b,requested or a,status,cloud_row.get("responded_at"),cloud_status,ended_at,grace_ends,row["id"]));local_rel=row["id"]
     else:
         pair=conn.execute("SELECT id FROM couple_relationships WHERE user_a_id=? AND user_b_id=?",(a,b)).fetchone()
-        if pair: conn.execute("UPDATE couple_relationships SET cloud_id=?,requested_by=?,status=?,responded_at=? WHERE id=?",
-                              (cloud_row["id"],requested or a,status,cloud_row.get("responded_at"),pair["id"]));local_rel=pair["id"]
-        else: local_rel=conn.execute("INSERT INTO couple_relationships(user_a_id,user_b_id,requested_by,status,responded_at,cloud_id) VALUES(?,?,?,?,?,?)",
-                                     (a,b,requested or a,status,cloud_row.get("responded_at"),cloud_row["id"])).lastrowid
+        if pair: conn.execute("UPDATE couple_relationships SET cloud_id=?,requested_by=?,status=?,responded_at=?,cloud_status=?,cloud_ended_at=?,cloud_grace_ends_at=? WHERE id=?",
+                              (cloud_row["id"],requested or a,status,cloud_row.get("responded_at"),cloud_status,ended_at,grace_ends,pair["id"]));local_rel=pair["id"]
+        else: local_rel=conn.execute("INSERT INTO couple_relationships(user_a_id,user_b_id,requested_by,status,responded_at,cloud_id,cloud_status,cloud_ended_at,cloud_grace_ends_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                                     (a,b,requested or a,status,cloud_row.get("responded_at"),cloud_row["id"],cloud_status,ended_at,grace_ends)).lastrowid
     conn.commit();conn.close();return local_rel
 
 
