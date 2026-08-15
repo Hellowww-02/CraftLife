@@ -39,3 +39,4 @@ supabase/.temp/
 # OS
 .DS_Store
 Thumbs.db
+holidays_*.json
