@@ -2073,6 +2073,23 @@ TRANSLATIONS = {
     "music_move_to_playlist": ("📤 Pindahkan ke", "📤 Move to"),
     "music_copy_to_playlist": ("📋 Salin ke", "📋 Copy to"),
     "music_remove_from_playlist": ("❌ Hapus dari playlist", "❌ Remove from playlist"),
+    "music_add_files": ("Tambah File", "Add Files"),
+    "music_your_library": ("Koleksi Kamu", "Your Library"),
+    "music_now_playing_kicker": ("SEDANG DIPUTAR", "NOW PLAYING"),
+    "music_nothing_playing": ("Belum ada lagu diputar", "Nothing playing yet"),
+    "music_choose_track": ("Pilih lagu dari koleksimu", "Choose a track from your library"),
+    "music_search_placeholder": ("Cari judul, artis, atau album...", "Search title, artist, or album..."),
+    "music_track_title": ("Judul", "Title"),
+    "music_artist": ("Artis", "Artist"),
+    "music_album": ("Album", "Album"),
+    "music_duration": ("Durasi", "Duration"),
+    "music_track_count": ("{count} lagu", "{count} tracks"),
+    "music_rename_playlist": ("Ubah Nama", "Rename"),
+    "music_audio_filter": ("File Audio (*.mp3 *.wav *.flac *.m4a *.mp4 *.ogg)", "Audio Files (*.mp3 *.wav *.flac *.m4a *.mp4 *.ogg)"),
+    "music_unknown_artist": ("Artis tidak diketahui", "Unknown Artist"),
+    "music_unknown_album": ("Album tidak diketahui", "Unknown Album"),
+    "music_missing_file": ("File tidak ditemukan di perangkat ini.", "File is missing from this device."),
+    "music_add_to_favorites": ("Tambahkan ke Favorite", "Add to Favorites"),
 
     # ========================================================================
     # ── Leaderboard ──
@@ -2514,6 +2531,11 @@ TRANSLATIONS = {
     "couple_accept": ("Terima", "Accept"),
     "couple_reject": ("Tolak", "Reject"),
     "couple_cancel": ("Batalkan", "Cancel"),
+    "couple_end": ("Putuskan Couple", "End Couple"),
+    "couple_end_title": ("Akhiri Couple Relationship", "End Couple Relationship"),
+    "couple_end_confirm": ("Yakin ingin mengakhiri couple relationship? Pada cloud, shared Love Space menjadi read-only selama 30 hari.", "Are you sure you want to end this Couple relationship? In cloud mode, the shared Love Space becomes read-only for 30 days."),
+    "couple_end_cloud_success": ("Couple relationship telah diakhiri. Shared Love Space dapat dibaca sampai {date}, tetapi tidak dapat diubah.", "The Couple relationship has ended. The shared Love Space remains readable until {date}, but it can no longer be changed."),
+    "couple_end_local_success": ("Couple relationship lokal telah diakhiri.", "The local Couple relationship has ended."),
     "couple_requests_title": ("Couple Requests", "Couple Requests"),
     "couple_request_incoming": ("Meminta terhubung sebagai couple", "Wants to connect as a couple"),
     "couple_request_outgoing": ("Menunggu respons couple", "Waiting for couple response"),
@@ -2536,6 +2558,7 @@ TRANSLATIONS = {
 
     "love_couple_linked": ("Shared Love Space aktif dengan @{username}", "Shared Love Space active with @{username}"),
     "love_couple_not_linked": ("Ruang lokal pribadi · hubungkan accepted friend untuk shared Love Space", "Private local space · connect an accepted friend for a shared Love Space"),
+    "love_grace_read_only": ("read-only sampai {date}", "read-only until {date}"),
     "love_tab_gallery": ("Gallery", "Gallery"),
     "love_gallery_title": ("Photo Gallery", "Photo Gallery"),
     "love_gallery_upload_title": ("Tambah Foto Kenangan", "Add Memory Photo"),
@@ -2703,6 +2726,9 @@ TRANSLATIONS = {
     "pomodoro_stat_minutes": ("{n} menit", "{n} minutes"),
     "pomodoro_recent": ("Sesi Terakhir", "Recent Sessions"),
     "pomodoro_no_recent": ("Belum ada sesi. Yuk mulai yang pertama!", "No sessions yet. Start your first one!"),
+    "pomodoro_test_alarm": ("Uji Alarm Berulang", "Test Repeating Alarm"),
+    "pomodoro_test_alarm_info": ("Alarm akan berulang selama 6 detik. Pastikan suara aplikasi aktif dan volume perangkat tidak mute.", "The alarm will repeat for 6 seconds. Make sure app sounds are enabled and the device is not muted."),
+    "pomodoro_sound_disabled": ("Suara aplikasi sedang nonaktif. Aktifkan dari Settings → Sound terlebih dahulu.", "App sounds are disabled. Enable them in Settings → Sound first."),
 
     # ---- Heatmap ----
     "heatmap_title": ("Peta Aktivitas", "Activity Heatmap"),
