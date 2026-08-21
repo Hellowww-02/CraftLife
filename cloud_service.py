@@ -577,6 +577,30 @@ class CloudService:
         return self.rpc("set_notification_preferences",{"p_values":values})
 
     # Phase 2B: server-scored productivity events
+    def wallet_balance(self):
+        return self.rpc("wallet_balance")
+
+    def buy_shop_item(self, item_key: str, qty: int, idempotency_key: str):
+        return self.rpc("buy_shop_item", {"p_item": item_key, "p_qty": qty, "p_idem": idempotency_key})
+
+    def craft_item_cloud(self, recipe_key: str, idempotency_key: str):
+        return self.rpc("craft_item_cloud", {"p_recipe": recipe_key, "p_idem": idempotency_key})
+
+    def enchant_item_cloud(self, item_key: str, idempotency_key: str):
+        return self.rpc("enchant_item_cloud", {"p_item": item_key, "p_idem": idempotency_key})
+
+    def equip_item_cloud(self, item_key: str, equipped: bool):
+        return self.rpc("equip_item_cloud", {"p_item": item_key, "p_on": bool(equipped)})
+
+    def fetch_cloud_inventory(self):
+        client = self._require_auth()
+        return _response_data(client.table("cloud_inventory").select("*")
+                              .eq("user_id", self.current_cloud_user_id).execute()) or []
+
+    def claim_achievement_reward_cloud(self, achievement_key: str, claim_key: str):
+        return self.rpc("claim_achievement_reward_cloud",
+                        {"achievement_key": achievement_key, "claim_key": claim_key})
+
     def record_productivity_event(self, payload: dict):
         return self.rpc("record_productivity_event", {
             "p_event_type": payload["event_type"],
@@ -820,7 +844,8 @@ class CloudService:
     def upload_gallery_photo(self, local_photo_id: int, love_space_cloud_id: str):
         import database as db
         client = self._require_auth()
-        photo = db.get_love_space_photo(photo_owner := db.get_love_photo_owner(local_photo_id), local_photo_id)
+        photo = db.get_love_space_photo_raw(local_photo_id)
+        photo_owner = db.get_love_photo_owner(local_photo_id)
         if not photo or photo_owner != db.get_local_user_id_for_cloud(self.current_cloud_user_id):
             raise RuntimeError("Only the local uploader can sync this gallery photo")
         webp = self._as_webp(photo["image_data"], 1600, 84)

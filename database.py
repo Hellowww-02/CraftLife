@@ -242,7 +242,7 @@ def get_friend_profile_details(friend_id):
 def get_leaderboard(limit=50):
     conn = get_conn()
     rows = conn.execute("""
-        SELECT username, display_name, level, total_xp_earned, gold,
+        SELECT id, username, display_name, level, total_xp_earned, gold,
                COALESCE(selected_title, '') as selected_title,
                COALESCE(sport_level, 1) as sport_level,
                (SELECT COUNT(*) FROM user_pets WHERE user_id=users.id) as pet_count,
@@ -673,6 +673,57 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
 
     # Optional Supabase offline-first metadata. No credentials are stored here.
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_wallet_cache(
+        user_id INTEGER PRIMARY KEY,
+        xp INTEGER DEFAULT 0,
+        gold INTEGER DEFAULT 0,
+        gems INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1,
+        updated_at TEXT DEFAULT(datetime('now'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS supplies_items(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT DEFAULT '',
+        unit TEXT DEFAULT 'pcs',
+        stock REAL DEFAULT 0,
+        min_stock REAL DEFAULT 0,
+        price REAL DEFAULT 0,
+        location TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT(datetime('now')),
+        updated_at TEXT DEFAULT(datetime('now'))
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_supplies_user ON supplies_items(user_id, category, name)")
+    c.execute("""CREATE TABLE IF NOT EXISTS supplies_tx(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        item_id INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('in','out','adjust')),
+        qty REAL NOT NULL,
+        note TEXT DEFAULT '',
+        created_at TEXT DEFAULT(datetime('now'))
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_supplies_tx ON supplies_tx(user_id, item_id, created_at DESC)")
+    c.execute("""CREATE TABLE IF NOT EXISTS music_play_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        path TEXT NOT NULL,
+        title TEXT DEFAULT '',
+        artist TEXT DEFAULT '',
+        played_at TEXT DEFAULT(datetime('now'))
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_music_hist ON music_play_history(user_id, played_at DESC)")
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_inventory_cache(
+        user_id INTEGER NOT NULL,
+        item_key TEXT NOT NULL,
+        qty INTEGER DEFAULT 0,
+        equipped INTEGER DEFAULT 0,
+        enchant_level INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT(datetime('now')),
+        PRIMARY KEY(user_id, item_key)
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS cloud_user_links(
         local_user_id INTEGER PRIMARY KEY,
         cloud_user_id TEXT NOT NULL UNIQUE,
@@ -1608,6 +1659,8 @@ def init_db():
     _safe_alter(c, "dailies", "freeze_slots", "INTEGER DEFAULT 0")
     _safe_alter(c, "playlists", "is_favorite", "INTEGER DEFAULT 0")
     _safe_alter(c, "playlists", "tracks", "TEXT NOT NULL DEFAULT '[]'")
+    _safe_alter(c, "playlists", "is_blend", "INTEGER DEFAULT 0")
+    _safe_alter(c, "playlists", "updated_at", "TEXT DEFAULT ''")
     _safe_alter(c, "notes", "zoom_level", "INTEGER DEFAULT 100")
     _safe_alter(c, "users", "is_locked", "INTEGER DEFAULT 0")
     _safe_alter(c, "users", "locked_at", "TEXT")
@@ -4378,6 +4431,7 @@ def buy_item(user_id, item_id):
     update_total_spent(user_id, item["cost"])
     recalculate_all_buffs(user_id)
     log_activity(user_id, "buy", tr_db(user_id=user_id, key="log_buy", item=item['name'], gold=item['cost']), 0, -item["cost"])
+    _queue_cloud_econ(user_id, "shop_buy", "buy", {"item_key": item_id, "qty": 1})
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_item_bought", icon=item['icon'], name=item['name'], buff=item['buff_desc'])}
 
 
@@ -6297,6 +6351,7 @@ def respond_couple_request(user_id, relationship_id, accept):
             love_space_id = conn.execute("INSERT INTO love_spaces(couple_relationship_id) VALUES(?)", (relationship_id,)).lastrowid
         conn.executemany("INSERT OR IGNORE INTO love_space_members(love_space_id,user_id) VALUES(?,?)",
                          [(love_space_id,row["user_a_id"]),(love_space_id,row["user_b_id"])])
+        bind_unbound_shared_photos(love_space_id,row["user_a_id"],row["user_b_id"])
         # Keep a single shared profile/settings owner while preserving either user's old data.
         primary_id, secondary_id = min(row["user_a_id"], row["user_b_id"]), max(row["user_a_id"], row["user_b_id"])
         primary_profile = conn.execute("SELECT 1 FROM relationship_profiles WHERE user_id=?", (primary_id,)).fetchone()
@@ -6390,7 +6445,7 @@ def get_love_space_photos(requester_user_id, limit=100):
     if love_space_id and _love_space_membership(conn, requester_user_id, love_space_id):
         rows=conn.execute("""SELECT p.*,u.display_name AS uploader_name FROM love_space_photos p
             JOIN users u ON u.id=p.owner_user_id
-            WHERE (p.visibility='private' AND p.owner_user_id=?)
+            WHERE (p.owner_user_id=?)
                OR (p.visibility='shared' AND p.love_space_id=?
                    AND EXISTS(SELECT 1 FROM love_space_members m WHERE m.love_space_id=p.love_space_id AND m.user_id=?))
             ORDER BY p.photo_date DESC,p.created_at DESC LIMIT ?""",
@@ -6398,7 +6453,7 @@ def get_love_space_photos(requester_user_id, limit=100):
     else:
         rows=conn.execute("""SELECT p.*,u.display_name AS uploader_name FROM love_space_photos p
             JOIN users u ON u.id=p.owner_user_id
-            WHERE p.visibility='private' AND p.owner_user_id=?
+            WHERE p.owner_user_id=?
             ORDER BY p.photo_date DESC,p.created_at DESC LIMIT ?""", (requester_user_id,limit)).fetchall()
     conn.close(); out=[]
     for row in rows:
@@ -6409,6 +6464,13 @@ def get_love_space_photos(requester_user_id, limit=100):
 def get_love_space_photo(requester_user_id, photo_id):
     photos=get_love_space_photos(requester_user_id, 1000)
     return next((photo for photo in photos if photo["id"]==photo_id), None)
+
+
+def get_love_space_photo_raw(photo_id):
+    """Ambil foto apa adanya tanpa filter visibility/couple — untuk sinkronisasi."""
+    conn=get_conn();row=conn.execute("SELECT * FROM love_space_photos WHERE id=?", (photo_id,)).fetchone();conn.close()
+    if not row: return None
+    item=dict(row); item["image_data"]=bytes(item["image_data"]); return item
 
 
 def delete_love_space_photo(requester_user_id, photo_id):
@@ -6550,6 +6612,10 @@ def remove_friend(user_id, friend_id):
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_friend_remove_admin")}
     conn = get_conn()
     conn.execute("DELETE FROM friends WHERE (user_id=? AND friend_id=?) OR (user_id=? AND friend_id=?)",
+                 (user_id, friend_id, friend_id, user_id))
+    # Memutus pertemanan juga mengakhiri Couple aktif dengan user tersebut.
+    conn.execute("""UPDATE couple_relationships SET status='cancelled', responded_at=datetime('now')
+                    WHERE status='accepted' AND ((user_a_id=? AND user_b_id=?) OR (user_a_id=? AND user_b_id=?))""",
                  (user_id, friend_id, friend_id, user_id))
     conn.commit()
     conn.close()
@@ -9706,7 +9772,7 @@ def get_leaderboard_for_user(user_id):
     # Buat query dengan placeholders
     placeholders = ",".join("?" * len(all_ids))
     query = f"""
-        SELECT username, display_name, level, total_xp_earned, gold,
+        SELECT id, username, display_name, level, total_xp_earned, gold,
                COALESCE(selected_title, '') as selected_title,
                COALESCE(sport_level, 1) as sport_level,
                (SELECT COUNT(*) FROM user_pets WHERE user_id=users.id) as pet_count,
@@ -11383,6 +11449,7 @@ def craft_item(user_id, recipe_id):
     check_achievements(user_id, "craft_count",
                        (get_user(user_id) or {}).get("total_crafts", 0))
     log.info(f"Craft sukses user_id={user_id}: {output}")
+    _queue_cloud_econ(user_id, "craft", "craft", {"recipe_key": recipe_id})
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_craft_success",
                                      icon=o["icon"], name=o["name"])}
 
@@ -11443,6 +11510,7 @@ def enchant_item(user_id, item_id):
 
     recalculate_all_buffs(user_id)
     log.info(f"Enchant user_id={user_id}: {item_id} → +{lvl+1} (biaya {cost} XP)")
+    _queue_cloud_econ(user_id, "enchant", "enchant", {"item_key": item_id})
     return {"ok": True, "new_level": lvl + 1, "cost": cost,
             "msg": tr_db(user_id=user_id, key="db_enchant_success",
                          icon=item["icon"], name=item["name"], lvl=lvl + 1)}
@@ -12714,6 +12782,20 @@ def get_menstrual_prediction(user_id, on_date=None):
 
 
 # ========== OPTIONAL SUPABASE OFFLINE-FIRST METADATA ==========
+def save_cloud_wallet(user_id, data):
+    """Cache lokal wallet cloud (SQLite = cache, sumber resmi = ledger server)."""
+    conn=get_conn(); conn.execute("""INSERT INTO cloud_wallet_cache(user_id,xp,gold,gems,level,updated_at)
+        VALUES(?,?,?,?,?,datetime('now')) ON CONFLICT(user_id) DO UPDATE SET
+        xp=excluded.xp,gold=excluded.gold,gems=excluded.gems,level=excluded.level,updated_at=excluded.updated_at""",
+        (user_id,int(data.get("xp",0) or 0),int(data.get("gold",0) or 0),int(data.get("gems",0) or 0),int(data.get("level",1) or 1)))
+    conn.commit();conn.close()
+
+
+def get_cloud_wallet(user_id):
+    conn=get_conn();row=conn.execute("SELECT * FROM cloud_wallet_cache WHERE user_id=?",(user_id,)).fetchone();conn.close()
+    return dict(row) if row else None
+
+
 def save_cloud_user_link(local_user_id, cloud_user_id, email, status="linked"):
     conn=get_conn(); conn.execute("""INSERT INTO cloud_user_links
         (local_user_id,cloud_user_id,email,status,linked_at)
@@ -12772,6 +12854,27 @@ def mark_sync_job_failed(job_id,error,retry_count):
 def sync_queue_summary(local_user_id):
     conn=get_conn();rows=conn.execute("SELECT status,COUNT(*) c FROM sync_queue WHERE local_user_id=? GROUP BY status",(local_user_id,)).fetchall();conn.close()
     return {r["status"]:r["c"] for r in rows}
+
+
+def get_all_sync_jobs(local_user_id, limit=100):
+    """Semua antrean (pending+retry+done) untuk inspeksi UI — termasuk yang masih backoff."""
+    conn=get_conn();rows=conn.execute("""SELECT * FROM sync_queue WHERE local_user_id=?
+        ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END, created_at,id LIMIT ?""",(local_user_id,limit)).fetchall();conn.close();return [dict(r) for r in rows]
+
+
+def get_sync_failed_samples(local_user_id, limit=5):
+    conn=get_conn();rows=conn.execute("""SELECT entity_type,operation,retry_count,substr(last_error,1,120) AS err,next_retry_at
+        FROM sync_queue WHERE local_user_id=? AND status='retry' ORDER BY updated_at DESC LIMIT ?""",(local_user_id,limit)).fetchall();conn.close();return [dict(r) for r in rows]
+
+
+def reset_sync_backoff(local_user_id):
+    """Paksa semua job retry menjadi pending agar Sync Sekarang langsung mencoba lagi (dipakai tombol manual)."""
+    conn=get_conn();cur=conn.execute("""UPDATE sync_queue SET status='pending',next_retry_at=NULL,updated_at=datetime('now')
+        WHERE local_user_id=? AND status='retry'""",(local_user_id,));conn.commit();n=cur.rowcount;conn.close();return {"ok":True,"reset":n}
+
+
+def clear_sync_queue_done(local_user_id):
+    conn=get_conn();cur=conn.execute("DELETE FROM sync_queue WHERE local_user_id=? AND status='done'",(local_user_id,));conn.commit();n=cur.rowcount;conn.close();return {"ok":True,"cleared":n}
 
 
 # ---------- Phase 3 personal realtime snapshot state ----------
@@ -13379,6 +13482,31 @@ def prune_cloud_friendships(local_user_id,active_cloud_ids):
     conn.commit();conn.close()
 
 
+def prune_cloud_couples(local_user_id,active_cloud_ids):
+    """Akhiri (lokal) relasi Couple ber-cloud_id yang barisnya sudah tidak ada lagi di cloud
+    (mis. akun pasangan dihapus / database Supabase di-reset)."""
+    conn=get_conn()
+    if active_cloud_ids:
+        marks=','.join('?' for _ in active_cloud_ids)
+        conn.execute(f"""UPDATE couple_relationships SET status='cancelled',responded_at=datetime('now')
+            WHERE status='accepted' AND cloud_id IS NOT NULL AND (user_a_id=? OR user_b_id=?) AND cloud_id NOT IN ({marks})""",
+            (local_user_id,local_user_id,*active_cloud_ids))
+    else:
+        conn.execute("""UPDATE couple_relationships SET status='cancelled',responded_at=datetime('now')
+            WHERE status='accepted' AND cloud_id IS NOT NULL AND (user_a_id=? OR user_b_id=?)""",
+            (local_user_id,local_user_id))
+    conn.commit();conn.close()
+
+
+def end_cloud_orphan_couple(local_user_id,cloud_id):
+    """Akhiri Couple lokal karena akun pasangan sudah tidak ada lagi di cloud."""
+    conn=get_conn()
+    conn.execute("""UPDATE couple_relationships SET status='cancelled',responded_at=datetime('now')
+        WHERE cloud_id=? AND status='accepted' AND (user_a_id=? OR user_b_id=?)""",
+        (cloud_id,local_user_id,local_user_id))
+    conn.commit();conn.close()
+
+
 def mirror_cloud_friendship(cloud_row,profile_by_cloud):
     requester=upsert_cloud_profile(cloud_row["requester_id"],profile_by_cloud[cloud_row["requester_id"]])
     addressee=upsert_cloud_profile(cloud_row["addressee_id"],profile_by_cloud[cloud_row["addressee_id"]])
@@ -13421,7 +13549,58 @@ def mirror_cloud_love_space(cloud_space,local_relationship_id,member_local_ids):
         if existing: local_space=existing["id"];conn.execute("UPDATE love_spaces SET cloud_id=? WHERE id=?",(cloud_space["id"],local_space))
         else: local_space=conn.execute("INSERT INTO love_spaces(couple_relationship_id,cloud_id) VALUES(?,?)",(local_relationship_id,cloud_space["id"])).lastrowid
     conn.executemany("INSERT OR IGNORE INTO love_space_members(love_space_id,user_id) VALUES(?,?)",[(local_space,uid) for uid in member_local_ids])
+    if len(member_local_ids)>=2:
+        bind_unbound_shared_photos(local_space,member_local_ids[0],member_local_ids[1])
     conn.commit();conn.close();return local_space
+
+
+def update_love_space_photo_meta(user_id, photo_id, caption=None, photo_date=None, visibility=None):
+    """Edit foto milik sendiri: caption, tanggal, dan/atau visibility."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM love_space_photos WHERE id=? AND owner_user_id=?", (photo_id, user_id)).fetchone()
+    if not row:
+        conn.close(); return {"ok": False, "code": "forbidden"}
+    cap = caption if caption is not None else row["caption"]
+    pd = photo_date if photo_date is not None else row["photo_date"]
+    conn.close()
+    if visibility is not None and visibility != row["visibility"]:
+        r = update_love_space_photo_visibility(user_id, photo_id, visibility)
+        if not r.get("ok"):
+            return r
+    conn = get_conn()
+    conn.execute("UPDATE love_space_photos SET caption=?, photo_date=? WHERE id=?", (cap, pd, photo_id))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
+
+def update_love_space_photo_visibility(user_id, photo_id, visibility):
+    """Switch privat↔shared milik sendiri; boleh kapan pun (tak perlu couple accepted).
+    Bila shared dan belum ada space, foto di-bind otomatis begitu couple terbentuk."""
+    if visibility not in ("private", "shared"):
+        return {"ok": False, "code": "invalid"}
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM love_space_photos WHERE id=? AND owner_user_id=?", (photo_id, user_id)).fetchone()
+    if not row:
+        conn.close(); return {"ok": False, "code": "forbidden"}
+    space_id = row["love_space_id"]
+    if visibility == "shared" and not space_id:
+        rel = get_active_couple_relationship(user_id)
+        if rel and rel.get("love_space_id"):
+            space_id = rel["love_space_id"]
+    pending = "pending" if (row["cloud_id"] and get_cloud_user_link(user_id)) else None
+    conn.execute("UPDATE love_space_photos SET visibility=?, love_space_id=?, sync_status=COALESCE(?, sync_status) WHERE id=?",
+                 (visibility, space_id, pending, photo_id))
+    conn.commit(); conn.close()
+    return {"ok": True}
+
+
+def bind_unbound_shared_photos(love_space_id, user_a, user_b):
+    """Saat couple/space terbentuk, ikat foto shared yang menunggu pasangan."""
+    conn = get_conn()
+    conn.execute("""UPDATE love_space_photos SET love_space_id=? WHERE visibility='shared'
+                    AND love_space_id IS NULL AND owner_user_id IN (?,?)""",
+                 (love_space_id, user_a, user_b))
+    conn.commit(); conn.close()
 
 
 def get_love_photo_owner(local_photo_id):
@@ -13465,6 +13644,237 @@ def cache_cloud_gallery_photo(cloud_row,image_data,mime_type,width,height):
 
 
 # ===========================================================================================================================#
+# ============================================================
+# SUPPLIES — personal inventory / stock tracker (offline-first)
+# ============================================================
+def get_supplies_items(user_id, category=None, search=None):
+    conn = get_conn()
+    q = "SELECT * FROM supplies_items WHERE user_id=?"
+    args = [user_id]
+    if category:
+        q += " AND category=?"; args.append(category)
+    if search:
+        q += " AND lower(name) LIKE ?"; args.append(f"%{str(search).lower()}%")
+    q += " ORDER BY category COLLATE NOCASE, name COLLATE NOCASE"
+    rows = conn.execute(q, args).fetchall(); conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_supplies_categories(user_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT DISTINCT category FROM supplies_items WHERE user_id=? AND category<>'' ORDER BY category COLLATE NOCASE", (user_id,)).fetchall()
+    conn.close()
+    return [r["category"] for r in rows]
+
+
+def add_supply_item(user_id, name, category="", unit="pcs", stock=0, min_stock=0, price=0, location="", notes=""):
+    if not (name or "").strip():
+        return {"ok": False, "code": "name"}
+    conn = get_conn()
+    cur = conn.execute("""INSERT INTO supplies_items(user_id,name,category,unit,stock,min_stock,price,location,notes)
+                          VALUES(?,?,?,?,?,?,?,?,?)""",
+                       (user_id, name.strip(), category or "", unit or "pcs", stock or 0, min_stock or 0, price or 0, location or "", notes or ""))
+    iid = cur.lastrowid
+    if stock:
+        conn.execute("INSERT INTO supplies_tx(user_id,item_id,kind,qty,note) VALUES(?,?,?,?,?)", (user_id, iid, "adjust", stock, "initial"))
+    conn.commit(); conn.close()
+    return {"ok": True, "id": iid}
+
+
+def update_supply_item(user_id, item_id, **kw):
+    allowed = {"name", "category", "unit", "stock", "min_stock", "price", "location", "notes"}
+    sets = [f"{k}=?" for k in kw if k in allowed]
+    if not sets:
+        return {"ok": False, "code": "noop"}
+    sets.append("updated_at=datetime('now')")
+    args = [kw[k] for k in kw if k in allowed]
+    conn = get_conn()
+    cur = conn.execute(f"UPDATE supplies_items SET {','.join(sets)} WHERE id=? AND user_id=?", (*args, item_id, user_id))
+    conn.commit(); ok = cur.rowcount; conn.close()
+    return {"ok": bool(ok)}
+
+
+def delete_supply_item(user_id, item_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM supplies_tx WHERE item_id=? AND user_id=?", (item_id, user_id))
+    cur = conn.execute("DELETE FROM supplies_items WHERE id=? AND user_id=?", (item_id, user_id))
+    conn.commit(); ok = cur.rowcount; conn.close()
+    return {"ok": bool(ok)}
+
+
+def record_supply_tx(user_id, item_id, kind, qty, note=""):
+    try:
+        qty = float(qty)
+    except (TypeError, ValueError):
+        return {"ok": False, "code": "qty"}
+    if kind in ("in", "out") and qty <= 0:
+        return {"ok": False, "code": "qty"}
+    conn = get_conn()
+    item = conn.execute("SELECT * FROM supplies_items WHERE id=? AND user_id=?", (item_id, user_id)).fetchone()
+    if not item:
+        conn.close(); return {"ok": False, "code": "item"}
+    stock = float(item["stock"] or 0)
+    if kind == "in":
+        delta = qty
+    elif kind == "out":
+        if qty > stock:
+            conn.close(); return {"ok": False, "code": "insufficient"}
+        delta = -qty
+    else:  # adjust: qty = stok absolut baru
+        delta = qty - stock
+    conn.execute("UPDATE supplies_items SET stock=?, updated_at=datetime('now') WHERE id=?", (stock + delta, item_id))
+    conn.execute("INSERT INTO supplies_tx(user_id,item_id,kind,qty,note) VALUES(?,?,?,?,?)", (user_id, item_id, kind, delta, note or ""))
+    conn.commit(); conn.close()
+    return {"ok": True, "stock": stock + delta}
+
+
+def get_supplies_tx(user_id, item_id=None, limit=100):
+    conn = get_conn()
+    if item_id:
+        rows = conn.execute("SELECT * FROM supplies_tx WHERE user_id=? AND item_id=? ORDER BY created_at DESC LIMIT ?", (user_id, item_id, limit)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM supplies_tx WHERE user_id=? ORDER BY created_at DESC LIMIT ?", (user_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def supplies_stats(user_id):
+    conn = get_conn()
+    total = conn.execute("SELECT COUNT(*) c, COALESCE(SUM(stock*price),0) v, SUM(CASE WHEN stock<=min_stock THEN 1 ELSE 0 END) l FROM supplies_items WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    return {"items": total["c"], "value": total["v"], "low": total["l"]}
+
+
+# ============================================================
+# COUPLE TRACKING, BLEND PLAYLIST & MUSIC HISTORY
+# ============================================================
+def log_music_play(user_id, path, title="", artist=""):
+    conn = get_conn()
+    conn.execute("INSERT INTO music_play_history(user_id,path,title,artist) VALUES(?,?,?,?)",
+                 (user_id, path, title or "", artist or ""))
+    conn.execute("""DELETE FROM music_play_history WHERE user_id=? AND id NOT IN
+                    (SELECT id FROM music_play_history WHERE user_id=? ORDER BY id DESC LIMIT 500)""",
+                 (user_id, user_id))
+    conn.commit(); conn.close()
+
+
+def get_music_play_history(user_id, limit=20):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM music_play_history WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_couple_partners_map():
+    """Map user_id -> (partner_id, partner_display_name) untuk couple accepted."""
+    conn = get_conn()
+    rows = conn.execute("""SELECT cr.user_a_id a, cr.user_b_id b,
+                                  ua.display_name na, ua.username uan, ub.display_name nb, ub.username ubn
+                           FROM couple_relationships cr
+                           JOIN users ua ON ua.id=cr.user_a_id JOIN users ub ON ub.id=cr.user_b_id
+                           WHERE cr.status='accepted'""").fetchall()
+    conn.close()
+    m = {}
+    for r in rows:
+        m[r["a"]] = (r["b"], (r["na"] or r["uan"] or ""))
+        m[r["b"]] = (r["a"], (r["nb"] or r["ubn"] or ""))
+    return m
+
+
+def _blend_score_tracks(a, b, limit=30):
+    """Skor lagu couple 30 hari: frekuensi*2 + bonus recency; maks 30 lagu."""
+    conn = get_conn()
+    rows = conn.execute("""SELECT path, COUNT(*) c, MAX(played_at) last FROM music_play_history
+                           WHERE user_id IN (?,?) AND played_at>=datetime('now','-30 days')
+                           GROUP BY path""", (a, b)).fetchall()
+    conn.close()
+    scored = []
+    for r in rows:
+        try:
+            age = (datetime.now() - datetime.fromisoformat(r["last"])).total_seconds() / 86400.0
+        except (TypeError, ValueError):
+            age = 30
+        scored.append((r["c"] * 2 + max(0.0, 7 - age), r["path"]))
+    scored.sort(key=lambda p: (-p[0], p[1]))
+    return [p for _s, p in scored[:limit]]
+
+
+def save_cloud_inventory(user_id, rows):
+    """Cache lokal inventori cloud (hasil pull sync)."""
+    conn = get_conn()
+    conn.execute("DELETE FROM cloud_inventory_cache WHERE user_id=?", (user_id,))
+    for r in rows or []:
+        conn.execute("INSERT INTO cloud_inventory_cache(user_id,item_key,qty,equipped,enchant_level,updated_at) VALUES(?,?,?,?,?,datetime('now'))",
+                     (user_id, r.get("item_key"), int(r.get("qty") or 0), 1 if r.get("equipped") else 0, int(r.get("enchant_level") or 0)))
+    conn.commit(); conn.close()
+
+
+def get_cloud_inventory_cache(user_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM cloud_inventory_cache WHERE user_id=? ORDER BY item_key", (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _queue_cloud_econ(user_id, entity, operation, payload):
+    """Antre aksi ekonomi lokal ke cloud (idempoten via key uuid)."""
+    if not get_cloud_user_link(user_id):
+        return
+    payload = dict(payload)
+    payload.setdefault("idempotency_key", str(uuid.uuid4()))
+    enqueue_sync(user_id, entity, payload.get("item_key") or payload.get("recipe_key") or "", operation, payload)
+
+
+def get_blend_playlist_for_user(user_id):
+    rel = get_active_couple_relationship(user_id)
+    if not rel:
+        return None
+    owner = min(rel["user_a_id"], rel["user_b_id"])
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM playlists WHERE user_id=? AND is_blend=1", (owner,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def ensure_blend_playlist(user_id):
+    """Buat/refresh blend playlist couple (maks 30 lagu, ganti harian)."""
+    rel = get_active_couple_relationship(user_id)
+    if not rel:
+        return None
+    a, b = rel["user_a_id"], rel["user_b_id"]
+    owner = min(a, b)
+    today = date.today().isoformat()
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM playlists WHERE user_id=? AND is_blend=1", (owner,)).fetchone()
+    if row is None:
+        pid = conn.execute("INSERT INTO playlists(user_id,name,tracks,is_favorite,is_blend,updated_at) VALUES(?,?,?,0,1,?)",
+                           (owner, tr_db(user_id=owner, key="blend_default_name"), "[]", datetime.now().isoformat())).lastrowid
+    else:
+        pid = row["id"]
+        if (row["updated_at"] or "")[:10] == today and (row["tracks"] or "[]") not in ("[]", "", None):
+            conn.close()
+            return dict(row)
+    tracks = _blend_score_tracks(a, b)
+    conn.execute("UPDATE playlists SET tracks=?, updated_at=? WHERE id=?",
+                 (json.dumps(tracks), datetime.now().isoformat(), pid))
+    conn.commit()
+    row = conn.execute("SELECT * FROM playlists WHERE id=?", (pid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def rename_blend_playlist(user_id, playlist_id, new_name):
+    """Kedua pasangan boleh mengganti nama blend."""
+    rel = get_active_couple_relationship(user_id)
+    if not rel:
+        return {"ok": False}
+    owner = min(rel["user_a_id"], rel["user_b_id"])
+    conn = get_conn()
+    cur = conn.execute("UPDATE playlists SET name=? WHERE id=? AND user_id=? AND is_blend=1", (new_name, playlist_id, owner))
+    conn.commit(); ok = cur.rowcount; conn.close()
+    return {"ok": bool(ok)}
+
+
 if __name__ == "__main__":
     init_db()
     print("Database OK!")

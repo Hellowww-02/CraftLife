@@ -455,14 +455,19 @@ Konteks:\n{context}\n\nBuat dengan format:
 ## 5. Kesimpulan
 Topik: {query or 'Semua materi'}""",
         
-        "briefing": f"""Buatkan BRIEFING DOC profesional (seperti di NotebookLM).
-Konteks:\n{context}\n\nFormat:
-# Briefing Doc
-## Executive Summary (3 kalimat)
-## Key Insights (5 poin)
-## Important Quotes
-## Action Items
-Topik: {query or 'Ringkasan' }""",
+        "quiz": f"""Buatkan QUIZ interaktif (seperti fitur Quiz di NotebookLM) dari konteks berikut.
+Konteks:\n{context}\n\nTopik: {query or 'Semua materi'}
+
+BAHASA OUTPUT WAJIB: {language_name} untuk seluruh pertanyaan, opsi, dan penjelasan.
+
+ATURAN OUTPUT WAJIB:
+- Output HANYA JSON object valid. Jangan tulis pembuka, penutup, Markdown, atau code fence.
+- Buat 6-8 pertanyaan: 4-6 pilihan ganda ("mc") dan 2 esai ("essay").
+- Pilihan ganda: 4 opsi, tepat satu jawaban benar (index 0-3), plus penjelasan singkat mengapa benar.
+- Esai: sertakan "model_answer" berupa jawaban contoh yang baik dan lengkap.
+- Variasikan kesulitan: ingatan, pemahaman, penerapan, analisis.
+Format persis:
+{{"title":"Judul Quiz","questions":[{{"type":"mc","q":"Pertanyaan?","options":["A","B","C","D"],"answer":0,"explain":"Karena..."}},{{"type":"essay","q":"Jelaskan...","model_answer":"Jawaban contoh..."}}]}}""",
         
         "faq": f"""Buatkan FAQ 8-10 pertanyaan dari konteks.
 Konteks:\n{context}\n\nFormat:
