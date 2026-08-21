@@ -9,6 +9,9 @@ import requests
 from datetime import datetime
 import json
 import os
+import sys
+import threading
+import time
 
 # ---- DATA STATIS LIBUR NASIONAL INDONESIA (fallback) ----
 STATIC_HOLIDAYS = {
@@ -238,14 +241,19 @@ INTERNATIONAL_DAYS = {
 def get_holidays_for_year(year, lang="id"):
     result = {}
     
-    # ---- API DINONAKTIFKAN SEMENTARA UNTUK KECEPATAN ----
-    # api_result = _fetch_from_apis(year)   # comment
-    api_result = None
-    if api_result:
-        result.update(api_result)
-        print(f"[Holidays] ✅ API berhasil untuk {year}: {len(api_result)} hari libur")
+    # ---- SUMBER AKURAT DULU: memori -> cache disk -> refresh background ----
+    with _LOCK:
+        api_result = _MEM.get(year)
+    if api_result is None:
+        api_result = _read_cache(year)
+        if api_result is not None:
+            with _LOCK:
+                _MEM[year] = api_result
+    if api_result is None:
+        # Belum ada cache: refresh di background, UI tetap pakai data statis dulu.
+        threading.Thread(target=_refresh_year, args=(year,), daemon=True).start()
     else:
-        print(f"[Holidays] ⚠️ API dinonaktifkan, pakai data statis untuk {year}")
+        result.update(api_result)
     
     # Religi
     religious = RELIGIOUS_HOLIDAYS.get(year, {})
@@ -271,9 +279,78 @@ def get_holidays_for_year(year, lang="id"):
     return result
 
 
-def _fetch_from_apis(year):
-    # Fungsi ini tidak dipakai karena dinonaktifkan, tapi tetap ada
+_CACHE_TTL = 7 * 86400          # cache disk berlaku 7 hari
+_MEM = {}                       # cache memori per tahun
+_LOCK = threading.Lock()
+
+
+def _cache_dir():
+    try:
+        if getattr(sys, "frozen", False):
+            base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "CraftLife")
+        else:
+            base = os.path.dirname(os.path.abspath(__file__))
+        os.makedirs(base, exist_ok=True)
+        return base
+    except Exception:
+        return None
+
+
+def _cache_path(year):
+    d = _cache_dir()
+    return os.path.join(d, f"holidays_{year}.json") if d else None
+
+
+def _read_cache(year):
+    p = _cache_path(year)
+    if not p or not os.path.exists(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if time.time() - float(data.get("ts", 0)) < _CACHE_TTL and isinstance(data.get("holidays"), dict):
+            return {k: tuple(v) if isinstance(v, list) else v for k, v in data["holidays"].items()}
+    except Exception:
+        pass
     return None
+
+
+def _fetch_from_apis(year):
+    """Hari libur resmi Indonesia dari API publik date.nager.at (tanpa API key)."""
+    try:
+        resp = requests.get(f"https://date.nager.at/api/v3/PublicHolidays/{year}/ID", timeout=5)
+        if resp.status_code != 200:
+            return None
+        items = resp.json() or []
+        result = {}
+        for item in items:
+            date_str = item.get("date") or ""
+            if len(date_str) != 10:
+                continue
+            name_en = item.get("nameEn") or item.get("name") or ""
+            local = item.get("localName") or ""
+            name_id = local if local and local != name_en else _translate_holiday_name(name_en)
+            if name_en:
+                result[date_str] = (name_id, name_en)
+        return result or None
+    except Exception:
+        return None
+
+
+def _refresh_year(year):
+    """Tarik API di background lalu simpan ke memori + disk."""
+    api = _fetch_from_apis(year)
+    if not api:
+        return
+    with _LOCK:
+        _MEM[year] = api
+    p = _cache_path(year)
+    if p:
+        try:
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump({"ts": time.time(), "holidays": api}, fh, ensure_ascii=False)
+        except Exception:
+            pass
 
 
 def _translate_holiday_name(name_en):

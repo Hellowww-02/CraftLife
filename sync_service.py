@@ -31,9 +31,23 @@ class CloudSyncService:
         status = self.cloud.status()
         status["link"] = db.get_cloud_user_link(local_user_id)
         status["queue"] = db.sync_queue_summary(local_user_id)
+        status["queue_failed_samples"] = db.get_sync_failed_samples(local_user_id, 3)
+        status["queue_all"] = db.get_all_sync_jobs(local_user_id, 8)
         status["device"] = db.get_or_create_cloud_device(local_user_id)
         status["personal"] = db.get_cloud_personal_sync_state(local_user_id)
         return status
+
+    def inspect_queue(self, local_user_id: int) -> dict:
+        jobs = db.get_all_sync_jobs(local_user_id, 50)
+        summary = db.sync_queue_summary(local_user_id)
+        failed = db.get_sync_failed_samples(local_user_id, 10)
+        return {"summary": summary, "jobs": jobs, "failed_samples": failed}
+
+    def retry_failed_now(self, local_user_id: int) -> dict:
+        reset = db.reset_sync_backoff(local_user_id)
+        result = self.sync_now(local_user_id, force_retry=True)
+        result["reset"] = reset
+        return result
 
     def ensure_session(self, local_user_id: int) -> bool:
         if self.cloud.authenticated:
@@ -121,10 +135,13 @@ class CloudSyncService:
         # during sync_now, preventing a first device from overwriting another.
         return db.sync_queue_summary(local_user_id)
 
-    def sync_now(self, local_user_id: int) -> dict:
+    def sync_now(self, local_user_id: int, force_retry: bool = False) -> dict:
         if not self._lock.acquire(blocking=False):
             return {"ok": False, "code": "already_running"}
         try:
+            if force_retry:
+                try: db.reset_sync_backoff(local_user_id)
+                except Exception: pass
             if not self.ensure_session(local_user_id):
                 return {"ok": False, "code": "auth_required", "status": self.cloud_status(local_user_id)}
 
@@ -136,8 +153,19 @@ class CloudSyncService:
                 personal = self._pull_personal(local_user_id)
                 self._queue_personal_if_changed(local_user_id)
 
-            pushed = self._process_queue(local_user_id)
+            pushed = self._process_queue(local_user_id, force=force_retry)
             pulled = self._pull_social(local_user_id)
+            try:
+                wallet = self.cloud.wallet_balance() or {}
+                db.save_cloud_wallet(local_user_id, wallet)
+                pulled = {**pulled, "wallet": True}
+            except Exception:
+                pulled = {**pulled, "wallet": False}
+            try:
+                db.save_cloud_inventory(local_user_id, self.cloud.fetch_cloud_inventory())
+                pulled = {**pulled, "inventory": True}
+            except Exception:
+                pulled = {**pulled, "inventory": False}
             maintenance = {}
             if phase3.get("available"):
                 try:
@@ -278,9 +306,15 @@ class CloudSyncService:
                                         "pull", applied["local_backup"])
         return {"ok": True, "applied": True, "revision": remote["revision"]}
 
-    def _process_queue(self, local_user_id: int) -> dict:
+    def _process_queue(self, local_user_id: int, force: bool = False) -> dict:
         done = failed = conflicts = 0
-        for job in db.get_pending_sync_jobs(local_user_id, 30):
+        # Untuk manual Sync Sekarang kita paksa retry walau masih dalam backoff,
+        # agar error langsung terlihat (queue 33 tidak lagi \"nyangkut diam\").
+        jobs = db.get_all_sync_jobs(local_user_id, 30) if force else db.get_pending_sync_jobs(local_user_id, 30)
+        # Filter hanya pending/retry yang siap diproses; jika force, abaikan next_retry_at
+        if force:
+            jobs = [j for j in jobs if j.get("status") in ("pending","retry")]
+        for job in jobs[:30]:
             try:
                 entity, operation = job["entity_type"], job["operation"]
                 if entity == "profile" and operation == "upsert":
@@ -322,19 +356,61 @@ class CloudSyncService:
                     remote = response.get("snapshot") or {}
                     db.record_cloud_personal_synced(local_user_id, remote,
                                                     payload["content_hash"], "push")
+                elif entity == "achievement_claim" and operation == "claim":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.claim_achievement_reward_cloud(payload["achievement_key"], payload["claim_key"])
+                    except Exception as exc:
+                        # Klaim ganda (sudah diklaim device lain) = sukses idempoten.
+                        if "achievement_already_claimed" not in str(exc).lower():
+                            raise
+                elif entity == "shop_buy" and operation == "buy":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.buy_shop_item(payload["item_key"], int(payload.get("qty") or 1), payload["idempotency_key"])
+                    except Exception as exc:
+                        if not any(c in str(exc).lower() for c in ("insufficient_balance", "unknown_item", "limit_reached")):
+                            raise
+                elif entity == "craft" and operation == "craft":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.craft_item_cloud(payload["recipe_key"], payload["idempotency_key"])
+                    except Exception as exc:
+                        if not any(c in str(exc).lower() for c in ("missing_materials", "unknown_recipe", "insufficient_balance")):
+                            raise
+                elif entity == "enchant" and operation == "enchant":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.enchant_item_cloud(payload["item_key"], payload["idempotency_key"])
+                    except Exception as exc:
+                        if not any(c in str(exc).lower() for c in ("item_not_owned", "max_enchant", "insufficient_balance")):
+                            raise
+                elif entity == "couple_end" and operation == "end":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.end_couple_relationship(payload["cloud_id"])
+                    except Exception as exc:
+                        # Relasi sudah tidak ada di server (DB reset/akun dihapus) = sukses.
+                        low = str(exc).lower()
+                        if not ("invalid_relationship" in low or "p0001" in low
+                                or "not found" in low or "does not exist" in low):
+                            raise
                 elif entity == "gallery_photo" and operation == "delete":
                     payload = json.loads(job.get("payload") or "{}")
                     self.cloud.delete_gallery_photo(payload.get("cloud_id"), payload.get("storage_path"))
                 elif entity == "gallery_photo" and operation == "upload":
                     context = db.get_couple_context(local_user_id)
-                    photo = db.get_love_space_photo(local_user_id, int(job["entity_local_id"]))
-                    if not photo:
-                        raise RuntimeError("Local gallery photo no longer exists")
-                    if photo.get("visibility") == "shared" and not context.get("active"):
-                        raise RuntimeError("A shared gallery upload requires an active cloud couple")
+                    # Gunakan raw agar foto shared yang belum terlihat di get_love_space_photos tetap bisa di-sync
+                    raw_photo = db.get_love_space_photo_raw(int(job["entity_local_id"]))
+                    if not raw_photo:
+                        raise RuntimeError("Local gallery photo no longer exists (id tidak ditemukan)")
+                    if int(raw_photo.get("owner_user_id") or 0) != int(local_user_id):
+                        raise RuntimeError("Hanya pemilik foto yang bisa sync foto ini")
+                    if raw_photo.get("visibility") == "shared" and not context.get("active"):
+                        raise RuntimeError("Foto shared butuh Couple aktif di cloud — ubah ke Private atau buat Couple dulu")
                     cloud_space = db.get_cloud_id("love_space", context.get("love_space_id")) if context.get("love_space_id") else None
-                    if photo.get("visibility") == "shared" and not cloud_space:
-                        raise RuntimeError("Cloud Love Space has not been synchronized yet")
+                    if raw_photo.get("visibility") == "shared" and not cloud_space:
+                        raise RuntimeError("Cloud Love Space belum tersinkron — lakukan Sync dulu sampai couple terbaca")
                     self.cloud.upload_gallery_photo(int(job["entity_local_id"]), cloud_space)
                 else:
                     raise RuntimeError(f"Unsupported sync job: {entity}/{operation}")
@@ -366,7 +442,12 @@ class CloudSyncService:
         db.prune_cloud_friendships(local_user_id, [str(row["id"]) for row in friendships])
         local_couples = {}
         for row in couples:
+            if row["user_a_id"] not in profile_map or row["user_b_id"] not in profile_map:
+                # Akun pasangan sudah tidak ada di cloud (dihapus) → akhiri relasi lokal.
+                db.end_cloud_orphan_couple(local_user_id, str(row["id"]))
+                continue
             local_couples[str(row["id"])] = db.mirror_cloud_couple(row, profile_map)
+        db.prune_cloud_couples(local_user_id, [str(row["id"]) for row in couples])
 
         spaces = _response_data(client.table("love_spaces").select("*").execute()) or []
         members = _response_data(client.table("love_space_members").select("*").execute()) or []
