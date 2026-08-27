@@ -6,7 +6,7 @@
 
 Turn everyday progress into XP, Gold, streaks, achievements, Guild contributions, and character growth—without giving up ownership of your local data.
 
-![Release](https://img.shields.io/badge/release-v1.0.0-5a8a2e?style=for-the-badge)
+![Release](https://img.shields.io/badge/release-v1.4.0-5a8a2e?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/PyQt6-6.x-41CD52?style=for-the-badge&logo=qt&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-offline--first-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
@@ -32,7 +32,7 @@ The language can be changed from Settings without restarting the application.
 
 ## 📌 Release scope
 
-CraftLife v1.0.0 provides a complete desktop experience that works locally without an internet connection. Supabase integration is optional and additive.
+CraftLife v1.4.0 provides a complete desktop experience that works locally without an internet connection. The UI is a React shell inside PyQt `QWebEngineView`; game logic stays in Python/SQLite. Supabase integration is optional and additive.
 
 | Area | Status |
 |---|---|
@@ -92,6 +92,20 @@ CraftLife is an all-in-one desktop application that combines:
 - optional Supabase Auth, Database, Storage, RPC, RLS, and Realtime services.
 
 CraftLife does not require users to create a cloud account. Without a `.env` file, the application continues to work locally.
+
+## Hybrid UI (v1.4)
+
+```text
+CraftLife.exe
+  ├─ PyQt6 shell (login optional, tray, WebEngine)
+  ├─ api_server.py  →  http://127.0.0.1:8765  (SQLite / database.py)
+  └─ web/dist       →  React UI (no Node on the user PC)
+```
+
+- **Users:** double-click the exe. No `npm`, no two terminals.
+- **Developers:** `py api_server.py` + `cd web && npm run dev` (Vite on port 3000). After `npm run build`, the app loads port 8765 instead.
+
+Set `CRAFTLIFE_WEB_UI=0` to fall back to the legacy PyQt widgets. Set `CRAFTLIFE_WEB_LOGIN=1` to use the web login screen.
 
 ---
 
@@ -542,6 +556,19 @@ python MainPyQt6.py
 
 CraftLife initializes its SQLite schema and built-in data on first launch.
 
+### Developer UI (Vite)
+
+```powershell
+pip install -r requirements.txt
+pip install PyQt6-WebEngine
+py api_server.py
+# other terminal:
+cd web; npm install; npm run dev
+py MainPyQt6.py
+```
+
+Production/frozen builds serve `web/dist` from the local API (port 8765) and do not need Vite.
+
 ---
 
 # 🤖 Optional AI Learning setup
@@ -731,7 +758,11 @@ This fixes the earlier PL/pgSQL `SQLSTATE 42601` caused by an unparenthesized `C
 
 ```text
 CraftLife/
-├── MainPyQt6.py              # PyQt6 application and pages/dialogs
+├── MainPyQt6.py              # desktop shell (WebEngine + legacy pages)
+├── api_server.py             # local HTTP API for the React UI
+├── web_shell.py              # QWebEngineView host
+├── life_api.py / studio_api.py
+├── web/                      # React + Vite UI (dev); web/dist after build
 ├── database.py               # SQLite schema, migrations, and local domain logic
 ├── translations.py           # English and Indonesian translations
 ├── learning_helper.py        # Learning, AI, and TTS helpers
@@ -911,29 +942,18 @@ When the network is unavailable:
 
 # 📦 Build a Windows release
 
-Install PyInstaller:
+See [`scripts/build_windows.md`](scripts/build_windows.md). One command:
 
 ```powershell
-pip install --upgrade pyinstaller
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 ```
 
-Recommended `onedir` build:
+This compiles `web/` to `web/dist`, then PyInstaller `--onedir` with the UI embedded. End users run `dist\CraftLife\CraftLife.exe` without Node.
+
+Install PyInstaller (also done by the script):
 
 ```powershell
-python -m PyInstaller `
-  --name CraftLife `
-  --onedir `
-  --windowed `
-  --clean `
-  --noconfirm `
-  --optimize 1 `
-  --collect-all google.generativeai `
-  --collect-all google.ai.generativelanguage `
-  --collect-all google.genai `
-  --collect-all grpc `
-  --collect-all supabase `
-  --collect-all realtime `
-  MainPyQt6.py
+pip install --upgrade pyinstaller PyQt6-WebEngine
 ```
 
 If an application icon is available, add:
