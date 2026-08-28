@@ -62,7 +62,7 @@ import requests
 # THIRD-PARTY IMPORTS (PyQt6)
 # =============================================================================
 from PyQt6.QtCore import (
-    QBuffer, QDate, QDateTime, QEasingCurve, QEvent, QIODevice, QMimeData, QObject,
+    QBuffer, QCoreApplication, QDate, QDateTime, QEasingCurve, QEvent, QIODevice, QMimeData, QObject,
     QPropertyAnimation, QRect, QSize, QThread, Qt, QTimer, QUrl, pyqtSignal
 )
 from PyQt6.QtGui import QColor, QCursor, QDrag, QFont, QFontMetrics, QIcon, QImageReader, QKeySequence, QPainterPath, QPen, QShortcut, QTextCharFormat, QTextCursor, QPainter, QPixmap
@@ -10535,29 +10535,49 @@ class _CloudDeviceManagerDialog(QDialog):
         def job():
             # Pastikan device saat ini terdaftar di cloud sebelum membaca daftar,
             # supaya perangkat aktif selalu muncul.
+            register_error = None
             try:
                 row = self.cloud.register_cloud_device(self.device)
                 if isinstance(row, list):
                     row = row[0] if row else {}
-                if row:
+                if isinstance(row, dict) and row:
                     db.mark_cloud_device_registered(self.local_user_id,
                         row.get("first_seen_at"), row.get("last_seen_at"))
-            except Exception:
-                pass
-            return self.cloud.get_cloud_devices()
-        def ok(devices):
-            devices = devices or []
-            if not devices:
-                # Fallback: tampilkan perangkat lokal bila cloud belum punya baris.
+            except Exception as error:
+                register_error = str(error)
+            devices = self.cloud.get_cloud_devices()
+            return devices, register_error
+        def ok(payload):
+            devices, register_error = payload if isinstance(payload, tuple) else (payload, None)
+            if not isinstance(devices, list):
+                devices = []
+            devices = [d for d in devices if isinstance(d, dict)]
+            local_id = str(self.device.get("device_id") or "").lower()
+
+            def _is_current(device):
+                for key in ("id", "device_id"):
+                    value = device.get(key)
+                    if value is not None and str(value).lower() == local_id:
+                        return True
+                return False
+
+            if register_error:
+                self.list.addItem(tr("cloud_device_register_failed", error=register_error))
+            seen_current = False
+            for device in devices:
+                current = _is_current(device)
+                seen_current = seen_current or current
+                status = tr("cloud_device_revoked") if device.get("revoked_at") else tr("cloud_device_active")
+                text = f"{'★ ' if current else ''}{device.get('device_name')} · {device.get('platform')} · {status}\n{tr('cloud_device_last_seen', time=(str(device.get('last_seen_at') or ''))[:19])}"
+                item = QListWidgetItem(text)
+                item.setData(Qt.ItemDataRole.UserRole, device)
+                self.list.addItem(item)
+            if not seen_current:
                 self.list.addItem(
                     f"★ {self.device.get('device_name') or tr('cloud_device_name_default')} · "
                     f"{self.device.get('platform') or 'desktop'} · {tr('cloud_device_active')}")
+            if not devices and not seen_current:
                 self.list.addItem(tr("cloud_devices_none_other"))
-                return
-            for device in devices:
-                current=str(device["id"])==str(self.device["device_id"]);status=tr("cloud_device_revoked") if device.get("revoked_at") else tr("cloud_device_active")
-                text=f"{'★ ' if current else ''}{device.get('device_name')} · {device.get('platform')} · {status}\n{tr('cloud_device_last_seen',time=(device.get('last_seen_at') or '')[:19])}"
-                item=QListWidgetItem(text);item.setData(Qt.ItemDataRole.UserRole,device);self.list.addItem(item)
         def err(error):
             _show(self,tr("gagal_title"),str(error),"error")
         run_in_thread(self,job,on_done=ok,on_error=err)
@@ -22436,13 +22456,18 @@ QWidget#lovePage QLabel#lovePromptText {{
         if not db.get_cloud_user_link(self.user_id):return None
         space_id=db.get_cloud_love_space_id(self.user_id)
         relationship=(db.get_couple_context(self.user_id).get("relationship") or {})
-        if not space_id:
-            if relationship.get("cloud_id"):raise RuntimeError(tr("cloud_relationship_not_synced"))
-            return None
         from cloud_service import get_cloud_service
         cloud=get_cloud_service()
         if not cloud.authenticated and not cloud.restore_session(self.user_id):
             raise RuntimeError(tr("cloud_auth_required"))
+        if not space_id:
+            try:
+                space_id=cloud.resolve_love_space_id(self.user_id)
+            except Exception:
+                space_id=None
+        if not space_id:
+            if relationship.get("cloud_id"):raise RuntimeError(tr("cloud_relationship_not_synced"))
+            return None
         return cloud,space_id
 
     def _cloud_love_upsert(self,record_type,payload,record_id=None,on_success=None,local_save=None):
@@ -22554,12 +22579,28 @@ QWidget#lovePage QLabel#lovePromptText {{
                 SND.complete();self.load()
 
     def _save_checkin(self):
-        payload={"checkin_date":date.today().isoformat(),"my_mood":self.my_mood_combo.currentData(),
-                 "partner_mood":self.partner_mood_combo.currentData(),"connection_score":self.connection_spin.value(),
-                 "note":self.checkin_note.text()}
+        def _mood(value, default=3):
+            try:
+                n=int(value)
+            except (TypeError, ValueError):
+                n=default
+            return n if 1<=n<=5 else default
+        payload={"checkin_date":date.today().isoformat(),"my_mood":_mood(self.my_mood_combo.currentData()),
+                 "partner_mood":_mood(self.partner_mood_combo.currentData()),
+                 "connection_score":_mood(self.connection_spin.value(), 4),
+                 "note":self.checkin_note.text() or ""}
+        record_id=None
+        try:
+            for row in db.get_relationship_checkins(self.user_id, 40):
+                row_date=str(row.get("checkin_date") or "")[:10]
+                if row_date==payload["checkin_date"] and int(row.get("user_id") or 0)==int(self.user_id):
+                    record_id=row.get("cloud_id") or None
+                    break
+        except Exception:
+            record_id=None
         def finish():
             self.checkin_note.clear();SND.complete();self.load()
-        self._cloud_love_upsert("checkin",payload,on_success=finish,
+        self._cloud_love_upsert("checkin",payload,record_id=record_id,on_success=finish,
             local_save=lambda: db.save_relationship_checkin(
                 self.user_id,payload["checkin_date"],payload["my_mood"],
                 payload["partner_mood"],payload["connection_score"],payload["note"]))
@@ -25037,6 +25078,17 @@ def main():
 
     import os
     os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
+    # Qt WebEngine harus diinisialisasi sebelum QApplication (exe + pip).
+    try:
+        QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
+    except Exception:
+        pass
+    try:
+        import web_shell as _web_shell
+        _web_shell.configure_webengine_env()
+        _web_shell.try_import_webengine()
+    except Exception:
+        pass
 
     app = QApplication(sys.argv)
     font = QFont("Segoe UI", 10)
@@ -25044,8 +25096,31 @@ def main():
     app.setApplicationName("CraftLife")
     app.setStyleSheet(build_ss())
 
+    try:
+        import api_server
+        api_server.start_server("127.0.0.1", int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
+    except OSError:
+        pass
+    except Exception:
+        pass
+
     login = LoginWindow()
     main_win = None
+
+    if os.environ.get("CRAFTLIFE_WEB_LOGIN", "0") == "1":
+        try:
+            import api_server
+            api_server.start_server("127.0.0.1", int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
+        except Exception:
+            pass
+        from web_shell import WebMainWindow, HAS_WEBENGINE, default_web_url
+        web_url = default_web_url()
+        web_url += ("&" if "?" in web_url else "?") + "login=1"
+        dummy = {"id": 0, "language": "id"}
+        if HAS_WEBENGINE:
+            main_win = WebMainWindow(dummy, web_url, None)
+            main_win.show()
+            sys.exit(app.exec())
 
     def on_login(user):
         nonlocal main_win
@@ -25057,7 +25132,45 @@ def main():
         apply_accessibility(db.get_user(user["id"]) or {})
         app.setFont(QFont("Segoe UI", max(6, round(10 * _FONT_SCALE))))
         app.setStyleSheet(build_ss())
-        main_win = MainWindow(user)
+        use_web = os.environ.get("CRAFTLIFE_WEB_UI", "1") != "0"
+        token = None
+        try:
+            token = db.create_session_token(user["id"])
+        except Exception:
+            token = None
+        frozen = bool(getattr(sys, "frozen", False))
+        if use_web:
+            try:
+                import api_server
+                api_server.configure(user["id"], token)
+                api_server.start_server("127.0.0.1", int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
+            except Exception as api_error:
+                QMessageBox.warning(login, tr("gagal_title"), tr("web_api_start_failed", error=str(api_error)))
+            from web_shell import (
+                WebMainWindow, HAS_WEBENGINE, default_web_url,
+                try_import_webengine, WEBENGINE_IMPORT_ERROR,
+            )
+            try_import_webengine()
+            web_url = default_web_url()
+            try:
+                import cloud_api
+                cloud_api.start_desktop_cloud_loop(user["id"])
+            except Exception:
+                pass
+            if HAS_WEBENGINE:
+                web_url = default_web_url()
+                main_win = WebMainWindow(user, web_url, token)
+            elif frozen:
+                detail = WEBENGINE_IMPORT_ERROR or "-"
+                QMessageBox.critical(
+                    login, tr("gagal_title"),
+                    tr("web_engine_missing_exe") + "\n\n" + detail,
+                )
+                main_win = WebMainWindow(user, web_url, token)
+            else:
+                main_win = MainWindow(user)
+        else:
+            main_win = MainWindow(user)
         main_win.logout_signal.connect(lambda: login.show())
         main_win.show()
         login.hide()

@@ -2,6 +2,8 @@
 # Python 3.10 or newer is recommended.
 
 PyQt6>=6.4.0
+PyQt6-WebEngine>=6.4.0  # Phase 0 hybrid React shell
+
 PyQtDarkTheme>=2.1.0
 requests>=2.28.0
 tzlocal>=4.0.0
@@ -26,3 +28,11 @@ PyMuPDF>=1.23.0
 youtube-transcript-api>=0.6.0
 edge-tts>=6.1.0
 beautifulsoup4>=4.12.0
+yt-dlp>=2024.1.0
+
+
+# Optional cloud sync (Supabase offline-first integration)
+supabase>=2.10.0
+python-dotenv>=1.0.1
+keyring>=25.0.0
+Pillow>=10.0.0

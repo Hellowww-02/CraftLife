@@ -427,7 +427,55 @@ class CloudService:
     def get_cloud_devices(self):
         response=(self._require_auth().table("cloud_devices").select("*")
                   .order("last_seen_at",desc=True).execute())
-        return _response_data(response) or []
+        data=_response_data(response)
+        if data is None:
+            return []
+        if isinstance(data, dict):
+            inner=data.get("data")
+            if isinstance(inner, list):
+                return [row for row in inner if isinstance(row, dict)]
+            return [data] if data.get("id") else []
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+        return []
+
+    def resolve_love_space_id(self, local_user_id: int):
+        import database as db
+        space_id = db.get_cloud_love_space_id(local_user_id)
+        if space_id:
+            return space_id
+        context = db.get_couple_context(local_user_id)
+        rel = context.get("relationship") or {}
+        couple_cloud = rel.get("cloud_id")
+        client = self._require_auth()
+        rows = []
+        if couple_cloud:
+            response = (client.table("love_spaces").select("id,couple_relationship_id")
+                        .eq("couple_relationship_id", couple_cloud).limit(1).execute())
+            rows = _response_data(response) or []
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not rows:
+            uid = self.current_cloud_user_id
+            if uid:
+                mem = (client.table("love_space_members").select("love_space_id")
+                       .eq("user_id", uid).limit(8).execute())
+                mem_rows = _response_data(mem) or []
+                if isinstance(mem_rows, dict):
+                    mem_rows = [mem_rows]
+                rows = [{"id": r.get("love_space_id")} for r in mem_rows if isinstance(r, dict)]
+        row = next((r for r in rows if isinstance(r, dict) and r.get("id")), None)
+        if not row:
+            return None
+        cloud_space = str(row["id"])
+        local_space = context.get("love_space_id")
+        if local_space:
+            conn = db.get_conn()
+            conn.execute("UPDATE love_spaces SET cloud_id=? WHERE id=?", (cloud_space, local_space))
+            conn.commit()
+            conn.close()
+            db.save_cloud_entity_map(local_user_id, "love_space", local_space, cloud_space)
+        return cloud_space
 
     def revoke_cloud_device(self, device_id: str):
         return self.rpc("revoke_cloud_device", {"p_device_id": device_id})

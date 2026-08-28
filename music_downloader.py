@@ -97,3 +97,101 @@ class MusicDownloadWorker(QThread):
                 return self.done.emit(path, "")
         except Exception as exc:
             return self.done.emit("", str(exc))
+
+
+import threading
+import uuid
+
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+
+
+def search_music(query: str) -> list:
+    results = []
+    if not (YT_AVAILABLE and (query or "").strip()):
+        return results
+    try:
+        opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "noplaylist": True}
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"ytsearch8:{query.strip()}", download=False)
+        for e in (info or {}).get("entries") or []:
+            vid = e.get("id") or ""
+            results.append({
+                "id": vid,
+                "title": e.get("title") or "",
+                "uploader": e.get("uploader") or e.get("channel") or "",
+                "duration": e.get("duration") or 0,
+                "url": e.get("url") or (f"https://www.youtube.com/watch?v={vid}" if vid else ""),
+            })
+    except Exception:
+        results = []
+    return results
+
+
+def list_library() -> list:
+    folder = Path(get_download_dir())
+    out = []
+    if not folder.is_dir():
+        return out
+    for p in sorted(folder.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+        if p.suffix.lower() in (".mp3", ".m4a", ".ogg", ".wav", ".opus", ".flac"):
+            out.append({"name": p.name, "path": str(p), "size": p.stat().st_size})
+    return out[:80]
+
+
+def start_download_job(url: str) -> str:
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {"id": job_id, "percent": "0%", "path": "", "error": "", "done": False}
+    t = threading.Thread(target=_run_download, args=(job_id, url), daemon=True)
+    t.start()
+    return job_id
+
+
+def get_download_job(job_id: str) -> dict:
+    with _jobs_lock:
+        return dict(_jobs.get(job_id) or {"id": job_id, "error": "unknown_job", "done": True})
+
+
+def _run_download(job_id: str, url: str) -> None:
+    def set_job(**kw):
+        with _jobs_lock:
+            row = _jobs.get(job_id) or {}
+            row.update(kw)
+            _jobs[job_id] = row
+
+    if not YT_AVAILABLE:
+        set_job(done=True, error="yt-dlp_missing")
+        return
+    use_ff = has_ffmpeg()
+    target = get_download_dir()
+    opts = {
+        "quiet": True, "no_warnings": True, "noplaylist": True,
+        "outtmpl": os.path.join(target, "%(title)s.%(ext)s"),
+        "format": "bestaudio/best",
+    }
+    if use_ff:
+        opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}]
+    else:
+        opts["format"] = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best"
+
+    def hook(d):
+        if d.get("status") == "downloading":
+            set_job(percent=str(d.get("_percent_str") or "").strip())
+
+    opts["progress_hooks"] = [hook]
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if not info:
+                set_job(done=True, error="empty")
+                return
+            path = ydl.prepare_filename(info)
+            if use_ff:
+                path = re.sub(r"\.[A-Za-z0-9]+$", "", path) + ".mp3"
+            if not os.path.exists(path):
+                set_job(done=True, error="missing_file")
+                return
+            set_job(done=True, path=path, percent="100%", error="")
+    except Exception as exc:
+        set_job(done=True, error=str(exc)[:300])

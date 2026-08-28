@@ -1940,6 +1940,8 @@ EXPORT_TABLES = [
     'sport_rep_logs',
     'calendar_notes',
     'reminders',
+    'supplies_items',
+    'supplies_tx',
     'relationship_profiles',
     'relationship_events',
     'relationship_memories',
@@ -4952,6 +4954,21 @@ def get_next_guild_id():
     conn.close()
     return next_id
 
+def get_active_boss_for_user(user_id):
+    """Active guild boss battle for this user, or None. No combat math."""
+    u = get_user(user_id) or {}
+    gid = u.get("guild_id")
+    if not gid:
+        return None
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM boss_battles WHERE guild_id=? AND status='active' ORDER BY id DESC LIMIT 1",
+        (gid,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def start_boss(guild_id, boss_id, user_data, participant_ids=None):
     """
     Memulai boss battle dengan peserta tertentu.
@@ -7937,6 +7954,19 @@ def delete_water_log(user_id, log_id):
     conn.close()
 
 @retry_on_lock
+def reset_water_today(user_id, log_date=None):
+    """Hapus semua water_logs hari ini agar total mulai dari 0 (PyQt reset)."""
+    if is_account_locked(user_id):
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
+    if log_date is None:
+        log_date = date.today().isoformat()
+    conn = get_conn()
+    conn.execute("DELETE FROM water_logs WHERE user_id=? AND log_date=?", (user_id, log_date))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@retry_on_lock
 def get_water_logs(user_id, log_date=None):
     if log_date is None:
         from datetime import date
@@ -9856,7 +9886,8 @@ def get_leaderboard_for_user(user_id):
                COALESCE(selected_title, '') as selected_title,
                COALESCE(sport_level, 1) as sport_level,
                (SELECT COUNT(*) FROM user_pets WHERE user_id=users.id) as pet_count,
-               COALESCE(rebirth_count, 0) as rebirth_count
+               COALESCE(rebirth_count, 0) as rebirth_count,
+               cloud_user_id
         FROM users
         WHERE id IN ({placeholders})
         AND is_admin = 0
@@ -13191,7 +13222,13 @@ def get_cloud_love_space_id(local_user_id):
     context=get_couple_context(local_user_id);local_space=context.get("love_space_id")
     if not local_space:return None
     conn=get_conn();row=conn.execute("SELECT cloud_id FROM love_spaces WHERE id=?",(local_space,)).fetchone();conn.close()
-    return row["cloud_id"] if row and row["cloud_id"] else get_cloud_id("love_space",local_space)
+    if row and row["cloud_id"]:
+        return row["cloud_id"]
+    mapped=get_cloud_id("love_space",local_space)
+    if mapped:
+        return mapped
+    rel=(context.get("relationship") or {})
+    return rel.get("love_space_cloud_id") or None
 
 
 def get_love_record_cloud_id(record_type,local_id):
