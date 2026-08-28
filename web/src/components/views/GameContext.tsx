@@ -84,8 +84,6 @@ interface GameContextType {
   // Folders
   taskFolders: TaskFolder[];
   addTaskFolder: (name: string, icon: string, color?: string, mode?: string) => void;
-  renameTaskFolder: (id: string, name: string, mode?: string) => void;
-  duplicateTaskFolder: (id: string, mode?: string) => void;
   deleteTaskFolder: (id: string, mode?: string) => void;
 
   // Habits
@@ -96,7 +94,6 @@ interface GameContextType {
   deleteHabit: (id: string) => void;
   triggerHabit: (id: string, isPos: boolean) => void;
   reorderHabits: (ordered: Habit[]) => void;
-  moveTaskAcrossFolders: (mode: string, id: string, folderId: string | null) => void;
   restoreTask: (trashId: string) => void;
   lastDelete: { trashId: string; label: string } | null;
   undoDelete: () => void;
@@ -971,26 +968,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     life.deleteTaskFolder(id, mode).then((res) => applyLive(res)).catch(() => setTaskFolders((prev) => prev.filter((f) => f.id !== id)));
   }, [applyLive]);
 
-  const refreshFolders = useCallback(() => {
-    apiGet<any>('/api/task-folders').then((d) => {
-      if (Array.isArray(d?.taskFolders)) setTaskFolders(d.taskFolders);
-    }).catch(() => undefined);
-  }, []);
-
-  const renameTaskFolder = useCallback((id: string, name: string, mode?: string) => {
-    life.updateTaskFolder(id, { name, mode }).then((res) => {
-      applyLive(res);
-      refreshFolders();
-    }).catch(() => undefined);
-  }, [applyLive, refreshFolders]);
-
-  const duplicateTaskFolder = useCallback((id: string, mode?: string) => {
-    life.duplicateTaskFolder(id, mode).then((res) => {
-      applyLive(res);
-      refreshFolders();
-    }).catch(() => undefined);
-  }, [applyLive, refreshFolders]);
-
   // Habits
   const addHabit = useCallback((title: string, difficulty: TaskDifficulty, isPositive: boolean, isNegative: boolean, folderId?: string | null, notes?: string) => {
     rpg.addHabit({ title, difficulty, isPositive, isNegative, notes, folderId }).then((res) => applyLive(res)).catch(() => {});
@@ -1114,20 +1091,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setQuests(ordered);
     rpg.reorderTasks('quest', ordered.map((q) => ({ id: q.id, folderId: q.folderId })))
       .then((res) => applyLive(res)).catch(() => {});
-  }, [applyLive])
-
-  const moveTaskAcrossFolders = useCallback((mode: string, id: string, folderId: string | null) => {
-    const fid = folderId || null;
-    if (mode === 'habit') {
-      setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, folderId: fid } : h)));
-      rpg.reorderTasks('habit', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(() => {});
-    } else if (mode === 'daily') {
-      setDailies((prev) => prev.map((d) => (d.id === id ? { ...d, folderId: fid } : d)));
-      rpg.reorderTasks('daily', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(() => {});
-    } else {
-      setQuests((prev) => prev.map((q) => (q.id === id ? { ...q, folderId: fid } : q)));
-      rpg.reorderTasks('quest', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(() => {});
-    }
   }, [applyLive])
 
   const restoreTask = useCallback((trashId: string) => {
@@ -1609,8 +1572,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setActiveTheme,
         taskFolders,
         addTaskFolder,
-        renameTaskFolder,
-        duplicateTaskFolder,
         deleteTaskFolder,
         habits,
         addHabit,
@@ -1619,7 +1580,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         deleteHabit,
         triggerHabit,
         reorderHabits,
-        moveTaskAcrossFolders,
         restoreTask,
         lastDelete,
         undoDelete,

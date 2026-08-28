@@ -3,12 +3,13 @@ import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
 import { CalendarCheck, Plus, Trash2, Edit3, Flame, Shield, Snowflake, Check, RefreshCw } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
+import { useTaskReorder } from '../../hooks/useTaskReorder';
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_SHORT_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
 export const DailiesView: React.FC = () => {
-  const { dailies, addDaily, editDaily, duplicateDaily, deleteDaily, toggleDaily, failDaily, useDailyFreeze, lang, user, applyTaskTemplate } = useGame();
+  const { dailies, addDaily, editDaily, duplicateDaily, deleteDaily, toggleDaily, failDaily, useDailyFreeze, reorderDailies, moveTaskAcrossFolders, lang, user, applyTaskTemplate } = useGame();
   const dailyFolders = useModeFolders('daily');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,6 +78,8 @@ export const DailiesView: React.FC = () => {
     if (diffFilter !== 'all' && d.difficulty !== diffFilter) return false;
     return true;
   });
+
+  const drag = useTaskReorder(dailies, filteredDailies, reorderDailies);
 
   const getDifficultyBadge = (diff: TaskDifficulty) => {
     switch (diff) {
@@ -159,17 +162,31 @@ export const DailiesView: React.FC = () => {
         accent="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
         allLabel={lang === 'id' ? 'Semua Daily' : 'All Dailies'}
         allCount={dailies.length}
+        onDropInto={(fid) => {
+          const idx = drag.dragIndex;
+          if (idx === null) return;
+          const it = filteredDailies[idx];
+          if (it) moveTaskAcrossFolders('daily', it.id, fid);
+        }}
       />
 
       {/* Dailies Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredDailies.map((daily) => {
+        {filteredDailies.map((daily, idx) => {
           const folder = dailyFolders.find((f) => f.id === daily.folderId);
 
           return (
             <div
               key={daily.id}
-              className={`rounded-2xl border p-4.5 flex flex-col justify-between gap-4 transition-all ${
+              draggable
+              onDragStart={drag.onDragStart(idx, 'list')}
+              onDragOver={(e) => drag.onDragOver(e, idx)}
+              onDragEnter={() => drag.onDragEnter(idx)}
+              onDrop={(e) => drag.onDrop(e, idx)}
+              onDragEnd={drag.onDragEnd}
+              className={`rounded-2xl border p-4.5 flex flex-col justify-between gap-4 transition-all cursor-grab ${
+                drag.isDragging(idx) ? 'opacity-40 border-emerald-500' : drag.isOver(idx) ? 'border-emerald-500/70 shadow-emerald-500/10' : ''
+              } ${
                 daily.isCompletedToday
                   ? 'bg-emerald-950/15 border-emerald-500/30'
                   : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'

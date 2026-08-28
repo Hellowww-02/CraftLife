@@ -10,6 +10,13 @@ export function useModeFolders(mode: Mode): TaskFolder[] {
   return taskFolders.filter((f) => !f.mode || f.mode === mode);
 }
 
+/**
+ * TaskFolderBar — parity for the PyQt `FolderDialog` + TaskPage folder strip.
+ * Supports: folder create, rename (pencil), duplicate, delete, and
+ * **cross-folder drag&drop** targets (a task dragged onto a folder chip moves
+ * into it). Emits `onDropInto(folderId)` so the parent view can persist via
+ * the reorder API (which also sets folder_id).
+ */
 export const TaskFolderBar: React.FC<{
   mode: Mode;
   selected: string;
@@ -17,11 +24,13 @@ export const TaskFolderBar: React.FC<{
   accent: string;
   allLabel: string;
   allCount: number;
-}> = ({ mode, selected, onSelect, accent, allLabel, allCount }) => {
-  const { addTaskFolder, deleteTaskFolder, applyTaskTemplate, lang } = useGame();
+  onDropInto?: (folderId: string) => void;
+}> = ({ mode, selected, onSelect, accent, allLabel, allCount, onDropInto }) => {
+  const { addTaskFolder, renameTaskFolder, duplicateTaskFolder, deleteTaskFolder, applyTaskTemplate, lang } = useGame();
   const folders = useModeFolders(mode);
   const [name, setName] = useState('');
   const [templates, setTemplates] = useState<{ key: string; name: string; icon: string }[]>([]);
+  const [dragOver, setDragOver] = useState<string | null>(null);
 
   useEffect(() => {
     life
@@ -31,6 +40,18 @@ export const TaskFolderBar: React.FC<{
       })
       .catch(() => {});
   }, [mode]);
+
+  const rename = (f: TaskFolder) => {
+    const next = window.prompt(lang === 'id' ? 'Nama folder:' : 'Folder name:', f.name);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === f.name) return;
+    renameTaskFolder(f.id, trimmed, mode);
+  };
+
+  const duplicate = (f: TaskFolder) => {
+    duplicateTaskFolder(f.id, mode);
+  };
 
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
@@ -83,16 +104,41 @@ export const TaskFolderBar: React.FC<{
         </button>
       </div>
       {folders.map((f) => (
-        <div key={f.id} className="flex items-center shrink-0">
+        <div key={f.id} className="flex items-center shrink-0 rounded-xl overflow-hidden">
           <button
             type="button"
             onClick={() => onSelect(f.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-l-xl font-semibold ${
-              selected === f.id ? accent : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+            onDragOver={(e) => { if (onDropInto) { e.preventDefault(); setDragOver(f.id); } }}
+            onDragLeave={() => setDragOver(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(null);
+              if (onDropInto) onDropInto(f.id);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 font-semibold transition-all ${
+              dragOver === f.id
+                ? 'bg-amber-500/30 text-amber-100 ring-1 ring-amber-400'
+                : selected === f.id ? accent : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
             }`}
           >
             <span>{f.icon}</span>
             <span>{f.name}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => rename(f)}
+            className="px-1.5 py-1.5 bg-slate-800/80 text-sky-400 hover:bg-sky-500/20"
+            title={lang === 'id' ? 'Rename folder' : 'Rename folder'}
+          >
+            ✎
+          </button>
+          <button
+            type="button"
+            onClick={() => duplicate(f)}
+            className="px-1.5 py-1.5 bg-slate-800/80 text-emerald-400 hover:bg-emerald-500/20"
+            title={lang === 'id' ? 'Duplikasi folder' : 'Duplicate folder'}
+          >
+            ⧉
           </button>
           <button
             type="button"

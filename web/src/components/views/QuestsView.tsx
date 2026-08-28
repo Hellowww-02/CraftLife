@@ -3,9 +3,10 @@ import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
 import { CheckSquare, Plus, Trash2, Edit3, Calendar, Check, Clock } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
+import { useTaskReorder } from '../../hooks/useTaskReorder';
 
 export const QuestsView: React.FC = () => {
-  const { quests, addQuest, editQuest, deleteQuest, toggleQuest, duplicateQuest, lang, applyTaskTemplate } = useGame();
+  const { quests, addQuest, editQuest, deleteQuest, toggleQuest, duplicateQuest, reorderQuests, moveTaskAcrossFolders, lang, applyTaskTemplate } = useGame();
   const questFolders = useModeFolders('todo');
   const [selectedFolderFilter, setSelectedFolderFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,6 +68,8 @@ export const QuestsView: React.FC = () => {
     if (diffFilter !== 'all' && q.difficulty !== diffFilter) return false;
     return true;
   });
+
+  const drag = useTaskReorder(quests, filteredQuests, reorderQuests);
 
   const getDifficultyBadge = (diff: TaskDifficulty) => {
     switch (diff) {
@@ -143,6 +146,12 @@ export const QuestsView: React.FC = () => {
         accent="bg-blue-500/20 text-blue-300 border border-blue-500/40"
         allLabel={lang === 'id' ? 'Semua Quest' : 'All Quests'}
         allCount={quests.length}
+        onDropInto={(fid) => {
+          const idx = drag.dragIndex;
+          if (idx === null) return;
+          const it = filteredQuests[idx];
+          if (it) moveTaskAcrossFolders('quest', it.id, fid);
+        }}
       />
 
       {/* Status Filter Tabs */}
@@ -183,13 +192,21 @@ export const QuestsView: React.FC = () => {
 
       {/* Quests List */}
       <div className="space-y-3">
-        {filteredQuests.map((quest) => {
+        {filteredQuests.map((quest, idx) => {
           const folder = questFolders.find((f) => f.id === quest.folderId);
 
           return (
             <div
               key={quest.id}
-              className={`rounded-2xl border p-4 flex items-center justify-between gap-3 transition-all ${
+              draggable
+              onDragStart={drag.onDragStart(idx, 'list')}
+              onDragOver={(e) => drag.onDragOver(e, idx)}
+              onDragEnter={() => drag.onDragEnter(idx)}
+              onDrop={(e) => drag.onDrop(e, idx)}
+              onDragEnd={drag.onDragEnd}
+              className={`rounded-2xl border p-4 flex items-center justify-between gap-3 transition-all cursor-grab ${
+                drag.isDragging(idx) ? 'opacity-40 border-blue-500' : drag.isOver(idx) ? 'border-blue-500/70 shadow-blue-500/10' : ''
+              } ${
                 quest.isCompleted
                   ? 'bg-slate-900/40 border-slate-800/60 opacity-70'
                   : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'

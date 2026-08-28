@@ -5,6 +5,8 @@ export const life = {
   completeSport: (id: string) => apiPost<any>(`/api/sport/${id}/complete`, {}),
   sportReps: (id: string, reps: number, sets?: number) =>
     apiPost<any>(`/api/sport/${id}/reps`, { reps, sets: sets || 1 }),
+  sportRepsInfo: (id: string) => apiGet<any>(`/api/sport/${id}/reps`),
+  sportRepsSummary: () => apiGet<any>('/api/sport/reps'),
   deleteSport: (id: string) => apiPost<any>(`/api/sport/${id}/delete`, {}),
   duplicateSport: (id: string) => apiPost<any>(`/api/sport/${id}/duplicate`, {}),
   foodItems: () => apiGet<any>('/api/food/items'),
@@ -13,6 +15,11 @@ export const life = {
   deleteFoodLog: (id: string) => apiPost<any>(`/api/food/log/${id}/delete`, {}),
   nutritionGoals: () => apiGet<any>('/api/nutrition/goals'),
   saveNutritionGoals: (body: Record<string, unknown>) => apiPost<any>('/api/nutrition/goals', body),
+  saveHealthGoals: (body: Record<string, unknown>) => apiPost<any>('/api/health/goals', body),
+  listRecipes: () => apiGet<any>('/api/recipes'),
+  addRecipe: (body: Record<string, unknown>) => apiPost<any>('/api/recipes', body),
+  deleteRecipe: (id: string) => apiPost<any>(`/api/recipes/${id}/delete`, {}),
+  logRecipe: (id: string, body: Record<string, unknown>) => apiPost<any>(`/api/recipes/${id}/log`, body),
   addWater: (amountMl: number) => apiPost<any>('/api/water', { amountMl }),
   resetWater: () => apiPost<any>('/api/water/reset', {}),
   setWaterGoal: (targetMl: number) => apiPost<any>('/api/water/goal', { targetMl }),
@@ -58,12 +65,16 @@ export const life = {
   applyTemplate: (mode: string, key: string) => apiPost<any>('/api/templates/apply', { mode, key }),
   listTemplates: (mode: string) => apiGet<any>(`/api/templates/${mode}`),
   addTaskFolder: (body: Record<string, unknown>) => apiPost<any>('/api/task-folders', body),
+  updateTaskFolder: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/task-folders/${id}/update`, body),
+  duplicateTaskFolder: (id: string, mode?: string) =>
+    apiPost<any>(`/api/task-folders/${id}/duplicate`, { mode: mode || 'habit' }),
   deleteTaskFolder: (id: string, mode?: string) =>
     apiPost<any>(`/api/task-folders/${id}/delete`, { mode: mode || 'habit' }),
   listSupplies: () => apiGet<any>('/api/supplies'),
   addSupply: (body: Record<string, unknown>) => apiPost<any>('/api/supplies', body),
-  supplyTx: (id: string, kind: string, qty: number, note?: string) =>
-    apiPost<any>(`/api/supplies/${id}/tx`, { kind, qty, note }),
+  supplyTx: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/supplies/${id}/tx`, body),
   updateSupply: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/supplies/${id}/update`, body),
   deleteSupply: (id: string) => apiPost<any>(`/api/supplies/${id}/delete`, {}),

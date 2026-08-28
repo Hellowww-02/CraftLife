@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { DEFAULT_FOODS } from '../../data/gameData';
-import { Salad, Droplets, Plus, Trash2, Search, RotateCcw } from 'lucide-react';
+import { Salad, Droplets, Plus, Trash2, Search, RotateCcw, LineChart as LineIcon, ChefHat, X } from 'lucide-react';
+import { LineChart, DonutChart } from '../charts';
 
 type CatalogFood = {
   id: string;
@@ -16,7 +17,7 @@ type CatalogFood = {
 };
 
 export const NutritionView: React.FC = () => {
-  const { mealLogs, addMealLog, deleteMealLog, waterLog, addWater, resetWater, lang, healthLogs, addHealthLog } = useGame();
+  const { mealLogs, addMealLog, deleteMealLog, waterLog, addWater, resetWater, lang, healthLogs, addHealthLog, showToast } = useGame();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMealType, setSelectedMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('lunch');
@@ -24,7 +25,19 @@ export const NutritionView: React.FC = () => {
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
   const [catalog, setCatalog] = useState<CatalogFood[]>([]);
   const [goals, setGoals] = useState({ calories: 2000, protein: 50, carbs: 250, fat: 70 });
+  const [editingGoals, setEditingGoals] = useState(false);
   const [waterGoal, setWaterGoal] = useState(waterLog.targetMl || 2000);
+
+  // Recipe manager (parity with PyQt AddRecipeDialog / RecipeManagerDialog)
+  type Recipe = { id: string; name: string; icon: string; servingSize: number; notes: string; items: { foodId: string; name: string; quantity: number }[] };
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [recipeModal, setRecipeModal] = useState(false);
+  const [rcName, setRcName] = useState('');
+  const [rcIcon, setRcIcon] = useState('🍲');
+  const [rcServing, setRcServing] = useState(1);
+  const [rcNotes, setRcNotes] = useState('');
+  const [rcIngredients, setRcIngredients] = useState<{ foodId: string; quantity: number }[]>([{ foodId: '', quantity: 1 }]);
+  const [rcLogTarget, setRcLogTarget] = useState<Recipe | null>(null);
 
   // Custom Food Form
   const [customName, setCustomName] = useState('');
@@ -38,7 +51,28 @@ export const NutritionView: React.FC = () => {
     life.nutritionGoals().then((d) => {
       if (d.goals) setGoals(d.goals);
     }).catch(() => undefined);
+    life.listRecipes().then((d) => setRecipes(d?.recipes || [])).catch(() => setRecipes([]));
   }, [mealLogs.length]);
+
+  const loadRecipes = () => {
+    life.listRecipes().then((d) => setRecipes(d?.recipes || [])).catch(() => setRecipes([]));
+  };
+
+  const saveRecipe = async () => {
+    if (!rcName.trim()) return;
+    const items = rcIngredients.filter((i) => i.foodId);
+    if (items.length === 0) return;
+    await life.addRecipe({ name: rcName.trim(), icon: rcIcon, servingSize: rcServing, notes: rcNotes, items });
+    setRecipeModal(false);
+    loadRecipes();
+    showToast('success', lang === 'id' ? 'Resep disimpan' : 'Recipe saved', rcName.trim());
+  };
+
+  const logRecipe = async (r: Recipe, mult: number) => {
+    await life.logRecipe(r.id, { servingMultiplier: mult, mealType: selectedMealType });
+    setRcLogTarget(null);
+    showToast('success', lang === 'id' ? 'Resep dicatat ke makanan' : 'Recipe logged', r.name);
+  };
 
   const dbFoods: CatalogFood[] = catalog.length
     ? catalog
@@ -136,6 +170,39 @@ export const NutritionView: React.FC = () => {
               <div className="text-base font-black text-sky-400">{totalFat}g</div>
             </div>
           </div>
+
+          {editingGoals ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+              {(['calories', 'protein', 'carbs', 'fat'] as const).map((k) => (
+                <div key={k}>
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">{k}</label>
+                  <input
+                    type="number"
+                    value={goals[k]}
+                    onChange={(e) => setGoals((g) => ({ ...g, [k]: Number(e.target.value) }))}
+                    className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-100"
+                  />
+                </div>
+              ))}
+              <div className="col-span-2 sm:col-span-4 flex gap-2 justify-end">
+                <button onClick={() => setEditingGoals(false)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-[11px] font-bold">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+                <button
+                  onClick={async () => {
+                    await life.saveNutritionGoals({ calories: goals.calories, protein: goals.protein, carbs: goals.carbs, fat: goals.fat });
+                    setEditingGoals(false);
+                    showToast('success', lang === 'id' ? 'Target nutrisi tersimpan' : 'Nutrition goals saved', '');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-teal-500 text-slate-950 text-[11px] font-bold"
+                >
+                  {lang === 'id' ? 'Simpan' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setEditingGoals(true)} className="mt-3 text-[11px] font-bold text-teal-300 hover:text-teal-200">
+              {lang === 'id' ? 'Edit target nutrisi' : 'Edit nutrition goals'}
+            </button>
+          )}
         </div>
 
         {/* Water Hydration Tracker */}
@@ -361,6 +428,94 @@ export const NutritionView: React.FC = () => {
         ))}
       </div>
 
+      {/* Health Chart (parity with PyQt HealthChartWidget: steps/sleep/mood) */}
+      {(() => {
+        const sorted = [...healthLogs].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-14);
+        const stepData = sorted.map((h) => ({ label: h.date.slice(5), value: h.steps }));
+        const sleepData = sorted.map((h) => ({ label: h.date.slice(5), value: h.sleepHours }));
+        const moodCount = new Map<string, number>();
+        sorted.forEach((h) => moodCount.set(h.mood || 'good', (moodCount.get(h.mood || 'good') || 0) + 1));
+        const moodColors: Record<string, string> = { great: '#34d399', good: '#38bdf8', neutral: '#a78bfa', tired: '#f59e0b', stressed: '#f43f5e' };
+        const moodData = [...moodCount.entries()].map(([k, v]) => ({ label: k, value: v, color: moodColors[k] || '#64748b' }));
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <div className="flex items-center gap-2 mb-3">
+                <LineIcon className="w-5 h-5 text-teal-400" />
+                <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Kesehatan (Langkah & Tidur)' : 'Health (Steps & Sleep)'}</h3>
+              </div>
+              {sorted.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">{lang === 'id' ? 'Belum ada data kesehatan.' : 'No health data yet.'}</p>
+              ) : (
+                <>
+                  <div className="text-[10px] uppercase text-slate-400 font-bold mb-1">{lang === 'id' ? 'Langkah' : 'Steps'}</div>
+                  <LineChart data={stepData} color="#34d399" width={680} height={120} />
+                  <div className="text-[10px] uppercase text-slate-400 font-bold mt-4 mb-1">{lang === 'id' ? 'Jam Tidur' : 'Sleep (h)'}</div>
+                  <LineChart data={sleepData} color="#38bdf8" width={680} height={120} showGrid={false} />
+                </>
+              )}
+            </div>
+            <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <div className="flex items-center gap-2 mb-3">
+                <Droplets className="w-5 h-5 text-violet-400" />
+                <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Mood' : 'Mood'}</h3>
+              </div>
+              {moodData.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">{lang === 'id' ? 'Belum ada data mood.' : 'No mood data yet.'}</p>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <DonutChart data={moodData} size={140} strokeWidth={16} centerLabel={String(sorted.length)} centerSub={lang === 'id' ? 'hari' : 'days'} />
+                  <div className="space-y-1 w-full">
+                    {moodData.map((m) => (
+                      <div key={m.label} className="flex items-center justify-between text-[11px]">
+                        <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full" style={{ background: m.color }} />{m.label}</span>
+                        <span className="text-slate-400 font-semibold">{m.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Recipe Manager (parity with PyQt AddRecipeDialog / RecipeManagerDialog) */}
+      <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <ChefHat className="w-5 h-5 text-amber-400" />
+            <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Resep Makanan' : 'Food Recipes'}</h3>
+          </div>
+          <button onClick={() => { setRcName(''); setRcIcon('🍲'); setRcServing(1); setRcNotes(''); setRcIngredients([{ foodId: '', quantity: 1 }]); setRecipeModal(true); }} className="px-3 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-bold flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> {lang === 'id' ? 'Resep baru' : 'New recipe'}
+          </button>
+        </div>
+        {recipes.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-4">{lang === 'id' ? 'Belum ada resep.' : 'No recipes yet.'}</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {recipes.map((r) => (
+              <div key={r.id} className="p-3 rounded-xl bg-slate-800/60 border border-slate-700">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xl">{r.icon}</span>
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-100 text-sm truncate">{r.name}</div>
+                      <div className="text-[11px] text-slate-400">{r.items.length} {lang === 'id' ? 'bahan' : 'ingredients'} · {r.servingSize} {lang === 'id' ? 'porsi' : 'serving'}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => setRcLogTarget(r)} className="px-2 py-1 rounded-lg bg-teal-500/20 text-teal-300 text-[10px] font-bold">{lang === 'id' ? 'Log' : 'Log'}</button>
+                    <button onClick={() => life.deleteRecipe(r.id).then(loadRecipes)} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Custom Food Modal */}
       {isCustomModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
@@ -435,6 +590,68 @@ export const NutritionView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Recipe Modal */}
+      {recipeModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Resep Baru' : 'New Recipe'}</h3>
+              <button onClick={() => setRecipeModal(false)} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+            </div>
+            <input value={rcName} onChange={(e) => setRcName(e.target.value)} placeholder={lang === 'id' ? 'Nama resep…' : 'Recipe name…'} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+            <div className="grid grid-cols-[auto,1fr] gap-2 items-center">
+              <label className="text-slate-400 text-xs">{lang === 'id' ? 'Ikon' : 'Icon'}</label>
+              <input value={rcIcon} onChange={(e) => setRcIcon(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm w-20" />
+            </div>
+            <div className="grid grid-cols-[auto,1fr] gap-2 items-center">
+              <label className="text-slate-400 text-xs">{lang === 'id' ? 'Porsi' : 'Serving'}</label>
+              <input type="number" min={1} value={rcServing} onChange={(e) => setRcServing(Math.max(1, Number(e.target.value) || 1))} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm w-24" />
+            </div>
+            <textarea value={rcNotes} onChange={(e) => setRcNotes(e.target.value)} placeholder={lang === 'id' ? 'Instruksi…' : 'Instructions…'} rows={2} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm resize-none" />
+            <div>
+              <label className="text-slate-300 text-xs font-semibold">{lang === 'id' ? 'Bahan' : 'Ingredients'}</label>
+              <div className="space-y-2 mt-1">
+                {rcIngredients.map((ing, idx) => (
+                  <div key={idx} className="flex gap-2">
+                    <select value={ing.foodId} onChange={(e) => { const next = [...rcIngredients]; next[idx] = { ...ing, foodId: e.target.value }; setRcIngredients(next); }} className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs">
+                      <option value="">— {lang === 'id' ? 'pilih bahan' : 'choose food'} —</option>
+                      {dbFoods.map((f) => <option key={f.id} value={f.id}>{f.icon} {f.name}</option>)}
+                    </select>
+                    <input type="number" min={0.1} step={0.5} value={ing.quantity} onChange={(e) => { const next = [...rcIngredients]; next[idx] = { ...ing, quantity: Number(e.target.value) }; setRcIngredients(next); }} className="w-16 px-2 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
+                    <button onClick={() => setRcIngredients(rcIngredients.filter((_, i) => i !== idx))} className="px-2 text-rose-400"><X className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setRcIngredients([...rcIngredients, { foodId: '', quantity: 1 }])} className="mt-2 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold">{lang === 'id' ? '+ Tambah bahan' : '+ Add ingredient'}</button>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setRecipeModal(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              <button onClick={saveRecipe} disabled={!rcName.trim() || !rcIngredients.some((i) => i.foodId)} className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-xs">{lang === 'id' ? 'Simpan' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Log Recipe Modal */}
+      {rcLogTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Catat Resep' : 'Log Recipe'} — {rcLogTarget.name}</h3>
+              <button onClick={() => setRcLogTarget(null)} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+            </div>
+            <div>
+              <label className="text-slate-300 text-xs font-semibold">{lang === 'id' ? 'Jumlah porsi' : 'Servings'}</label>
+              <input type="number" min={0.5} step={0.5} defaultValue={1} id={`rc-mult-${rcLogTarget.id}`} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setRcLogTarget(null)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              <button onClick={() => logRecipe(rcLogTarget, Number((document.getElementById(`rc-mult-${rcLogTarget.id}`) as HTMLInputElement)?.value || 1))} className="px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs">{lang === 'id' ? 'Log' : 'Log'}</button>
+            </div>
           </div>
         </div>
       )}

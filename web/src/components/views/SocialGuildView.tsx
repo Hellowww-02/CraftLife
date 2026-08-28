@@ -68,6 +68,13 @@ export const SocialGuildView: React.FC<{ initialTab?: SocialTab }> = ({ initialT
     setPvpAttackingId(null);
   };
 
+  const handleSimulatePvP = (id: string) => {
+    setPvpAttackingId(id);
+    sendPvpChallenge(id);
+    window.setTimeout(() => setPvpAttackingId((c) => (c === id ? null : c)), 600);
+    void refreshSocial;
+  };
+
   return (
     <div id="social-guild-pvp-view" className="space-y-6">
       {/* Top Banner */}

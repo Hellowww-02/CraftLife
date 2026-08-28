@@ -1,1 +1,30 @@
-{"id":{},"en":{}}
+{
+  "id": {
+    "task_reorder_hint": "Seret untuk mengurutkan",
+    "quick_add_title": "Tambah Cepat",
+    "quick_add_habit": "Kebiasaan",
+    "quick_add_daily": "Harian",
+    "quick_add_quest": "Misi",
+    "quick_add_placeholder": "Judul tugas…",
+    "quick_add_add": "Tambah",
+    "quick_add_cancel": "Batal",
+    "task_undo": "Urungkan",
+    "task_deleted": "Dihapus",
+    "task_restored": "Item dipulihkan",
+    "task_moved_folder": "Dipindah ke folder"
+  },
+  "en": {
+    "task_reorder_hint": "Drag to reorder",
+    "quick_add_title": "Quick Add",
+    "quick_add_habit": "Habit",
+    "quick_add_daily": "Daily",
+    "quick_add_quest": "Quest",
+    "quick_add_placeholder": "Task title…",
+    "quick_add_add": "Add",
+    "quick_add_cancel": "Cancel",
+    "task_undo": "Undo",
+    "task_deleted": "Deleted",
+    "task_restored": "Item restored",
+    "task_moved_folder": "Moved to folder"
+  }
+}

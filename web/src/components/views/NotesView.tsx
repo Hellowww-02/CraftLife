@@ -5,7 +5,7 @@ import { FileText, Plus, Trash2, Edit3, Folder, FolderPlus, Pin, Calculator, Spa
 import Markdown from 'react-markdown';
 
 export const NotesView: React.FC = () => {
-  const { notes, addNote, updateNote, deleteNote, archiveNote, duplicateNoteItem, noteFolders, addNoteFolder, deleteNoteFolder, lang } = useGame();
+  const { notes, addNote, updateNote, deleteNote, archiveNote, duplicateNoteItem, noteFolders, addNoteFolder, deleteNoteFolder, lang, notebooks, addNotebookSource, addNotebook } = useGame();
   const [noteSearch, setNoteSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
 

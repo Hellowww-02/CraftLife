@@ -10,7 +10,7 @@ export const ShopView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'shop' | 'inventory'>('shop');
   const [shopCategory, setShopCategory] = useState<ShopItemType | 'all'>('all');
 
-  const shopItemsList = Object.values(SHOP_ITEMS).filter((item) => !item.craftOnly);
+  const shopItemsList = Object.values(liveShopItems()).filter((item) => !item.craftOnly);
   const filteredShopItems = shopItemsList.filter((i) => {
     if (shopCategory === 'all') return true;
     return i.type === shopCategory;
@@ -141,7 +141,7 @@ export const ShopView: React.FC = () => {
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {inventory.map((inv) => {
-              const item = SHOP_ITEMS[inv.itemId];
+              const item = (liveShopItems() as Record<string, any>)[inv.itemId];
               if (!item) return null;
 
               const isConsumable = item.type === 'consumable';

@@ -3,9 +3,10 @@ import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
 import { Zap, Plus, Trash2, Edit3, Folder, Flame, TrendingUp, TrendingDown, Check, X } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
+import { useTaskReorder } from '../../hooks/useTaskReorder';
 
 export const HabitsView: React.FC = () => {
-  const { habits, addHabit, editHabit, duplicateHabit, deleteHabit, triggerHabit, lang, applyTaskTemplate } = useGame();
+  const { habits, addHabit, editHabit, duplicateHabit, deleteHabit, triggerHabit, reorderHabits, moveTaskAcrossFolders, lang, applyTaskTemplate } = useGame();
   const habitFolders = useModeFolders('habit');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -68,6 +69,8 @@ export const HabitsView: React.FC = () => {
     if (diffFilter !== 'all' && h.difficulty !== diffFilter) return false;
     return true;
   });
+
+  const drag = useTaskReorder(habits, filteredHabits, reorderHabits);
 
   const getDifficultyBadge = (diff: TaskDifficulty) => {
     switch (diff) {
@@ -143,17 +146,31 @@ export const HabitsView: React.FC = () => {
         accent="bg-amber-500/20 text-amber-300 border border-amber-500/40"
         allLabel={lang === 'id' ? 'Semua Habit' : 'All Habits'}
         allCount={habits.length}
+        onDropInto={(fid) => {
+          const idx = drag.dragIndex;
+          if (idx === null) return;
+          const it = filteredHabits[idx];
+          if (it) moveTaskAcrossFolders('habit', it.id, fid);
+        }}
       />
 
       {/* Habits List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredHabits.map((habit) => {
+        {filteredHabits.map((habit, idx) => {
           const folder = habitFolders.find((f) => f.id === habit.folderId);
 
           return (
             <div
               key={habit.id}
-              className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4 flex flex-col justify-between gap-4 hover:border-slate-700 transition-all shadow-md"
+              draggable
+              onDragStart={drag.onDragStart(idx, 'list')}
+              onDragOver={(e) => drag.onDragOver(e, idx)}
+              onDragEnter={() => drag.onDragEnter(idx)}
+              onDrop={(e) => drag.onDrop(e, idx)}
+              onDragEnd={drag.onDragEnd}
+              className={`rounded-2xl bg-slate-900/80 border p-4 flex flex-col justify-between gap-4 transition-all shadow-md cursor-grab ${
+                drag.isDragging(idx) ? 'opacity-40 border-amber-500' : drag.isOver(idx) ? 'border-amber-500/70 shadow-amber-500/10' : 'border-slate-800 hover:border-slate-700'
+              }`}
             >
               <div>
                 <div className="flex items-start justify-between gap-2 mb-2">
