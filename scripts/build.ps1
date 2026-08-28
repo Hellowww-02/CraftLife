@@ -1,5 +1,6 @@
 # P8: Build CraftLife Windows onedir (React dist + PyInstaller).
 # Run from repo root. End users do not need Node.
+# ASCII-only so Windows PowerShell 5.1 can parse this file.
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
@@ -23,39 +24,39 @@ npm run build
 Pop-Location
 
 if (-not (Test-Path ".\web\dist\index.html")) {
-  throw "web/dist/index.html not produced — P8 requires a built UI before packing the exe"
+  throw "web/dist/index.html not produced. Build the UI before packing the exe."
 }
 
-Write-Host "==> PyInstaller (CraftLife.spec, web/dist datas)"
+Write-Host "==> PyInstaller CraftLife.spec plus web/dist datas"
 python -m pip install --upgrade pyinstaller
 python -m pip install "PyQt6-WebEngine>=6.4.0"
 
-python -c "from pathlib import Path; import PyQt6; p=list(Path(PyQt6.__file__).parent.rglob('QtWebEngineProcess.exe')); print(p[0] if p else ''); raise SystemExit(0 if p else 'PyQt6-WebEngine missing QtWebEngineProcess.exe')"
+python -c "from pathlib import Path; import PyQt6; p=list(Path(PyQt6.__file__).parent.rglob('QtWebEngineProcess.exe')); print(p[0] if p else ''); raise SystemExit(0 if p else 1)"
+if ($LASTEXITCODE -ne 0) {
+  throw "PyQt6-WebEngine missing QtWebEngineProcess.exe"
+}
 
 python -m PyInstaller --noconfirm --clean CraftLife.spec
 
-$distRoot = ".\dist\CraftLife"
+$distRoot = Join-Path ".\dist" "CraftLife"
 if (-not (Test-Path $distRoot)) {
   throw "dist\CraftLife missing after PyInstaller"
 }
 
-# Belt-and-suspenders: copy UI next to exe AND under _internal (onedir layout).
-New-Item -ItemType Directory -Force -Path "$distRoot\web" | Out-Null
-Copy-Item -Recurse -Force ".\web\dist" "$distRoot\web\dist"
-$internal = "$distRoot\_internal"
+New-Item -ItemType Directory -Force -Path (Join-Path $distRoot "web") | Out-Null
+Copy-Item -Recurse -Force ".\web\dist" (Join-Path $distRoot "web\dist")
+$internal = Join-Path $distRoot "_internal"
 if (Test-Path $internal) {
-  New-Item -ItemType Directory -Force -Path "$internal\web" | Out-Null
-  Copy-Item -Recurse -Force ".\web\dist" "$internal\web\dist"
+  New-Item -ItemType Directory -Force -Path (Join-Path $internal "web") | Out-Null
+  Copy-Item -Recurse -Force ".\web\dist" (Join-Path $internal "web\dist")
 }
 
-$idx = @(
-  "$distRoot\web\dist\index.html",
-  "$internal\web\dist\index.html"
-) | Where-Object { Test-Path $_ }
-if (-not $idx) {
+$idxA = Join-Path $distRoot "web\dist\index.html"
+$idxB = Join-Path $internal "web\dist\index.html"
+if (-not ((Test-Path $idxA) -or (Test-Path $idxB))) {
   throw "P8 failed: web/dist/index.html not in dist\CraftLife"
 }
-Write-Host "web/dist index -> $($idx[0])"
+if (Test-Path $idxA) { Write-Host "web/dist index -> $idxA" } else { Write-Host "web/dist index -> $idxB" }
 
 $proc = Get-ChildItem -Path $distRoot -Recurse -Filter QtWebEngineProcess.exe -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($proc) {
@@ -65,4 +66,4 @@ if ($proc) {
 }
 
 Write-Host "Done. Run dist\CraftLife\CraftLife.exe (no Node). Fallback: CRAFTLIFE_WEB_UI=0"
-Write-Host "(do not copy .env into git; do not run copy_qtwebengine.py unless asked)"
+Write-Host "Do not copy .env into git. Do not run copy_qtwebengine.py unless asked."

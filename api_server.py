@@ -58,6 +58,10 @@ WEB_I18N_KEYS = [
     "web_tracker_export", "web_tracker_import", "web_check_update", "web_stay_logged_in", "web_switch_local",
     "web_task_fail", "web_task_duplicate", "web_task_folder_new", "web_supply_adjust",
     "web_sport_complete", "web_water_goal", "web_calorie_goal",
+    # ── Phase P1: drag & drop reorder + quick add + undo ──
+    "task_reorder_hint", "quick_add_title", "quick_add_habit", "quick_add_daily",
+    "quick_add_quest", "quick_add_placeholder", "quick_add_add", "quick_add_cancel",
+    "task_undo", "task_deleted", "task_restored", "task_moved_folder",
 ]
 
 
@@ -152,6 +156,7 @@ def _map_habit(h: dict) -> dict:
         "createdAt": h.get("created_at") or "",
         "icon": h.get("icon") or "⚔️",
         "doneToday": bool(h.get("done_today")),
+        "sortOrder": int(h.get("sort_order") or 0),
     }
 
 
@@ -184,6 +189,7 @@ def _map_daily(d: dict) -> dict:
         "isFrozen": int(d.get("freeze_slots") or 0) > 0,
         "createdAt": d.get("created_at") or "",
         "icon": d.get("icon") or "📅",
+        "sortOrder": int(d.get("sort_order") or 0),
     }
 
 
@@ -202,6 +208,7 @@ def _map_todo(t: dict) -> dict:
         "completedAt": None,
         "createdAt": t.get("created_at") or "",
         "icon": t.get("icon") or "📜",
+        "sortOrder": int(t.get("sort_order") or 0),
     }
 
 
@@ -889,6 +896,27 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"ok": False, "error": str(e)})
 
         try:
+            # tasks reorder (drag & drop) — one call handles reorder-in-folder + move across folders
+            if path == "/api/tasks/reorder":
+                mode = str(body.get("mode") or "habit")
+                items = body.get("items")
+                if not isinstance(items, list):
+                    self._send(400, {"ok": False, "error": "items_required"})
+                    return
+                result = db.reorder_tasks(uid, mode, items)
+                if not result.get("ok"):
+                    self._send(400, {"ok": False, "error": result.get("msg") or "reorder_failed", **_snapshot(uid)})
+                    return
+                self._send(200, _ok_payload(uid, result))
+                return
+            if path == "/api/trash/restore":
+                result = db.restore_task_from_trash(uid, body.get("trashId") or body.get("trash_id"))
+                if not result.get("ok"):
+                    self._send(400, {"ok": False, "error": result.get("msg") or "restore_failed", **_snapshot(uid)})
+                    return
+                self._send(200, _ok_payload(uid, result))
+                return
+
             # habits
             if path == "/api/habits":
                 name = (body.get("title") or body.get("name") or "").strip()
@@ -926,8 +954,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, _ok_payload(uid, result))
                     return
                 if action == "delete":
-                    db.delete_habit(uid, hid)
-                    self._send(200, _ok_payload(uid))
+                    result = db.delete_habit(uid, hid)
+                    self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True, "trash_id": None}))
                     return
                 if action == "duplicate":
                     result = db.duplicate_habit(uid, hid)
@@ -998,8 +1026,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, _ok_payload(uid, result))
                     return
                 if action == "delete":
-                    db.delete_daily(uid, did)
-                    self._send(200, _ok_payload(uid))
+                    result = db.delete_daily(uid, did)
+                    self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True, "trash_id": None}))
                     return
                 if action == "duplicate":
                     result = db.duplicate_daily(uid, did)
@@ -1057,8 +1085,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, _ok_payload(uid, result))
                     return
                 if action == "delete":
-                    db.delete_todo(uid, tid)
-                    self._send(200, _ok_payload(uid))
+                    result = db.delete_todo(uid, tid)
+                    self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True, "trash_id": None}))
                     return
                 if action == "duplicate":
                     result = db.duplicate_todo(uid, tid)

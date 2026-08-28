@@ -3754,6 +3754,57 @@ def set_item_folder(user_id, mode, item_id, folder_id):
         conn.close()
 
 
+@retry_on_lock
+def reorder_tasks(user_id, mode, items):
+    """Persist drag & drop order.
+
+    ``mode``: 'habit' | 'daily' | 'todo' (alias 'quest').
+    ``items``: list of ``{'id': <int>, 'folderId': <int|None>}`` in the desired
+    order. Reassigns ``sort_order = index`` (0..n) and ``folder_id`` for each,
+    so the same call handles reorder-within-a-folder AND moves across folders.
+    Returns ``{'ok': True}``.
+    """
+    mapping = {"habit": "habits", "daily": "dailies", "todo": "todos", "quest": "todos"}
+    tbl = mapping.get(str(mode).lower())
+    if not tbl:
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_invalid_mode")}
+    conn = get_conn()
+    try:
+        for idx, itm in enumerate(items or []):
+            try:
+                item_id = int(itm.get("id"))
+            except (TypeError, ValueError):
+                continue
+            fid = itm.get("folderId") if "folderId" in itm else itm.get("folder_id")
+            if fid in (None, "", "null"):
+                conn.execute(
+                    f"UPDATE {tbl} SET sort_order=?, folder_id=NULL WHERE id=? AND user_id=?",
+                    (idx, item_id, user_id),
+                )
+            else:
+                try:
+                    fid = int(fid)
+                except (TypeError, ValueError):
+                    continue
+                conn.execute(
+                    f"UPDATE {tbl} SET sort_order=?, folder_id=? WHERE id=? AND user_id=?",
+                    (idx, fid, item_id, user_id),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+@retry_on_lock
+def restore_task_from_trash(user_id, trash_id):
+    """Alias aman untuk restore_from_trash agar dipakai endpoint /api/trash/restore."""
+    try:
+        return restore_from_trash(user_id, int(trash_id))
+    except (TypeError, ValueError):
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_item_not_found")}
+
+
 SPORT_TYPES = {
     "running":      {"name": "Lari",          "icon": "🏃"},
     "gym":          {"name": "Gym",            "icon": "🏋️"},

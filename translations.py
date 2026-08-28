@@ -3479,6 +3479,20 @@ TRANSLATIONS = {
     "web_sport_complete": ("Selesai +XP", "Complete +XP"),
     "web_water_goal": ("Set target air", "Set water goal"),
     "web_calorie_goal": ("Target kalori", "Calorie goal"),
+
+    # ── Phase P1: drag & drop reorder + quick add + undo ──
+    "task_reorder_hint": ("Seret untuk mengurutkan", "Drag to reorder"),
+    "quick_add_title": ("Tambah Cepat", "Quick Add"),
+    "quick_add_habit": ("Kebiasaan", "Habit"),
+    "quick_add_daily": ("Harian", "Daily"),
+    "quick_add_quest": ("Misi", "Quest"),
+    "quick_add_placeholder": ("Judul tugas…", "Task title…"),
+    "quick_add_add": ("Tambah", "Add"),
+    "quick_add_cancel": ("Batal", "Cancel"),
+    "task_undo": ("Urungkan", "Undo"),
+    "task_deleted": ("Dihapus", "Deleted"),
+    "task_restored": ("Item dipulihkan", "Item restored"),
+    "task_moved_folder": ("Dipindah ke folder", "Moved to folder"),
 }
 
 

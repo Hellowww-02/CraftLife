@@ -23,6 +23,8 @@ def map_sport(row: dict) -> dict:
         "date": row.get("last_done") or row.get("created_at") or _today(),
         "sportXpEarned": int(row.get("xp_reward") or 0),
         "done": bool(row.get("done_today")),
+        "totalReps": int(getattr(db, "get_sport_rep_total")(row.get("user_id"), row.get("id")) or 0)
+        if getattr(db, "get_sport_rep_total", None) else 0,
     }
 
 
@@ -307,6 +309,44 @@ def snapshot(uid: int) -> dict:
 def handle_get(path: str, uid: int):
     if path == "/api/sport":
         return {"ok": True, "sportLogs": snapshot(uid)["sportLogs"]}
+    if path == "/api/sport/reps":
+        try:
+            acts = db.get_sport_activities(uid) or []
+        except Exception:
+            acts = []
+        activities = []
+        for a in acts:
+            aid = a.get("id")
+            total = 0
+            try:
+                total = int(db.get_sport_rep_total(uid, aid))
+            except Exception:
+                pass
+            rank = {"key": "unranked", "icon": "⭐", "index": 0, "name": ""}
+            try:
+                rank = db.get_rep_rank(total)
+            except Exception:
+                rank = rank
+            rep_name = a.get("name") or ""
+            activities.append({
+                "id": str(aid),
+                "name": rep_name,
+                "icon": a.get("icon") or "💪",
+                "sportType": a.get("sport_type") or "other",
+                "totalReps": total,
+                "rank": rank,
+            })
+        return {"ok": True, "activities": activities}
+    if path.startswith("/api/sport/") and path.endswith("/reps"):
+        try:
+            sid = int(path.split("/")[3])
+            total = int(db.get_sport_rep_total(uid, sid))
+            rank = db.get_rep_rank(total)
+            series = db.get_sport_rep_series(uid, days=7, activity_id=sid)
+            history = db.get_sport_rep_history(uid, sid, 5)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "total": total, "rank": rank, "series": series, "history": history}
     if path == "/api/food/logs":
         return {"ok": True, "mealLogs": snapshot(uid)["mealLogs"]}
     if path == "/api/food/items":
@@ -370,6 +410,27 @@ def handle_get(path: str, uid: int):
         return {"ok": True, "calendarNotes": snapshot(uid)["calendarNotes"]}
     if path == "/api/supplies":
         return {"ok": True, "items": snapshot(uid)["supplies"]}
+    if path == "/api/recipes":
+        try:
+            recipes = []
+            for r in (db.get_recipes(uid) or []):
+                rid = r.get("id")
+                detail = db.get_recipe_details(rid)
+                items = detail["items"] if detail else []
+                recipes.append({
+                    "id": str(rid),
+                    "name": r.get("name") or "",
+                    "icon": r.get("icon") or "🍲",
+                    "servingSize": int(r.get("serving_size") or 1),
+                    "notes": r.get("notes") or "",
+                    "items": [
+                        {"foodId": str(i.get("food_id")), "name": i.get("name") or "", "quantity": float(i.get("quantity") or 0)}
+                        for i in items
+                    ],
+                })
+        except Exception:
+            recipes = []
+        return {"ok": True, "recipes": recipes}
     if path.startswith("/api/templates/"):
         mode = path.split("/api/templates/", 1)[-1] or "habit"
         if mode in ("apply",):
@@ -499,6 +560,26 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         db.delete_food_log(uid, int(parts[3]))
         return {"result": {"ok": True}}
 
+    if path == "/api/nutrition/goals":
+        result = db.update_nutrition_goals(
+            uid,
+            float(body.get("calories") or 2000),
+            float(body.get("protein") or 50),
+            float(body.get("carbs") or 250),
+            float(body.get("fat") or 70),
+        )
+        return {"result": result}
+
+    if path == "/api/health/goals":
+        result = db.update_health_goals(
+            uid,
+            float(body.get("dailySteps") or body.get("steps") or 10000),
+            float(body.get("dailySleepHours") or body.get("sleepHours") or 7.0),
+            height_cm=body.get("heightCm"),
+            weight_kg=body.get("weightKg"),
+        )
+        return {"result": result}
+
     if path == "/api/water":
         result = db.add_water_log(uid, int(body.get("amountMl") or 0))
         return {"result": result}
@@ -520,6 +601,20 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         mode = (body.get("mode") or "habit").strip() or "habit"
         db.delete_task_folder(uid, int(parts[2]), mode)
         return {"result": {"ok": True}}
+
+    if len(parts) >= 4 and parts[1] == "task-folders" and parts[3] == "update":
+        mode = (body.get("mode") or "habit").strip() or "habit"
+        kw = {}
+        if body.get("name") not in (None, ""):
+            kw["name"] = body.get("name")
+        if body.get("icon") not in (None, ""):
+            kw["icon"] = body.get("icon")
+        db.update_task_folder(int(parts[2]), uid, **kw) if kw else None
+        return {"result": {"ok": True}}
+
+    if len(parts) >= 4 and parts[1] == "task-folders" and parts[3] == "duplicate":
+        mode = (body.get("mode") or "habit").strip() or "habit"
+        return {"result": db.duplicate_task_folder(uid, int(parts[2]), mode)}
 
     if path == "/api/templates/apply":
         n = db.apply_template_by_mode(uid, body.get("mode") or "habit", body.get("key") or "")
@@ -728,6 +823,37 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         result = db.complete_pomodoro(uid, int(body.get("durationMinutes") or 25), body.get("label") or "")
         return {"result": result}
 
+    if path == "/api/recipes":
+        items = body.get("items") or []
+        food_items = []
+        for it in items:
+            fid = it.get("foodId") or it.get("food_id")
+            try:
+                food_items.append((int(fid), float(it.get("quantity") or 0)))
+            except (TypeError, ValueError):
+                continue
+        result = db.add_recipe(
+            uid,
+            (body.get("name") or "Recipe").strip(),
+            body.get("icon") or "🍲",
+            int(body.get("servingSize") or body.get("serving_size") or 1),
+            body.get("notes") or "",
+            food_items,
+        )
+        return {"result": result}
+    if len(parts) >= 4 and parts[1] == "recipes":
+        rid = int(parts[2])
+        if parts[3] == "delete":
+            db.delete_recipe(uid, rid)
+            return {"result": {"ok": True}}
+        if parts[3] == "log":
+            return {"result": db.log_recipe(
+                uid, rid,
+                float(body.get("servingMultiplier") or body.get("serving") or 1),
+                body.get("mealType") or "lunch",
+                body.get("date") or _today(),
+                body.get("notes") or "")}
+
     if path == "/api/supplies":
         result = db.add_supply_item(
             uid,
@@ -739,6 +865,7 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             price=float(body.get("price") or 0),
             location=body.get("location") or "",
             notes=body.get("notes") or "",
+            economy_category=body.get("economy_category") or body.get("economyCategory") or "",
         )
         return {"result": result}
     if len(parts) >= 4 and parts[1] == "supplies":
@@ -748,8 +875,15 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             db.delete_supply_item(uid, sid)
             return {"result": {"ok": True}}
         if action == "tx":
-            return {"result": db.record_supply_tx(
-                uid, sid, body.get("kind") or "in", float(body.get("qty") or 0), body.get("note") or "")}
+            qty = float(body.get("qty") or 0)
+            note = body.get("note") or ""
+            if body.get("logEconomy"):
+                return {"result": db.record_supply_tx_with_economy(
+                    uid, sid, body.get("kind") or "in", qty, note,
+                    log_economy=True,
+                    economy_amount=float(body.get("economyAmount") or 0),
+                    economy_category=body.get("economyCategory") or "Supplies")}
+            return {"result": db.record_supply_tx(uid, sid, body.get("kind") or "in", qty, note)}
         if action == "update":
             kw = {}
             for src, dst in (("name", "name"), ("location", "location"), ("category", "category"), ("unit", "unit"), ("notes", "notes")):
