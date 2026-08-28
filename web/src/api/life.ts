@@ -1,0 +1,70 @@
+import { apiGet, apiPost } from './client';
+
+export const life = {
+  addSport: (body: Record<string, unknown>) => apiPost<any>('/api/sport', body),
+  completeSport: (id: string) => apiPost<any>(`/api/sport/${id}/complete`, {}),
+  sportReps: (id: string, reps: number, sets?: number) =>
+    apiPost<any>(`/api/sport/${id}/reps`, { reps, sets: sets || 1 }),
+  deleteSport: (id: string) => apiPost<any>(`/api/sport/${id}/delete`, {}),
+  duplicateSport: (id: string) => apiPost<any>(`/api/sport/${id}/duplicate`, {}),
+  foodItems: () => apiGet<any>('/api/food/items'),
+  addCustomFood: (body: Record<string, unknown>) => apiPost<any>('/api/food/custom', body),
+  logFood: (body: Record<string, unknown>) => apiPost<any>('/api/food/log', body),
+  deleteFoodLog: (id: string) => apiPost<any>(`/api/food/log/${id}/delete`, {}),
+  nutritionGoals: () => apiGet<any>('/api/nutrition/goals'),
+  saveNutritionGoals: (body: Record<string, unknown>) => apiPost<any>('/api/nutrition/goals', body),
+  addWater: (amountMl: number) => apiPost<any>('/api/water', { amountMl }),
+  resetWater: () => apiPost<any>('/api/water/reset', {}),
+  setWaterGoal: (targetMl: number) => apiPost<any>('/api/water/goal', { targetMl }),
+  addEconomy: (body: Record<string, unknown>) => apiPost<any>('/api/economy', body),
+  deleteEconomy: (id: string) => apiPost<any>(`/api/economy/${id}/delete`, {}),
+  addDebt: (body: Record<string, unknown>) => apiPost<any>('/api/debts', body),
+  payDebt: (id: string, amount: number) => apiPost<any>(`/api/debts/${id}/pay`, { amount }),
+  deleteDebt: (id: string) => apiPost<any>(`/api/debts/${id}/delete`, {}),
+  addNote: (body: Record<string, unknown>) => apiPost<any>('/api/notes', body),
+  updateNote: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/notes/${id}/update`, body),
+  deleteNote: (id: string) => apiPost<any>(`/api/notes/${id}/delete`, {}),
+  addNoteFolder: (body: Record<string, unknown>) => apiPost<any>('/api/note-folders', body),
+  deleteNoteFolder: (id: string) => apiPost<any>(`/api/note-folders/${id}/delete`, {}),
+  previewMath: (content: string) => apiPost<any>('/api/notes/preview-math', { content }),
+  archiveNote: (id: string, archived: boolean) => apiPost<any>(`/api/notes/${id}/archive`, { archived }),
+  duplicateNote: (id: string, folderId?: string | null) =>
+    apiPost<any>(`/api/notes/${id}/duplicate`, { folderId }),
+  addReminder: (body: Record<string, unknown>) => apiPost<any>('/api/reminders', body),
+  toggleReminder: (id: string) => apiPost<any>(`/api/reminders/${id}/toggle`, {}),
+  deleteReminder: (id: string) => apiPost<any>(`/api/reminders/${id}/delete`, {}),
+  saveCalendarNote: (date: string, note: string) =>
+    apiPost<any>('/api/calendar/note', { date, note }),
+  addHealth: (body: Record<string, unknown>) => apiPost<any>('/api/health', body),
+  getBmi: () => apiGet<any>('/api/health/bmi'),
+  saveBmi: (body: Record<string, unknown>) => apiPost<any>('/api/health/bmi', body),
+  completePomodoro: (durationMinutes: number, label: string) =>
+    apiPost<any>('/api/pomodoro/complete', { durationMinutes, label }),
+  addSaving: (body: Record<string, unknown>) => apiPost<any>('/api/savings', body),
+  addToSaving: (id: string, amount: number) => apiPost<any>(`/api/savings/${id}/add`, { amount }),
+  withdrawSaving: (id: string, amount: number) => apiPost<any>(`/api/savings/${id}/withdraw`, { amount }),
+  deleteSaving: (id: string) => apiPost<any>(`/api/savings/${id}/delete`, {}),
+  addInvestment: (body: Record<string, unknown>) => apiPost<any>('/api/investments', body),
+  investmentReturn: (id: string, percent?: number) =>
+    apiPost<any>(`/api/investments/${id}/return`, { percent: percent || 5 }),
+  withdrawInvestment: (id: string) => apiPost<any>(`/api/investments/${id}/withdraw`, {}),
+  addSubscription: (body: Record<string, unknown>) => apiPost<any>('/api/subscriptions', body),
+  renewSubscription: (id: string) => apiPost<any>(`/api/subscriptions/${id}/renew`, {}),
+  deleteSubscription: (id: string) => apiPost<any>(`/api/subscriptions/${id}/delete`, {}),
+  addDebtNote: (body: Record<string, unknown>) => apiPost<any>('/api/debt-notes', body),
+  settleDebtNote: (id: string) => apiPost<any>(`/api/debt-notes/${id}/settle`, {}),
+  deleteDebtNote: (id: string) => apiPost<any>(`/api/debt-notes/${id}/delete`, {}),
+  applyTemplate: (mode: string, key: string) => apiPost<any>('/api/templates/apply', { mode, key }),
+  listTemplates: (mode: string) => apiGet<any>(`/api/templates/${mode}`),
+  addTaskFolder: (body: Record<string, unknown>) => apiPost<any>('/api/task-folders', body),
+  deleteTaskFolder: (id: string, mode?: string) =>
+    apiPost<any>(`/api/task-folders/${id}/delete`, { mode: mode || 'habit' }),
+  listSupplies: () => apiGet<any>('/api/supplies'),
+  addSupply: (body: Record<string, unknown>) => apiPost<any>('/api/supplies', body),
+  supplyTx: (id: string, kind: string, qty: number, note?: string) =>
+    apiPost<any>(`/api/supplies/${id}/tx`, { kind, qty, note }),
+  updateSupply: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/supplies/${id}/update`, body),
+  deleteSupply: (id: string) => apiPost<any>(`/api/supplies/${id}/delete`, {}),
+};

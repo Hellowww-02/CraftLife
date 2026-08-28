@@ -1,0 +1,6 @@
+{
+  "name": "CraftLife",
+  "description": "Gamified life tracker and productivity app featuring habits, dailies, quests, sport tracker, nutrition, boss battles, pets, and economy management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

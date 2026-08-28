@@ -1,0 +1,215 @@
+import React, { useEffect, useState } from 'react';
+import { useGame } from '../context/GameContext';
+import { studio } from '../api/studio';
+import { AVATAR_CLASSES, PETS_DATA } from '../data/gameData';
+import { Heart, Sparkles, Coins, Gem, Menu, Settings, Trophy, Globe, Bell } from 'lucide-react';
+
+interface NavbarProps {
+  onToggleSidebar?: () => void;
+  onOpenSettings?: () => void;
+  onOpenAchievements?: () => void;
+  onOpenPalette?: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({
+  onToggleSidebar,
+  onOpenSettings,
+  onOpenAchievements,
+  onOpenPalette,
+}) => {
+  const { user, lang, setLang, userPets, totalBuffs, achievements } = useGame();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifs, setNotifs] = useState<{ id: string; message: string; type: string; isRead: boolean; createdAt: string }[]>([]);
+  const loadNotifs = () => {
+    studio.notifications().then((d) => {
+      if (Array.isArray(d?.notifications)) setNotifs(d.notifications);
+    }).catch(() => undefined);
+  };
+  useEffect(() => {
+    loadNotifs();
+    const t = window.setInterval(loadNotifs, 30000);
+    return () => window.clearInterval(t);
+  }, []);
+  const unread = notifs.filter((n) => !n.isRead).length;
+  const currentClass = AVATAR_CLASSES[user.avatarClass] || AVATAR_CLASSES.warrior;
+  const activePet = userPets.find((p) => p.isEquipped);
+  const petMeta = activePet ? PETS_DATA[activePet.petId] : null;
+  const unclaimedAchievements = achievements.filter((a) => a.isUnlocked && !a.isClaimed).length;
+
+  const hpPercentage = Math.max(0, Math.min(100, Math.round((user.hp / user.maxHp) * 100)));
+  const mpPercentage = Math.max(0, Math.min(100, Math.round((user.mp / user.maxMp) * 100)));
+  const xpPercentage = Math.max(0, Math.min(100, Math.round((user.xp / user.xpToNextLevel) * 100)));
+
+  return (
+    <header className="shrink-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        {/* Left: Mobile Toggle + User Avatar & Vitals */}
+        <div className="flex items-center gap-3">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-slate-100 hover:bg-slate-700"
+              title="Toggle Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
+          <div className="relative cursor-pointer" onClick={onOpenSettings} title="Hero Profile">
+            <div
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center text-xl font-bold border-2 shadow-inner transition-transform hover:scale-105"
+              style={{
+                backgroundColor: `${currentClass.color}20`,
+                borderColor: currentClass.color,
+              }}
+            >
+              {user.avatarEmoji || user.avatar || currentClass.icon}
+            </div>
+            <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.2 text-[9px] font-bold bg-amber-500 text-slate-950 rounded-full border border-amber-300">
+              Lv.{user.level}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-0.5 min-w-[140px] sm:min-w-[200px]">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-200 truncate max-w-[100px] sm:max-w-[130px]">
+                {user.displayName || user.name || user.username}
+              </span>
+              <span className="text-[10px] text-amber-400 font-semibold">{currentClass.name}</span>
+            </div>
+
+            {/* HP Bar */}
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between text-[9px] font-medium text-slate-400">
+                <span className="flex items-center gap-1 text-red-400">
+                  <Heart className="w-2.5 h-2.5 fill-red-500 text-red-500" /> HP
+                </span>
+                <span>{user.hp}/{user.maxHp}</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-300 rounded-full"
+                  style={{ width: `${hpPercentage}%` }}
+                />
+              </div>
+            </div>
+
+            {/* MP Bar */}
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between text-[9px] font-medium text-slate-400">
+                <span className="flex items-center gap-1 text-sky-400">
+                  <Sparkles className="w-2.5 h-2.5 text-sky-400" /> MP
+                </span>
+                <span>{user.mp}/{user.maxMp}</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-sky-600 to-blue-500 transition-all duration-300 rounded-full"
+                  style={{ width: `${mpPercentage}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Center: XP Progress Bar (Desktop) */}
+        <div className="hidden lg:flex flex-col items-center justify-center min-w-[200px] max-w-xs">
+          <div className="flex items-center justify-between w-full text-[10px] font-semibold text-slate-300 mb-0.5">
+            <span className="text-amber-300">Level {user.level} Progress</span>
+            <span className="text-slate-400">{user.xp} / {user.xpToNextLevel} ({xpPercentage}%)</span>
+          </div>
+          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
+            <div
+              className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-300 rounded-full"
+              style={{ width: `${xpPercentage}%` }}
+            />
+          </div>
+
+          {/* Active Pet / Buffs badge */}
+          <div className="flex items-center gap-2 mt-1">
+            {activePet && petMeta && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-950/80 border border-indigo-700/60 text-indigo-300">
+                <span>{petMeta.icon}</span> {activePet.nickname || petMeta.name} (Lv.{activePet.level})
+              </span>
+            )}
+            {totalBuffs.boss_dmg > 0 && (
+              <span className="text-[10px] font-bold text-rose-400">
+                🗡️+{totalBuffs.boss_dmg}
+              </span>
+            )}
+            {totalBuffs.crit_chance > 0 && (
+              <span className="text-[10px] font-bold text-amber-400">
+                ⚡{totalBuffs.crit_chance}%
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Currencies & Quick Links */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Gold */}
+          <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-extrabold text-xs sm:text-sm">
+            <Coins className="w-3.5 h-3.5 text-amber-400" />
+            <span>{(user.gold ?? 0).toLocaleString()}</span>
+            {user.cloudLinked && user.goldCloud != null && (
+              <span className="text-[9px] font-bold text-sky-300 uppercase tracking-wide">cloud</span>
+            )}
+          </div>
+
+          {/* Gems */}
+          <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 font-extrabold text-xs sm:text-sm">
+            <Gem className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{user.gems}</span>
+          </div>
+
+          {onOpenPalette && (
+            <button
+              onClick={onOpenPalette}
+              className="hidden sm:flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-400"
+              title="Ctrl+K"
+            >
+              ⌘K
+            </button>
+          )}
+
+          {/* Achievements */}
+          {onOpenAchievements && (
+            <button
+              onClick={onOpenAchievements}
+              className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors"
+              title="Achievements"
+            >
+              <Trophy className="w-4 h-4" />
+              {unclaimedAchievements > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black flex items-center justify-center">
+                  {unclaimedAchievements}
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Settings Button */}
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors"
+              title="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Language Toggle */}
+          <button
+            onClick={() => setLang(lang === 'en' ? 'id' : 'en')}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 transition-colors"
+            title="Toggle Language"
+          >
+            <Globe className="w-3.5 h-3.5 text-sky-400" />
+            <span>{lang.toUpperCase()}</span>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};

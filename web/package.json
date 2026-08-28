@@ -1,0 +1,38 @@
+{
+  "name": "craftlife",
+  "private": true,
+  "version": "1.4.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npx vite --host 0.0.0.0 --port 3000",
+    "build": "npx vite build",
+    "start": "npx vite preview --host 0.0.0.0 --port 3000",
+    "lint": "npx tsc --noEmit",
+    "preview": "npx vite preview --host 0.0.0.0 --port 3000"
+  },
+  "dependencies": {
+    "@google/genai": "^2.19.0",
+    "canvas-confetti": "^1.9.4",
+    "clsx": "^2.1.1",
+    "express": "^5.2.1",
+    "lucide-react": "^1.16.0",
+    "motion": "^12.40.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "tailwind-merge": "^3.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/express": "^5.0.6",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.2"
+  }
+}
