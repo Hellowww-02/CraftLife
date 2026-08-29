@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
 import { BossView } from './BossView';
-import { Crown, Shield, Users, Zap } from 'lucide-react';
+import { Crown, Shield, Users, Zap, X } from 'lucide-react';
+
+const CUSTOM_BOSS_ICONS = ['👾', '👹', '🤖', '🦖', '🐙', '🦂', '🧌', '🐉', '🦇', '🍄'];
 
 /** Mirror GuildPage: guild admin + boss (BossView sebagai seksi, bukan nav terpisah). */
 export const GuildView: React.FC = () => {
@@ -14,6 +16,13 @@ export const GuildView: React.FC = () => {
   const [descDraft, setDescDraft] = useState('');
   const [inviteUser, setInviteUser] = useState('');
   const [invites, setInvites] = useState<{ id: string; guildName: string }[]>([]);
+  // CustomBossDialog (parity with PyQt CustomBossDialog)
+  const [bossModal, setBossModal] = useState(false);
+  const [cbName, setCbName] = useState('');
+  const [cbIcon, setCbIcon] = useState('👾');
+  const [cbHp, setCbHp] = useState(1000);
+  const [cbAtk, setCbAtk] = useState(20);
+  const [cbMinLvl, setCbMinLvl] = useState(10);
 
   useEffect(() => {
     refreshSocial();
@@ -73,17 +82,66 @@ export const GuildView: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => {
-            studio.customBoss({ name: 'Custom Boss', hp: 2000, atk: 30 }).then((r) => {
-              showToast(r.ok ? 'success' : 'info', r.result?.msg || 'boss', '');
-              refreshSocial();
-            });
-          }}
+          onClick={() => { setBossModal(true); setCbName(''); setCbIcon('👾'); setCbHp(1000); setCbAtk(20); setCbMinLvl(10); }}
           className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold"
         >
           {lang === 'id' ? 'Boss kustom' : 'Custom boss'}
         </button>
       </div>
+
+      {/* CustomBossDialog (parity with PyQt) */}
+      {bossModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Buat Boss Kustom' : 'Create Custom Boss'}</h3>
+              <button onClick={() => setBossModal(false)} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'Nama' : 'Name'}</label>
+              <input value={cbName} onChange={(e) => setCbName(e.target.value)} placeholder="👾 ..." className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'Ikon' : 'Icon'}</label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {CUSTOM_BOSS_ICONS.map((ic) => (
+                  <button key={ic} onClick={() => setCbIcon(ic)} className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center border ${cbIcon === ic ? 'bg-amber-500/20 border-amber-500/60' : 'bg-slate-800 border-slate-700'}`}>{ic}</button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'HP' : 'HP'}</label>
+                <input type="number" min={100} max={10000} step={100} value={cbHp} onChange={(e) => setCbHp(Math.max(100, Number(e.target.value) || 100))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'ATK' : 'ATK'}</label>
+                <input type="number" min={1} max={150} value={cbAtk} onChange={(e) => setCbAtk(Math.max(1, Number(e.target.value) || 1))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'Min. level' : 'Min level'}</label>
+                <input type="number" min={1} max={99} value={cbMinLvl} onChange={(e) => setCbMinLvl(Math.max(1, Number(e.target.value) || 1))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={() => setBossModal(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              <button
+                onClick={() => {
+                  if (!cbName.trim()) return;
+                  studio.customBoss({ name: cbName.trim(), icon: cbIcon, hp: cbHp, atk: cbAtk, minLevel: cbMinLvl }).then((r) => {
+                    showToast(r.ok ? 'success' : 'info', r.result?.msg || 'boss', '');
+                    refreshSocial();
+                  });
+                  setBossModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
+              >
+                {lang === 'id' ? 'Buat Boss' : 'Create Boss'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
         <div className="flex items-center gap-3">

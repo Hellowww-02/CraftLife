@@ -177,6 +177,96 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
   );
 }
 
+/* ---------------------------------------------------------- DualLineChart */
+
+interface DualSeries {
+  label: string;
+  value: number;
+}
+
+interface DualLineChartProps {
+  /** x-axis labels; must align index-wise with both series (or be shorter). */
+  labels: string[];
+  /** Primary series (e.g. income). */
+  a: DualSeries[];
+  /** Secondary series (e.g. expense). */
+  b: DualSeries[];
+  width?: number;
+  height?: number;
+  colorA?: string;
+  colorB?: string;
+  className?: string;
+}
+
+/**
+ * Two-series line/area chart (parity with PyQt `EconomyTrendWidget`:
+ * income vs expense over a period). Data must be ordered by x (index).
+ */
+export function DualLineChart({
+  labels,
+  a,
+  b,
+  width = 420,
+  height = 190,
+  colorA = '#34d399',
+  colorB = '#f43f5e',
+  className,
+}: DualLineChartProps) {
+  const pad = 8;
+  const innerW = width - pad * 2;
+  const innerH = height - 28;
+  const n = Math.max(a.length, b.length);
+  if (n === 0) {
+    return <svg width={width} height={height} className={className} aria-hidden="true" />;
+  }
+  const values = [...a.map((d) => d.value), ...b.map((d) => d.value)];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const stepX = n > 1 ? innerW / (n - 1) : innerW;
+  const toXY = (series: DualSeries[]) =>
+    series.map((d, i) => {
+      const x = pad + (i * innerW) / Math.max(1, n - 1);
+      const y = pad + (1 - (d.value - min) / range) * innerH;
+      return { x, y, point: d };
+    });
+  const ptsA = toXY(a);
+  const ptsB = toXY(b);
+  const lineA = ptsA.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const lineB = ptsB.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const areaA = `${pad},${pad + innerH} ${lineA} ${pad + innerW},${pad + innerH}`;
+  const areaB = `${pad},${pad + innerH} ${lineB} ${pad + innerW},${pad + innerH}`;
+  const gridLines = [0.25, 0.5, 0.75].map((t) => pad + t * innerH);
+  const lbl = (i: number) => labels[i] ?? '';
+  const labelCount = Math.max(a.length, b.length, labels.length);
+  return (
+    <svg width={width} height={height} className={className} aria-hidden="true" viewBox={`0 0 ${width} ${height}`}>
+      {gridLines.map((y, i) => (
+        <line key={`gl-${i}`} x1={pad} y1={y} x2={width - pad} y2={y} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+      ))}
+      {areaA !== `${pad},${pad + innerH} ${pad + innerW},${pad + innerH}` && (
+        <polygon points={areaA} fill={colorA} opacity="0.08" />
+      )}
+      {areaB !== `${pad},${pad + innerH} ${pad + innerW},${pad + innerH}` && (
+        <polygon points={areaB} fill={colorB} opacity="0.08" />
+      )}
+      {lineA && <polyline points={lineA} fill="none" stroke={colorA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+      {lineB && <polyline points={lineB} fill="none" stroke={colorB} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+      {ptsA.map((p, i) => (
+        <circle key={`pa-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorA} />
+      ))}
+      {ptsB.map((p, i) => (
+        <circle key={`pb-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorB} />
+      ))}
+      {Array.from({ length: labelCount }).map((_, i) => (
+        <text key={`lb-${i}`} x={pad + (i * innerW) / Math.max(1, n - 1)} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
+          {lbl(i)}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
 /* -------------------------------------------------------------- BarChart */
 
 interface BarChartProps {

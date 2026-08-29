@@ -74,6 +74,9 @@ export interface UserProfile {
   currency?: string;
   fontScale?: number;
   longestStreak?: number;
+  highContrast?: boolean;
+  language?: string;
+  onboardingDone?: boolean;
 }
 
 export interface Habit {
@@ -88,6 +91,7 @@ export interface Habit {
   negativeStreak: number;
   history: { date: string; type: 'pos' | 'neg' }[];
   createdAt: string;
+  sortOrder?: number;
 }
 
 export interface Daily {
@@ -102,6 +106,7 @@ export interface Daily {
   lastCompletedDate?: string | null;
   isFrozen?: boolean;
   createdAt: string;
+  sortOrder?: number;
 }
 
 export interface Quest {
@@ -114,6 +119,7 @@ export interface Quest {
   isCompleted: boolean;
   completedAt?: string | null;
   createdAt: string;
+  sortOrder?: number;
 }
 
 export interface TaskFolder {

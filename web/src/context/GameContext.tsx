@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { playReminderSound, ReminderSound } from '../utils/sound';
 import confetti from 'canvas-confetti';
 import {
   UserProfile,
@@ -70,6 +71,7 @@ interface GameContextType {
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
   updateUserStats: (xpDelta: number, goldDelta: number, hpDelta?: number, mpDelta?: number) => void;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
+  completeOnboarding: (profile?: Partial<UserProfile>) => Promise<void>;
   rebirthCharacter: () => void;
   changeAvatarClass: (newClass: AvatarClass) => void;
 
@@ -198,6 +200,7 @@ interface GameContextType {
   duplicateNoteItem: (id: string) => void;
   updateNote: (id: string, title: string, content: string, folderId?: string | null) => void;
   deleteNote: (id: string) => void;
+  reorderNotes: (orderedIds: string[]) => void;
 
   // Health Metrics & Pomodoro
   healthLogs: HealthMetricLog[];
@@ -255,6 +258,7 @@ interface GameContextType {
   toggleReminder: (id: string) => void;
   deleteReminder: (id: string) => void;
   calendarNotes: { date: string; note: string }[];
+  dailyTaskCounts: Record<string, number>;
   saveCalendarNote: (date: string, note: string) => void;
 
   // Level Up Celebrations & Toasts
@@ -525,6 +529,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [taskFolders, setTaskFolders] = useState<TaskFolder[]>(saved?.taskFolders || defaultFolders);
   const [habits, setHabits] = useState<Habit[]>(saved?.habits || defaultHabits);
   const [dailies, setDailies] = useState<Daily[]>(saved?.dailies || defaultDailies);
+  // P8 Heatmap: jumlah task sukses per hari (28 hari), dari `task_history`.
+  const [dailyTaskCounts, setDailyTaskCounts] = useState<Record<string, number>>({});
   const [quests, setQuests] = useState<Quest[]>(saved?.quests || defaultQuests);
   const [sportLogs, setSportLogs] = useState<SportLog[]>(saved?.sportLogs || defaultSportLogs);
   const [mealLogs, setMealLogs] = useState<MealLog[]>(saved?.mealLogs || defaultMeals);
@@ -738,6 +744,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (Array.isArray(res.noteFolders)) setNoteFolders(res.noteFolders);
     if (Array.isArray(res.reminders)) setReminders(res.reminders);
     if (Array.isArray(res.calendarNotes)) setCalendarNotes(res.calendarNotes);
+    if (res.dailyTaskCounts && typeof res.dailyTaskCounts === 'object') setDailyTaskCounts(res.dailyTaskCounts);
     if (Array.isArray(res.healthLogs)) setHealthLogs(res.healthLogs);
     if (Array.isArray(res.pomodoroSessions)) setPomodoroSessions(res.pomodoroSessions);
     if (Array.isArray(res.notebooks)) setNotebooks(res.notebooks);
@@ -958,6 +965,23 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
     showToast('success', 'Profile Updated', 'Your character details have been saved.');
   }, [showToast]);
+
+  // Mark first-time onboarding complete (persists to SQLite via /api/settings and
+  // refreshes the user object returned by the server).
+  const completeOnboarding = useCallback(async (profile?: Partial<UserProfile>) => {
+    let res: any;
+    try {
+      res = await apiPost<any>('/api/settings', { onboardingDone: true, ...profile });
+    } catch {
+      res = null;
+    }
+    setUser((prev) => ({
+      ...prev,
+      ...profile,
+      ...(res?.user || {}),
+      onboardingDone: true,
+    }));
+  }, []);
 
   // Tasks & Folders
   const addTaskFolder = useCallback((name: string, icon: string, color?: string, mode?: string) => {
@@ -1349,6 +1373,22 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     life.duplicateNote(id).then((res) => applyLive(res)).catch(() => {});
   }, [applyLive]);
 
+  // Optimistic notes reorder (drag & drop within a folder), then persist to DB.
+  const reorderNotes = useCallback((orderedIds: string[]) => {
+    const idSet = new Set(orderedIds);
+    setNotes((prev) => {
+      const byId = new Map(prev.map((n) => [n.id, n]));
+      const reordered = orderedIds
+        .map((id) => byId.get(id))
+        .filter((n): n is Note => Boolean(n));
+      return [...reordered, ...prev.filter((n) => !idSet.has(n.id))];
+    });
+    rpg
+      .reorderNotes(orderedIds.map((id) => ({ id })))
+      .then((res) => applyLive(res))
+      .catch(() => {});
+  }, [applyLive]);
+
   // Health Metrics
   const addHealthLog = useCallback((steps: number, sleepHours: number, weightKg?: number, heartRate?: number, mood: 'great' | 'good' | 'neutral' | 'tired' | 'stressed' = 'good', notes?: string) => {
     life.addHealth({ steps, sleepHours, weightKg, heartRate, mood, notes }).then((res) => applyLive(res)).catch(() => {});
@@ -1507,6 +1547,36 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     life.saveCalendarNote(date, note).then((res) => applyLive(res)).catch(() => {});
   }, [applyLive]);
 
+  // ── Phase P8: Reminder auto-trigger (sound + toast) — parity dengan RemindersPage PyQt ──
+  // Menjalankan timer tiap 30 detik; saat HH:MM aktif & repeat cocok, bunyikan
+  // alarm (WebAudio) & tampilkan toast, lalu tandai sudah dibunyikan untuk menit itu.
+  const firedRemindersRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      const hhmm = [String(now.getHours()).padStart(2, '0'), String(now.getMinutes()).padStart(2, '0')].join(':');
+      const dow = now.getDay(); // 0 = Minggu
+      const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${hhmm}`;
+      for (const rem of reminders) {
+        if (!rem.isActive) continue;
+        if ((rem.time || '') !== hhmm) continue;
+        // repeat rule
+        if (rem.repeat === 'none') continue; // none = hanya manual test (belum ada tanggal khusus di web)
+        if (rem.repeat === 'weekdays' && (dow === 0 || dow === 6)) continue;
+        const key = `${rem.id}:${minuteKey}`;
+        if (firedRemindersRef.current.has(key)) continue;
+        firedRemindersRef.current.add(key);
+        const msg = rem.title || (lang === 'id' ? 'Pengingat' : 'Reminder');
+        showToast(rem.sound === 'fanfare' ? 'level_up' : 'info', '⏰ ' + msg, `${rem.time} · ${rem.repeat}`);
+        playReminderSound((rem.sound as ReminderSound) || 'bell');
+      }
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [reminders, showToast, lang]);
+
+
   // JSON Export / Import / Reset
   const exportDataJson = useCallback(() => {
     const fullData = {
@@ -1599,6 +1669,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser,
         updateUserStats,
         updateUserProfile,
+        completeOnboarding,
         rebirthCharacter,
         changeAvatarClass,
         lang,
@@ -1703,6 +1774,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         deleteNote,
         archiveNote,
         duplicateNoteItem,
+        reorderNotes,
         healthLogs,
         addHealthLog,
         pomodoroSessions,
@@ -1749,6 +1821,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         deleteReminder,
         calendarNotes,
         saveCalendarNote,
+        dailyTaskCounts,
         levelUpInfo,
         closeLevelUpModal,
         toasts,

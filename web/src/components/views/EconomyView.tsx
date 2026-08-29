@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { apiGet } from '../../api/client';
-import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle } from 'lucide-react';
+import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart } from 'lucide-react';
+import { DualLineChart, DonutChart } from '../charts';
+import { t } from '../../i18n';
 
 let RATES: Record<string, number> = { IDR: 1, USD: 17800, EUR: 20700 };
 
@@ -58,6 +60,7 @@ export const EconomyView: React.FC = () => {
   const [payAmountInput, setPayAmountInput] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [trendDays, setTrendDays] = useState<7 | 30 | 90>(30);
 
   const totalIncome = transactions.filter((t) => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter((t) => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -117,6 +120,125 @@ export const EconomyView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Trend Widget (parity with PyQt EconomyTrendWidget) */}
+      {(() => {
+        const dayLabel = (d: Date) => `${d.getDate()}/${d.getMonth() + 1}`;
+        const start = new Date();
+        start.setDate(start.getDate() - (trendDays - 1));
+        const buckets: { date: string; income: number; expense: number }[] = [];
+        for (let i = 0; i < trendDays; i++) {
+          const d = new Date(start);
+          d.setDate(start.getDate() + i);
+          buckets.push({ date: d.toISOString().split('T')[0], income: 0, expense: 0 });
+        }
+        const bucketByDate = new Map(buckets.map((b) => [b.date, b]));
+        transactions.forEach((tx) => {
+          const d = (tx.date || '').slice(0, 10);
+          const bucket = bucketByDate.get(d);
+          if (!bucket) return;
+          if (tx.type === 'income') bucket.income += tx.amount;
+          else bucket.expense += tx.amount;
+        });
+        const labelStep = trendDays <= 7 ? 1 : trendDays <= 30 ? 5 : 15;
+        const labels = buckets.map((b, i) => (i % labelStep === 0 ? dayLabel(new Date(b.date)) : ''));
+        const incomeSeries = buckets.map((b) => ({ label: b.date, value: Math.round(b.income) }));
+        const expenseSeries = buckets.map((b) => ({ label: b.date, value: Math.round(b.expense) }));
+        const periodIncome = incomeSeries.reduce((s, d) => s + d.value, 0);
+        const periodExpense = expenseSeries.reduce((s, d) => s + d.value, 0);
+        const periodNet = periodIncome - periodExpense;
+        // expense split by category for the donut
+        const byCat = new Map<string, number>();
+        transactions.forEach((tx) => {
+          if (tx.type !== 'expense') return;
+          const d = (tx.date || '').slice(0, 10);
+          if (!bucketByDate.has(d)) return;
+          const cat = tx.category && tx.category.trim() ? tx.category.trim() : 'Other';
+          byCat.set(cat, (byCat.get(cat) || 0) + tx.amount);
+        });
+        const catColors = ['#34d399', '#3b82f6', '#f43f5e', '#f59e0b', '#8b5cf6', '#10b981', '#06b6d4', '#64748b'];
+        const donutData = [...byCat.entries()]
+          .sort((x, y) => y[1] - x[1])
+          .slice(0, 8)
+          .map(([label, value], i) => ({ label, value: Math.round(value), color: catColors[i % catColors.length] }));
+        const isEmpty = periodIncome === 0 && periodExpense === 0;
+        const periodKey = trendDays === 7 ? 'economy_period_7d' : trendDays === 30 ? 'economy_period_30d' : 'economy_period_90d';
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Trend chart */}
+            <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-emerald-400" />
+                  <h2 className="font-bold text-slate-100">{t('economy_trend_title', lang === 'id' ? 'Tren Keuangan' : 'Financial Trend')}</h2>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg text-[11px] font-bold">
+                  {([7, 30, 90] as const).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setTrendDays(d)}
+                      className={`px-2.5 py-1 rounded-md transition-all ${trendDays === d ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      {t(`economy_period_${d}d`, d === 7 ? '7 days' : d === 30 ? '30 days' : '90 days')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {isEmpty ? (
+                <p className="text-sm text-slate-500 py-10 text-center">{t('economy_trend_empty', lang === 'id' ? 'Belum ada transaksi pada periode ini.' : 'No transactions in this period.')}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+                    <div>
+                      <div className="text-[10px] uppercase text-slate-400 font-bold">{t('economy_trend_income', lang === 'id' ? 'Pemasukan' : 'Income')}</div>
+                      <div className="text-emerald-400 text-sm font-black">{fmtMoney(periodIncome, currency)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase text-slate-400 font-bold">{t('economy_trend_expense', lang === 'id' ? 'Pengeluaran' : 'Expense')}</div>
+                      <div className="text-rose-400 text-sm font-black">{fmtMoney(periodExpense, currency)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase text-slate-400 font-bold">{t('economy_trend_net', lang === 'id' ? 'Selisih' : 'Net')}</div>
+                      <div className={`text-sm font-black ${periodNet >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>{fmtMoney(periodNet, currency)}</div>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[300px]">
+                      <DualLineChart labels={labels} a={incomeSeries} b={expenseSeries} colorA="#34d399" colorB="#f43f5e" width={620} height={190} />
+                      <div className="flex justify-center gap-5 mt-2 text-[11px] font-bold">
+                        <span className="flex items-center gap-1.5 text-emerald-300"><span className="w-3 h-0.5 bg-emerald-400 rounded" />{t('economy_trend_income', lang === 'id' ? 'Pemasukan' : 'Income')}</span>
+                        <span className="flex items-center gap-1.5 text-rose-300"><span className="w-3 h-0.5 bg-rose-400 rounded" />{t('economy_trend_expense', lang === 'id' ? 'Pengeluaran' : 'Expense')}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            {/* Expense breakdown donut */}
+            <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+              <div className="flex items-center gap-2 mb-3">
+                <PieChart className="w-5 h-5 text-rose-400" />
+                <h2 className="font-bold text-slate-100">{t('economy_expense_split', lang === 'id' ? 'Rincian Pengeluaran' : 'Expense Breakdown')}</h2>
+              </div>
+              {donutData.length === 0 ? (
+                <p className="text-sm text-slate-500 py-10 text-center">{lang === 'id' ? 'Belum ada pengeluaran.' : 'No expenses yet.'}</p>
+              ) : (
+                <div className="flex flex-col items-center gap-4">
+                  <DonutChart data={donutData} size={150} strokeWidth={16} centerLabel={fmtMoney(periodExpense, currency)} centerSub={lang === 'id' ? 'total' : 'total'} />
+                  <div className="space-y-1.5 w-full">
+                    {donutData.map((d) => (
+                      <div key={d.label} className="flex items-center justify-between text-[11px]">
+                        <span className="flex items-center gap-1.5 text-slate-300"><span className="w-2.5 h-2.5 rounded-full" style={{ background: d.color }} />{d.label}</span>
+                        <span className="text-slate-400 font-semibold">{fmtMoney(d.value, currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Tabs and Create Actions */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -497,29 +619,13 @@ export const EconomyView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDebtType('payable')}
-                  className={`py-2 rounded-xl font-bold border transition-colors ${
-                    debtType === 'payable'
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
-                  }`}
-                >
-                  {lang === 'id' ? 'Hutang Saya (Bayar)' : 'I Owe (Payable)'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDebtType('receivable')}
-                  className={`py-2 rounded-xl font-bold border transition-colors ${
-                    debtType === 'receivable'
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                      : 'bg-slate-800 text-slate-400 border-slate-700'
-                  }`}
-                >
-                  {lang === 'id' ? 'Piutang (Tagih)' : 'Owed to Me (Receivable)'}
-                </button>
+              <div className="p-3 rounded-xl bg-slate-800/60 text-slate-300 text-xs flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  {lang === 'id'
+                    ? 'Hutang pribadi dengan cicilan (bayar sebagian, auto-catat sebagai pengeluaran). Untuk piutang / orang meminjam ke kamu, pakai tab Catatan Hutang.'
+                    : 'Personal debt with installments (pay in parts, auto-logged as expense). For IOUs others owe you, use the IOU notes tab.'}
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

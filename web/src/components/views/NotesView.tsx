@@ -5,7 +5,7 @@ import { FileText, Plus, Trash2, Edit3, Folder, FolderPlus, Pin, Calculator, Spa
 import Markdown from 'react-markdown';
 
 export const NotesView: React.FC = () => {
-  const { notes, addNote, updateNote, deleteNote, archiveNote, duplicateNoteItem, noteFolders, addNoteFolder, deleteNoteFolder, lang, notebooks, addNotebookSource, addNotebook } = useGame();
+  const { notes, addNote, updateNote, deleteNote, archiveNote, duplicateNoteItem, reorderNotes, noteFolders, addNoteFolder, deleteNoteFolder, lang, notebooks, addNotebookSource, addNotebook } = useGame();
   const [noteSearch, setNoteSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
 
@@ -28,6 +28,25 @@ export const NotesView: React.FC = () => {
   const wrapSel = (before: string, after: string) => {
     setEditContent((c) => `${before}${c}${after}`);
     setIsEditing(true);
+  };
+
+  // Drag & drop reorder state (same-folder reorder; disabled in "All" view)
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const canDragReorder = selectedFolderId !== null;
+
+  const handleDrop = (targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    const ids = filteredNotes.map((n) => n.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...ids];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    reorderNotes(next);
+    setDragId(null);
+    setOverId(null);
   };
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
@@ -190,6 +209,11 @@ export const NotesView: React.FC = () => {
           </div>
 
           {/* Notes List */}
+          {canDragReorder && filteredNotes.length > 1 && (
+            <p className="text-[10px] text-slate-500">
+              {lang === 'id' ? '💡 Seret catatan untuk mengurutkan.' : '💡 Drag a note to reorder it.'}
+            </p>
+          )}
           <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
             {filteredNotes.map((note) => {
               const isActive = activeNoteId === note.id;
@@ -198,10 +222,42 @@ export const NotesView: React.FC = () => {
                 <div
                   key={note.id}
                   onClick={() => handleSelectNote(note.id)}
-                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                  draggable={canDragReorder}
+                  onDragStart={(e) => {
+                    if (!canDragReorder) return;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', String(note.id));
+                    setDragId(note.id);
+                  }}
+                  onDragOver={(e) => {
+                    if (!canDragReorder || !dragId || dragId === note.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setOverId(note.id);
+                  }}
+                  onDragLeave={() => {
+                    if (overId === note.id) setOverId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleDrop(note.id);
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setOverId(null);
+                  }}
+                  className={`p-3.5 rounded-2xl border transition-all ${
+                    canDragReorder ? 'cursor-grab' : 'cursor-pointer'
+                  } ${
                     isActive
                       ? 'bg-cyan-950/25 border-cyan-500/50 shadow-md'
                       : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                  } ${
+                    dragId === note.id ? 'opacity-40' : ''
+                  } ${
+                    overId === note.id && dragId && dragId !== note.id
+                      ? 'border-cyan-400 ring-1 ring-cyan-400/50'
+                      : ''
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
+import { rpg } from '../../api/rpg';
 import { AVATAR_CLASSES, PETS_DATA } from '../../data/gameData';
 import {
   Zap,
@@ -20,16 +21,25 @@ import {
   Heart,
   Users,
   Calendar as CalendarIcon,
+  Settings2,
+  Trophy,
 } from 'lucide-react';
 import { ActiveView, NavTab } from '../../types';
+import { ProgressRing } from '../charts';
+import { DashboardWidgetsDialog } from '../DashboardWidgetsDialog';
+import { YearWrappedDialog } from '../YearWrappedDialog';
 
 export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; setActiveTab?: (tab: NavTab) => void }> = ({ onNavigate, setActiveTab }) => {
   const navigate = (tab: ActiveView) => {
     if (onNavigate) onNavigate(tab);
     if (setActiveTab) setActiveTab(tab);
   };
-  const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest } = useGame();
+  const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest, dailyTaskCounts } = useGame();
+  const [widgetsOpen, setWidgetsOpen] = useState(false);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
+
   const currentClass = AVATAR_CLASSES[user.avatarClass] || AVATAR_CLASSES.warrior;
+  const lvlXpPct = Math.min(100, Math.round((user.xp / Math.max(1, user.xpToNextLevel)) * 100));
 
   const completedDailiesCount = dailies.filter((d) => d.isCompletedToday).length;
   const totalDailiesCount = dailies.length;
@@ -65,6 +75,32 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             </div>
           </div>
 
+          {/* ProgressRing (Level/XP) — parity with PyQt ProgressRing */}
+          <div className="flex items-center gap-4">
+            <ProgressRing size={72} strokeWidth={7} progress={lvlXpPct / 100} color="#f59e0b">
+              <div className="text-center">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Lv</div>
+                <div className="text-lg font-black text-amber-300 leading-none">{user.level}</div>
+              </div>
+            </ProgressRing>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setWrappedOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/30"
+              >
+                <Trophy className="w-3.5 h-3.5" /> {lang === 'id' ? 'Tahun Ini' : 'Year Wrapped'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWidgetsOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-700"
+              >
+                <Settings2 className="w-3.5 h-3.5" /> {lang === 'id' ? 'Atur Widget' : 'Widgets'}
+              </button>
+            </div>
+          </div>
+
           {/* Quick Action Stats */}
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
@@ -92,7 +128,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             const d = new Date();
             d.setDate(d.getDate() - (27 - i));
             const key = d.toISOString().slice(0, 10);
-            const n = dailies.filter((x) => x.lastCompletedDate === key || (x.isCompletedToday && i === 27)).length;
+            // Sumber data heatmap: `task_history` per hari (authoritative).
+            // Fallback ke jumlah daily yang selesai hari itu bila belum tersedia.
+            const n = dailyTaskCounts[key] ?? dailies.filter((x) => x.lastCompletedDate === key || (x.isCompletedToday && i === 27)).length;
             const bg = n === 0 ? 'bg-slate-800' : n < 2 ? 'bg-emerald-900' : n < 4 ? 'bg-emerald-600' : 'bg-emerald-400';
             return <div key={key} title={`${key}: ${n}`} className={`h-4 rounded-sm ${bg}`} />;
           })}
@@ -430,6 +468,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
         </div>
       </div>
+
+      {widgetsOpen && <DashboardWidgetsDialog onClose={() => setWidgetsOpen(false)} />}
+      {wrappedOpen && <YearWrappedDialog onClose={() => setWrappedOpen(false)} displayName={user.displayName || user.username} />}
     </div>
   );
 };

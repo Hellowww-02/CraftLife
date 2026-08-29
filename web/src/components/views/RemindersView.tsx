@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
+import { playReminderSound } from '../../utils/sound';
 import { Bell, BellOff, Clock, Plus, Trash2 } from 'lucide-react';
 
 /** Mirror RemindersPage (MainPyQt6) — halaman terpisah dari CalendarPage. */
@@ -11,24 +12,7 @@ export const RemindersView: React.FC = () => {
   const [repeat, setRepeat] = useState<'none' | 'daily' | 'weekdays' | 'weekly'>('daily');
   const [sound, setSound] = useState<'beep' | 'bell' | 'magic' | 'fanfare'>('bell');
 
-  const testBeep = () => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.frequency.value = 880;
-      g.gain.value = 0.08;
-      o.start();
-      setTimeout(() => {
-        o.stop();
-        ctx.close();
-      }, 180);
-    } catch {
-      /* ignore */
-    }
-  };
+  const testBeep = () => playReminderSound((sound as 'beep' | 'bell' | 'magic' | 'fanfare') || 'bell');
 
   return (
     <div className="space-y-6">

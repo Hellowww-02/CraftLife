@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { GameProvider } from './context/GameContext';
+import { GameProvider, useGame } from './context/GameContext';
+import { OnboardingWizard } from './components/views/OnboardingWizard';
 import { ActiveView } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer } from './components/ToastContainer';
+import { UndoToast } from './components/UndoToast';
 import { LevelUpModal } from './components/LevelUpModal';
 import { CommandPalette } from './components/CommandPalette';
+import { QuickAddDialog } from './components/QuickAddDialog';
 import { LoginView } from './components/views/LoginView';
 
 import { DashboardView } from './components/views/DashboardView';
@@ -145,6 +148,8 @@ const MainLayout: React.FC = () => {
       </div>
 
       <ToastContainer />
+      <UndoToast />
+      <QuickAddDialog />
       <LevelUpModal />
       <CommandPalette
         open={paletteOpen}
@@ -153,6 +158,16 @@ const MainLayout: React.FC = () => {
       />
     </div>
   );
+};
+
+/** Show the first-time OnboardingWizard (parity with PyQt) until onboarding_done. */
+const OnboardingGate: React.FC = () => {
+  const { user } = useGame();
+  const [dismissed, setDismissed] = useState(false);
+  if (user && user.onboardingDone === false && !dismissed) {
+    return <OnboardingWizard onDone={() => setDismissed(true)} />;
+  }
+  return <MainLayout />;
 };
 
 const Gate: React.FC = () => {
@@ -172,13 +187,13 @@ const Gate: React.FC = () => {
       />
     );
   }
-  return <MainLayout />;
+  return <OnboardingGate />;
 };
 
 export default function App() {
   return (
     <GameProvider>
-      <Gate />
+      <OnboardingGate />
     </GameProvider>
   );
 }

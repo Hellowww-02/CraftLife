@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { studio } from '../../api/studio';
 import { bridge } from '../../bridge';
+import { X } from 'lucide-react';
 import {
   Heart,
   Calendar,
@@ -17,6 +18,43 @@ import {
   Star,
   Award,
 } from 'lucide-react';
+
+/** Thumbnail for a Love Space photo; fetches the authed image URL once. */
+const PhotoThumb: React.FC<{ photo: any; onClick: () => void }> = ({ photo, onClick }) => {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    let alive = true;
+    studio.lovePhotoImage(photo.id).then((u) => { if (alive) setUrl(u); }).catch(() => setUrl(''));
+    return () => { alive = false; };
+  }, [photo.id]);
+  return (
+    <div
+      onClick={onClick}
+      className="cursor-pointer group relative overflow-hidden rounded-lg border border-slate-800 aspect-video bg-slate-950 hover:border-rose-500/40 transition-colors"
+    >
+      {url ? (
+        <img src={url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-slate-600 text-3xl">🖼️</div>
+      )}
+      {photo.caption && (
+        <span className="absolute bottom-0 inset-x-0 px-2 py-1 text-[10px] text-white bg-black/60 truncate">{photo.caption}</span>
+      )}
+    </div>
+  );
+};
+
+/** Full-size viewer image (lightbox). */
+const ViewerImage: React.FC<{ photo: any }> = ({ photo }) => {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    let alive = true;
+    if (photo?.id) studio.lovePhotoImage(photo.id).then((u) => { if (alive) setUrl(u); }).catch(() => setUrl(''));
+    return () => { alive = false; };
+  }, [photo?.id]);
+  if (!url) return <div className="w-full h-full flex items-center justify-center text-slate-600 text-4xl">🖼️</div>;
+  return <img src={url} alt="" className="w-full h-full object-contain" />;
+};
 
 export const LoveSpaceView: React.FC = () => {
   const {
@@ -54,6 +92,9 @@ export const LoveSpaceView: React.FC = () => {
   const [showAddBucketModal, setShowAddBucketModal] = useState(false);
   const [newBucketTitle, setNewBucketTitle] = useState('');
   const [newBucketYear, setNewBucketYear] = useState<number>(2026);
+
+  // Lightbox photo viewer (parity with PyQt _GalleryViewerDialog).
+  const [viewer, setViewer] = useState<any>(null);
 
   // Calculate Days Together
   const calculateDaysTogether = () => {
@@ -319,32 +360,56 @@ export const LoveSpaceView: React.FC = () => {
 
       {(loveSpace.photos || []).length > 0 && (
         <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-          <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Galeri (caption, tanggal, visibilitas)' : 'Gallery (caption, date, visibility)'}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Galeri (klik untuk lihat & edit)' : 'Gallery (click to view & edit)'}</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {(loveSpace.photos || []).map((ph) => (
-              <div key={ph.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-xs">
+              <PhotoThumb key={ph.id} photo={ph} onClick={() => setViewer(ph)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox photo viewer + editor (parity _GalleryViewerDialog / _GalleryEditDialog) */}
+      {viewer && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setViewer(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-sm text-slate-100">{lang === 'id' ? 'Foto Kenangan' : 'Memory Photo'}</h4>
+              <button onClick={() => setViewer(null)} className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 aspect-video flex items-center justify-center">
+              <ViewerImage photo={viewer} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase text-slate-500">{lang === 'id' ? 'Caption' : 'Caption'}</label>
                 <input
-                  defaultValue={ph.caption}
-                  placeholder={lang === 'id' ? 'Caption' : 'Caption'}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-100"
-                  onBlur={(e) => updateLovePhotoMeta(ph.id, { caption: e.target.value, photoDate: ph.photoDate, visibility: ph.visibility })}
+                  defaultValue={viewer.caption || ''}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-100"
+                  onBlur={(e) => updateLovePhotoMeta(viewer.id, { caption: e.target.value, photoDate: viewer.photoDate, visibility: viewer.visibility })}
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase text-slate-500">{lang === 'id' ? 'Tanggal' : 'Date'}</label>
                 <input
                   type="date"
-                  defaultValue={ph.photoDate || ''}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-100"
-                  onBlur={(e) => updateLovePhotoMeta(ph.id, { caption: ph.caption, photoDate: e.target.value, visibility: ph.visibility })}
+                  defaultValue={viewer.photoDate || ''}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-100"
+                  onBlur={(e) => updateLovePhotoMeta(viewer.id, { caption: viewer.caption, photoDate: e.target.value, visibility: viewer.visibility })}
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase text-slate-500">{lang === 'id' ? 'Visibilitas' : 'Visibility'}</label>
                 <select
-                  defaultValue={ph.visibility || 'private'}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-100"
-                  onChange={(e) => updateLovePhotoMeta(ph.id, { caption: ph.caption, photoDate: ph.photoDate, visibility: e.target.value })}
+                  defaultValue={viewer.visibility || 'private'}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-slate-100"
+                  onChange={(e) => updateLovePhotoMeta(viewer.id, { caption: viewer.caption, photoDate: viewer.photoDate, visibility: e.target.value })}
                 >
                   <option value="private">{lang === 'id' ? 'Pribadi' : 'Private'}</option>
                   <option value="shared">{lang === 'id' ? 'Bersama' : 'Shared'}</option>
                 </select>
               </div>
-            ))}
+            </div>
           </div>
         </div>
       )}

@@ -50,6 +50,9 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
   const [emoji, setEmoji] = useState(user.avatarEmoji || user.avatar || '⚔️');
   const [heroClass, setHeroClass] = useState(String(user.avatarClass || user.heroClass || 'warrior').toLowerCase());
   const [code, setCode] = useState('');
+  const [oldPw, setOldPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [lockPw, setLockPw] = useState('');
 
   const save = () => {
     updateUserProfile({ displayName: name, name, bio, avatarEmoji: emoji, avatar: emoji, heroClass, avatarClass: heroClass as any });
@@ -200,6 +203,34 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
         >
           {lang === 'id' ? 'Generate backup codes' : 'Generate backup codes'}
         </button>
+      </div>
+
+      {/* Account security: change password + lock/unlock (parity with PyQt) */}
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+        <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Keamanan Akun' : 'Account Security'}</div>
+        <div className="grid sm:grid-cols-2 gap-2">
+          <input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} placeholder={lang === 'id' ? 'Kata sandi lama' : 'Current password'} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+          <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder={lang === 'id' ? 'Kata sandi baru (min. 8)' : 'New password (min. 8)'} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            apiPost<any>('/api/profile/password', { oldPassword: oldPw, newPassword: newPw }).then((r) => {
+              showToast(r.ok ? 'success' : 'info', r.result?.msg || r.error || 'password', '');
+              if (r.ok) { setOldPw(''); setNewPw(''); }
+            }).catch((e) => showToast('info', String(e?.message || e), ''));
+          }}
+          className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold"
+        >
+          {lang === 'id' ? 'Ganti kata sandi' : 'Change password'}
+        </button>
+        <div className="flex gap-2 pt-1">
+          <input type="password" value={lockPw} onChange={(e) => setLockPw(e.target.value)} placeholder={lang === 'id' ? 'Kata sandi kunci' : 'Lock password'} className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+          <button type="button" onClick={() => { apiPost<any>('/api/profile/lock', { password: lockPw }).then(() => showToast('success', 'locked', '')); setLockPw(''); }}
+            className="px-3 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold">{lang === 'id' ? 'Kunci' : 'Lock'}</button>
+          <button type="button" onClick={() => { apiPost<any>('/api/profile/lock', { unlock: true, password: lockPw }).then(() => showToast('success', 'unlocked', '')); setLockPw(''); }}
+            className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">{lang === 'id' ? 'Buka' : 'Unlock'}</button>
+        </div>
       </div>
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">

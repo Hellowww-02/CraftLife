@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import {
   BookOpen,
@@ -41,6 +41,17 @@ export const LearningView: React.FC = () => {
 
   const [activeNotebookId, setActiveNotebookId] = useState<string>(notebooks[0]?.id || '');
   const [activeTab, setActiveTab] = useState<LearningTab>('chat');
+  // PyQt parity: auto-create a first notebook when the list is empty (PyQt seeds
+  // a "First Notebook" via `db.create_learning_notebook`). Guarded to run once.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (notebooks.length === 0) {
+      seededRef.current = true;
+      addNotebook(lang === 'id' ? 'Notebook Pertama' : 'First Notebook', '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notebooks.length]);
 
   // Input states
   const [chatInput, setChatInput] = useState('');

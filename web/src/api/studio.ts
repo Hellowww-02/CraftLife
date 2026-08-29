@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, authToken, apiBase } from './client';
 
 export const studio = {
   addNotebook: (title: string, description?: string, icon?: string) =>
@@ -50,6 +50,19 @@ export const studio = {
   rejectGuildRequest: (id: string) => apiPost<any>(`/api/guild/requests/${id}/reject`, {}),
   lovePhotoMeta: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/love/photos/${id}/meta`, body),
+  // Fetch a Love Space photo as a Blob (with auth) and return an object URL so
+  // <img> can render it without exposing the session token in a plain URL.
+  lovePhotoImage: (id: string): Promise<string> => {
+    const headers: Record<string, string> = { Accept: 'image/*' };
+    const token = authToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(`${apiBase()}/api/love/photo/image?id=${encodeURIComponent(id)}`, { headers, credentials: 'include' })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.blob();
+      })
+      .then((b) => URL.createObjectURL(b));
+  },
   loveCheckin: (body: Record<string, unknown>) => apiPost<any>('/api/love/checkin', body),
   lovePhoto: (path: string) => apiPost<any>('/api/love/photo', { path }),
   loveEvent: (body: Record<string, unknown>) => apiPost<any>('/api/love/events', body),
@@ -72,5 +85,20 @@ export const studio = {
   musicLibrary: () => apiGet<any>('/api/music/library'),
   addPlaylistTrack: (playlistId: string | number, path: string) =>
     apiPost<any>('/api/music/playlist-track', { playlistId, path }),
+  // Lyrics (3-provider: LRCLIB get/search + lyrics.ovh) — parity dengan _LyricsFetcher PyQt
+  musicLyrics: (artist: string, title: string) =>
+    apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}`),
+  // Playlist management (rename/delete/remove/move/copy)
+  renamePlaylist: (playlistId: string | number, name: string) =>
+    apiPost<any>('/api/music/playlist-rename', { playlistId, name }),
+  deletePlaylist: (playlistId: string | number) =>
+    apiPost<any>('/api/music/playlist-delete', { playlistId }),
+  removePlaylistTrack: (playlistId: string | number, index: number) =>
+    apiPost<any>('/api/music/playlist-track-remove', { playlistId, index }),
+  movePlaylistTrack: (fromPlaylistId: string | number, toPlaylistId: string | number, index: number) =>
+    apiPost<any>('/api/music/playlist-track-move', { fromPlaylistId, toPlaylistId, index }),
+  copyPlaylistTrack: (fromPlaylistId: string | number, toPlaylistId: string | number, index: number) =>
+    apiPost<any>('/api/music/playlist-track-copy', { fromPlaylistId, toPlaylistId, index }),
+  musicPlaylists: () => apiGet<any>('/api/music/playlists'),
 };
 

@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { SPORT_TYPES } from '../../data/gameData';
-import { Activity, Plus, Flame, Timer, Trash2, Dumbbell, Award } from 'lucide-react';
+import { Activity, Plus, Flame, Timer, Trash2, Dumbbell, Award, TrendingUp, X } from 'lucide-react';
+import { LineChart } from '../charts';
 
 export const SportView: React.FC = () => {
-  const { user, sportLogs, addSportLog, completeSportLog, deleteSportLog, lang, applyTaskTemplate } = useGame();
+  const { user, sportLogs, addSportLog, completeSportLog, deleteSportLog, lang, applyTaskTemplate, showToast } = useGame();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
@@ -52,6 +53,56 @@ export const SportView: React.FC = () => {
 
   const nextSportLvlXp = user.sportLevel * 150;
   const sportXpPct = Math.min(100, Math.round((user.sportXp / nextSportLvlXp) * 100));
+
+  // ---- Reps (parity with PyQt SportRepsChartWidget / LogSportRepsDialog) ----
+  const [repsSummary, setRepsSummary] = useState<any>(null);
+  const [repsModal, setRepsModal] = useState<{ open: boolean; activity: any }>({ open: false, activity: null });
+  const [repSets, setRepSets] = useState(1);
+  const [repReps, setRepReps] = useState(10);
+  const [repNote, setRepNote] = useState('');
+  const [repInfo, setRepInfo] = useState<any>(null);
+
+  useEffect(() => {
+    life.sportRepsSummary().then((d) => setRepsSummary(d?.activities || [])).catch(() => setRepsSummary([]));
+  }, []);
+
+  const openReps = async (activity: any) => {
+    setRepsModal({ open: true, activity });
+    setRepSets(1); setRepReps(10); setRepNote(''); setRepInfo(null);
+    try {
+      const info = await life.sportRepsInfo(activity.id);
+      if (info?.ok === false) { setRepInfo({ total: 0, rank: { key: 'unranked', icon: '⭐' }, history: [] }); }
+      else setRepInfo(info);
+    } catch {
+      setRepInfo({ total: 0, rank: { key: 'unranked', icon: '⭐' }, history: [] });
+    }
+  };
+
+  const submitReps = async () => {
+    if (!repsModal.activity || repReps <= 0) return;
+    const res = await life.sportReps(repsModal.activity.id, repReps, repSets);
+    if (res?.result?.ok === false) {
+      showToast('info', String(res.result.code || 'error'), '');
+      return;
+    }
+    try {
+      const info = await life.sportRepsInfo(repsModal.activity.id);
+      setRepInfo(info);
+    } catch { /* ignore */ }
+    life.sportRepsSummary().then((d) => setRepsSummary(d?.activities || [])).catch(() => undefined);
+    // Rank-up celebration message
+    if (res?.result && res.result.rank_up) {
+      showToast('level_up', '🎉 ' + (lang === 'id' ? 'Rank Naik!' : 'Rank Up!'), String(res.result.rank_after?.key || ''));
+    }
+  };
+
+  // Aggregate reps across all activities over the returned 7-day series
+  const repSeriesByDate = new Map<string, number>();
+  (repsSummary || []).forEach((a: any) => (a.series || []).forEach((s: any) => {
+    repSeriesByDate.set(s.date, (repSeriesByDate.get(s.date) || 0) + Number(s.reps || 0));
+  }));
+  const repChartData = [...repSeriesByDate.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1)).map(([date, value]) => ({ label: date.slice(5), value }));
+  const totalRepsAll = (repsSummary || []).reduce((acc: number, a: any) => acc + Number(a.totalReps || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -116,6 +167,26 @@ export const SportView: React.FC = () => {
         </div>
       </div>
 
+      {/* Reps Chart (parity with PyQt SportRepsChartWidget) */}
+      <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-sky-400" />
+            <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Grafik Reps' : 'Reps Chart'}</h3>
+          </div>
+          <div className="text-xs text-slate-400">{lang === 'id' ? 'Total reps' : 'Total reps'}: <span className="text-sky-300 font-bold">{totalRepsAll}</span></div>
+        </div>
+        {repChartData.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">{lang === 'id' ? 'Belum ada sesi reps. Catat set×reps lewat tombol “Reps”.' : 'No rep sessions yet. Log sets×reps via the "Reps" button.'}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[300px]">
+              <LineChart data={repChartData} color="#38bdf8" width={680} height={150} />
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* History of Workouts */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -159,6 +230,12 @@ export const SportView: React.FC = () => {
                 </div>
               </div>
 
+              <button
+                onClick={() => openReps(log)}
+                className="px-2 py-1 rounded-lg bg-sky-500/20 text-sky-300 text-[10px] font-bold"
+              >
+                {lang === 'id' ? 'Reps' : 'Reps'}
+              </button>
               {!log.done && (
                 <button
                   onClick={() => completeSportLog(log.id)}
@@ -286,6 +363,65 @@ export const SportView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* LogSportReps Dialog (parity with PyQt LogSportRepsDialog) */}
+      {repsModal.open && repsModal.activity && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-slate-100">
+                {lang === 'id' ? 'Catat Sesi Reps' : 'Log Reps'} — {repsModal.activity.sportName || repsModal.activity.name}
+              </h3>
+              <button onClick={() => setRepsModal({ open: false, activity: null })} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {repInfo && (
+              <p className="text-xs font-bold" style={{ color: '#9aa0a6' }}>
+                {repInfo.rank?.icon || '⭐'} {repInfo.rank?.name || repInfo.rank?.key || 'Unranked'}{' '}
+                · {lang === 'id' ? 'Total' : 'Total'}: {repInfo.total ?? 0} reps
+              </p>
+            )}
+
+            <div className="flex gap-2 flex-wrap">
+              {[5, 10, 25, 50].map((n) => (
+                <button key={n} onClick={() => setRepReps((v) => v + n)} className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700">
+                  +{n}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <label className="block text-slate-400 text-[10px] font-bold">{lang === 'id' ? 'Set' : 'Sets'}</label>
+                <input type="number" min={1} max={50} value={repSets} onChange={(e) => setRepSets(Math.max(1, Number(e.target.value) || 1))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+              </div>
+              <span className="text-slate-500 text-lg font-bold">×</span>
+              <div className="flex-1">
+                <label className="block text-slate-400 text-[10px] font-bold">{lang === 'id' ? 'Reps' : 'Reps'}</label>
+                <input type="number" min={1} max={1000} value={repReps} onChange={(e) => setRepReps(Math.max(1, Number(e.target.value) || 1))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+              </div>
+              <div className="text-sky-300 font-black text-xl">{repSets * repReps}</div>
+            </div>
+
+            <input value={repNote} onChange={(e) => setRepNote(e.target.value)} placeholder={lang === 'id' ? 'Catatan…' : 'Note…'} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+
+            {repInfo && repInfo.history && repInfo.history.length > 0 && (
+              <div className="space-y-1">
+                {repInfo.history.map((h: any, i: number) => (
+                  <p key={i} className="text-[10px] text-slate-500">💪 {h.reps} reps ×{h.sets} set · {h.log_date}{h.note ? ` — ${h.note}` : ''}</p>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setRepsModal({ open: false, activity: null })} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              <button onClick={submitReps} disabled={repReps <= 0} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold text-xs">{lang === 'id' ? 'Simpan' : 'Save'}</button>
+            </div>
           </div>
         </div>
       )}

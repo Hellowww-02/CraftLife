@@ -40,4 +40,17 @@ export const rpg = {
   fleeBoss: () => apiPost<any>('/api/boss/flee', {}),
   useClassSkill: () => apiPost<any>('/api/skill/use', {}),
   claimAchievement: (id: string) => apiPost<any>(`/api/achievements/${id}/claim`, {}),
+  // ── Phase P1: drag & drop reorder + trash restore ──
+  reorderTasks: (mode: 'habit' | 'daily' | 'todo' | 'quest', items: { id: string; folderId?: string | null }[]) =>
+    apiPost<any>('/api/tasks/reorder', { mode, items }),
+  restoreTask: (trashId: string) =>
+    apiPost<any>('/api/trash/restore', { trashId }),
+  // ── Phase P5: dashboard widgets + year wrapped ──
+  getDashboardWidgets: () => apiGet<any>('/api/dashboard/widgets'),
+  saveDashboardWidgets: (widgets: Record<string, unknown>[]) =>
+    apiPost<any>('/api/dashboard/widgets', { widgets }),
+  yearWrapped: () => apiGet<any>('/api/year-wrapped'),
+  // ── Phase P6: notes drag & drop reorder ──
+  reorderNotes: (items: { id: string | number; folderId?: string | number | null }[]) =>
+    apiPost<any>('/api/notes/reorder', { items }),
 };
