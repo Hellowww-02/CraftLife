@@ -261,7 +261,7 @@ def migrate_sort_order():
     for attempt in range(max_retries):
         try:
             conn = get_conn()
-            tables = ["habits", "dailies", "todos", "sport_activities", "economy_items"]
+            tables = ["habits", "dailies", "todos", "sport_activities", "economy_items", "notes"]
             for table in tables:
                 users = conn.execute(f"SELECT DISTINCT user_id FROM {table}").fetchall()
                 for u in users:
@@ -1222,6 +1222,7 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(folder_id) REFERENCES note_folders(id) ON DELETE SET NULL
     )""")
+    _safe_alter(c, "notes", "sort_order", "INTEGER DEFAULT 0")
 
     # ========== REMINDERS ==========
     c.execute("""CREATE TABLE IF NOT EXISTS reminders(
@@ -10345,6 +10346,46 @@ def update_note_folder_icon(folder_id, user_id, new_icon):
     conn.close()
     return {"ok": True}
 
+@retry_on_lock
+@retry_on_lock
+def reorder_notes(user_id, items):
+    """Persist drag & drop order for notes.
+
+    ``items``: list of ``{'id': <int>, 'folderId': <int|None>}`` (or raw ints)
+    in the desired order. Remains same-folder: reassigns ``sort_order = index``
+    (0..n) per id; if a ``folderId`` is supplied it is also persisted. Returns
+    ``{'ok': True}``.
+    """
+    conn = get_conn()
+    try:
+        for idx, itm in enumerate(items or []):
+            try:
+                if isinstance(itm, dict):
+                    nid_int = int(itm.get("id"))
+                else:
+                    nid_int = int(itm)
+            except (TypeError, ValueError):
+                continue
+            fid = itm.get("folderId") if isinstance(itm, dict) and "folderId" in itm else (
+                itm.get("folder_id") if isinstance(itm, dict) else None)
+            if fid in (None, "", "null"):
+                conn.execute(
+                    "UPDATE notes SET sort_order=?, updated_at=datetime('now') WHERE id=? AND user_id=?",
+                    (idx, nid_int, user_id))
+            else:
+                try:
+                    fid = int(fid)
+                except (TypeError, ValueError):
+                    continue
+                conn.execute(
+                    "UPDATE notes SET sort_order=?, folder_id=?, updated_at=datetime('now') WHERE id=? AND user_id=?",
+                    (idx, fid, nid_int, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
 def get_notes(user_id, folder_id=None, include_archived=False):
     conn = get_conn()
     query = "SELECT * FROM notes WHERE user_id=?"
@@ -10357,7 +10398,7 @@ def get_notes(user_id, folder_id=None, include_archived=False):
     # jika folder_id is None, tidak ada filter folder
     if not include_archived:
         query += " AND is_archived=0"
-    query += " ORDER BY updated_at DESC"
+    query += " ORDER BY sort_order ASC, updated_at DESC"
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -12484,6 +12525,31 @@ def mark_onboarding_done(user_id):
 def set_dashboard_widgets(user_id, widgets):
     """Simpan konfigurasi widget dashboard (list of dict) sebagai JSON."""
     update_user(user_id, dashboard_widgets=json.dumps(widgets, ensure_ascii=False))
+
+
+def get_daily_task_counts(user_id, days=28):
+    """Hitung jumlah task yang diselesaikan per hari (semua jenis tugas) untuk
+    28 hari terakhir, dari `task_history` (ACTION='success'). Ini sumber data
+    HEATMAP yang akurat — bukan hanya `last_done` terakhir per daily.
+
+    Return dict {YYYY-MM-DD: count} untuk N hari terakhir (termasuk hari ini).
+    """
+    conn = get_conn()
+    today = date.today()
+    start = today - timedelta(days=days - 1)
+    rows = conn.execute(
+        "SELECT action_date, COUNT(*) c FROM task_history "
+        "WHERE user_id=? AND action='success' AND action_date>=? AND action_date<=? "
+        "GROUP BY action_date",
+        (user_id, start.isoformat(), today.isoformat()),
+    ).fetchall()
+    conn.close()
+    counts = {r["action_date"]: int(r["c"]) for r in rows}
+    out = {}
+    for i in range(days):
+        d = (start + timedelta(days=i)).isoformat()
+        out[d] = counts.get(d, 0)
+    return out
 
 
 def get_dashboard_widgets(user_id):

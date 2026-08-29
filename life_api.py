@@ -211,11 +211,16 @@ def snapshot(uid: int) -> dict:
     except Exception:
         pomos = []
     try:
-        cal = db.get_calendar_notes(uid) or []
-        calendarNotes = [
-            {"date": r.get("note_date") or r.get("date"), "note": r.get("note") or ""}
-            for r in cal
-        ]
+        cal = db.get_calendar_notes(uid) or {}
+        # get_calendar_notes returns a dict {note_date: note}; some callers pass
+        # a rows-list. Handle both so calendarNotes is never silently empty.
+        if isinstance(cal, dict):
+            calendarNotes = [{"date": d, "note": v} for d, v in cal.items()]
+        else:
+            calendarNotes = [
+                {"date": r.get("note_date") or r.get("date"), "note": r.get("note") or ""}
+                for r in cal
+            ]
     except Exception:
         calendarNotes = []
     try:
@@ -297,6 +302,8 @@ def snapshot(uid: int) -> dict:
         "healthLogs": health,
         "pomodoroSessions": pomos,
         "calendarNotes": calendarNotes,
+        # Heatmap data: jumlah task sukses per hari (28 hari terakhir).
+        "dailyTaskCounts": db.get_daily_task_counts(uid, 28),
         "supplies": supplies,
         "taskFolders": task_folders,
         "savings": savings,
@@ -742,6 +749,11 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             return {"result": {"ok": True, "preview": latex_to_unicode(raw)}, "skip_snap": True}
         except Exception as e:
             return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
+
+    if path == "/api/notes/reorder":
+        items = body.get("items") or []
+        result = db.reorder_notes(uid, items)
+        return {"result": result}
 
     if path == "/api/note-folders":
         result = db.add_note_folder(uid, body.get("name") or "Folder", body.get("icon") or "📁", body.get("parentId"))

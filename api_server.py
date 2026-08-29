@@ -62,6 +62,26 @@ WEB_I18N_KEYS = [
     "task_reorder_hint", "quick_add_title", "quick_add_habit", "quick_add_daily",
     "quick_add_quest", "quick_add_placeholder", "quick_add_add", "quick_add_cancel",
     "task_undo", "task_deleted", "task_restored", "task_moved_folder",
+    # ── Phase P3: economy trend + supplies ──
+    "economy_trend_title", "economy_trend_income", "economy_trend_expense",
+    "economy_trend_net", "economy_period_7d", "economy_period_30d",
+    "economy_period_90d", "economy_expense_split", "economy_trend_empty",
+    "supplies_dlg_title_add", "supplies_dlg_title_edit", "supplies_name_ph",
+    "supplies_category_ph", "supplies_unit_ph", "supplies_stock_lbl",
+    "supplies_min_lbl", "supplies_price_lbl", "supplies_location_ph",
+    "supplies_notes_ph", "supplies_economy_lbl", "supplies_stock_now",
+    "supplies_tx_title", "supplies_tx_in", "supplies_tx_out",
+    "supplies_tx_adjust", "supplies_qty_lbl", "supplies_note_ph",
+    "supplies_restock_expense", "supplies_economy_amount",
+    "supplies_economy_category_ph", "btn_save",
+    "dashwidgets_title", "dashwidgets_hint", "dashwidgets_visible",
+    "dashwidgets_hidden", "dashwidgets_compact", "dashwidgets_expanded",
+    "dashwidgets_save", "dashwidgets_cancel", "wrapped_title", "wrapped_open",
+    "wrapped_empty", "wrapped_hero", "wrapped_total", "wrapped_active_days",
+    "wrapped_best", "wrapped_focus", "wrapped_level", "wrapped_streak",
+    "wrapped_income", "wrapped_expense", "wrapped_top_habits", "talents_points",
+    "talents_unlocked", "talents_unlock", "talents_locked_level",
+    "talents_locked_prereq", "talents_no_points", "talents_tier",
 ]
 
 
@@ -135,6 +155,7 @@ def _row_user(u: dict) -> dict:
         "fontScale": int(u.get("font_scale") or 100),
         "highContrast": bool(u.get("high_contrast")),
         "isAdmin": bool(u.get("is_admin")),
+        "onboardingDone": bool(u.get("onboarding_done")),
     }
 
 
@@ -525,6 +546,15 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_static(path)
             return
 
+        # Stream a local library audio file to the browser <audio> element.
+        # The path is validated to live inside the CraftLife Music folder, so a
+        # web client can "play a local file" (parity with PyQt QMediaPlayer),
+        # and stays local — the file is never uploaded anywhere.
+        if path == "/music/stream":
+            file_path = (qs.get("path") or [""])[0]
+            self._serve_audio(file_path)
+            return
+
         if not _auth_ok(self) and path.startswith("/api/") and path != "/api/health":
             if path != "/api/i18n":
                 self._send(401, {"ok": False, "error": "unauthorized"})
@@ -559,6 +589,8 @@ class Handler(BaseHTTPRequestHandler):
             "/api/catalog/recipes": lambda: {"ok": True, "recipes": _recipe_catalog()},
             "/api/catalog/currency": lambda: {"ok": True, "rates": getattr(db, "CURRENCY_RATES", {"IDR": 1})},
             "/api/profile/talents": lambda: {"ok": True, "talents": db.get_talent_state(uid)},
+            "/api/dashboard/widgets": lambda: {"ok": True, "widgets": db.get_dashboard_widgets(uid)},
+            "/api/year-wrapped": lambda: {"ok": True, "wrapped": db.get_year_wrapped(uid)},
             "/api/leaderboard": lambda: {
                 "ok": True,
                 "linked": bool(db.get_cloud_user_link(uid)),
@@ -607,11 +639,36 @@ class Handler(BaseHTTPRequestHandler):
                 items.append({"date": ds, "nameId": nid, "nameEn": nen, "type": "national"})
             self._send(200, {"ok": True, "year": y, "holidays": items})
             return
+        # Serve a Love Space photo image (BLOB) to the browser <img>. Visibility
+        # (owner / shared-with-couple) is enforced inside get_love_space_photo.
+        if path == "/api/love/photo/image":
+            pid = (qs.get("id") or [None])[0]
+            if not pid:
+                self._send(400, {"ok": False, "error": "id"})
+                return
+            try:
+                ph = db.get_love_space_photo(uid, int(pid))
+            except (ValueError, TypeError):
+                ph = None
+            if not ph:
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            blob = ph.get("image_data")
+            mime = (ph.get("mime_type") or "image/jpeg").split(";")[0].strip()
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(blob)))
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.end_headers()
+            self.wfile.write(blob)
+            return
+
         extra = life_api.handle_get(path, uid)
         if extra is not None:
             self._send(200, extra)
             return
-        extra = studio_api.handle_get(path, uid)
+        extra = studio_api.handle_get(path, uid, qs)
         if extra is not None:
             self._send(200, extra)
             return
@@ -748,6 +805,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True}))
             return
+        if path == "/api/dashboard/widgets":
+            if not _auth_ok(self):
+                self._send(401, {"ok": False, "error": "unauthorized"})
+                return
+            uid = _state.get("user_id")
+            widgets = body.get("widgets")
+            if not isinstance(widgets, list):
+                self._send(400, {"ok": False, "error": "widgets_required"})
+                return
+            try:
+                db.set_dashboard_widgets(uid, widgets)
+            except Exception as e:
+                self._send(400, {"ok": False, "error": str(e)})
+                return
+            self._send(200, _ok_payload(uid, {"ok": True}))
+            return
         if path == "/api/profile/backup-codes":
             if not _auth_ok(self):
                 self._send(401, {"ok": False, "error": "unauthorized"})
@@ -857,7 +930,13 @@ class Handler(BaseHTTPRequestHandler):
                     db.update_user(uid, avatar_color=body.get("avatarColor"))
                 except Exception:
                     pass
-            self._send(200, _ok_payload(uid, {"ok": True}))
+            if "onboardingDone" in body:
+                try:
+                    if body.get("onboardingDone"):
+                        db.mark_onboarding_done(uid)
+                except Exception:
+                    pass
+            self._send(200, _ok_payload(uid, {"ok": True, "user": _row_user(db.get_user(uid))}))
             return
 
         if path == "/api/tracker/import":
@@ -1321,6 +1400,71 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self._send(404, {"ok": False, "error": "not_found"})
+
+    def _serve_audio(self, file_path: str):
+        """Serve a local audio file with HTTP Range support (for <audio> seek).
+
+        Only files inside the CraftLife Music library dir are reachable; nothing
+        is uploaded/streamed over the internet beyond the local loopback.
+        """
+        import mimetypes
+        from http import HTTPStatus
+        try:
+            import music_downloader as md
+            lib_dir = os.path.realpath(md.get_download_dir())
+        except Exception:
+            self._send(404, {"ok": False, "error": "no_music_dir"})
+            return
+        if not file_path:
+            self._send(404, {"ok": False, "error": "bad_path"})
+            return
+        real = os.path.realpath(file_path)
+        if not real.startswith(lib_dir + os.sep):
+            self._send(403, {"ok": False, "error": "forbidden"})
+            return
+        if not os.path.isfile(real):
+            self._send(404, {"ok": False, "error": "not_found"})
+            return
+        size = os.path.getsize(real)
+        ctype = mimetypes.guess_type(real)[0] or "audio/mpeg"
+        rng = self.headers.get("Range")
+        start = 0
+        end = size - 1
+        if rng:
+            try:
+                spec = rng.replace("bytes=", "").strip()
+                if "-" in spec:
+                    a, b = spec.split("-", 1)
+                    start = int(a) if a else 0
+                    end = (int(b) if b else end)
+                else:
+                    start = int(spec)
+            except (ValueError, IndexError):
+                start = 0
+                end = size - 1
+            start = max(0, min(start, size - 1))
+            end = max(start, min(end, size - 1))
+        length = end - start + 1
+        self.send_response(206 if rng else 200)
+        self._cors()
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if rng:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        try:
+            with open(real, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _serve_static(self, path: str):
         try:

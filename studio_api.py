@@ -433,7 +433,8 @@ def snapshot(uid: int) -> dict:
     }
 
 
-def handle_get(path: str, uid: int):
+def handle_get(path: str, uid: int, qs=None):
+    qs = qs or {}
     if path == "/api/learning/notebooks":
         return {"ok": True, "notebooks": snapshot(uid)["notebooks"]}
     if path == "/api/music/playlists":
@@ -509,7 +510,76 @@ def handle_get(path: str, uid: int):
             return {"ok": True, "job": md.get_download_job(jid)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+    if path == "/api/music/lyrics":
+        return {"ok": True, "lyrics": get_lyrics(
+            (qs.get("artist") or [""])[0].strip(),
+            (qs.get("title") or [""])[0].strip(),
+        )}
     return None
+
+
+def _clean_lyrics_query(s: str) -> str:
+    """Bersihkan judul/artis untuk query online (sama dengan _LyricsFetcher PyQt)."""
+    import re as _re
+    s = _re.sub(r"\((official|lyric|lyrics|video|audio|mv|hq|hd)[^)]*\)", " ", s, flags=_re.I)
+    s = _re.sub(r"\bfeat(\.|uring)?\b.*$", " ", s, flags=_re.I)
+    return _re.sub(r"\s+", " ", s).strip()
+
+
+def get_lyrics(artist: str, title: str) -> dict:
+    """Cari lirik online CEPAT: 3 provider paralel (LRCLIB get, LRCLIB search,
+    lyrics.ovh) — meniru _LyricsFetcher PyQt. Return {plain, synced, source}."""
+    import concurrent.futures as _cf
+    import requests
+    from urllib.parse import quote
+
+    plain = ""
+    synced = ""
+    source = ""
+    artist = _clean_lyrics_query(artist)
+    title = _clean_lyrics_query(title)
+    if artist and title:
+        user_agent = {"User-Agent": "CraftLifeDesktop/1.0"}
+
+        def lrclib_get():
+            r = requests.get("https://lrclib.net/api/get",
+                             params={"artist_name": artist, "track_name": title},
+                             headers=user_agent, timeout=6)
+            d = r.json() if r.ok else {}
+            return (d.get("plainLyrics") or "", d.get("syncedLyrics") or "")
+
+        def lrclib_search():
+            r = requests.get("https://lrclib.net/api/search",
+                             params={"q": f"{artist} {title}"},
+                             headers=user_agent, timeout=6)
+            for it in (r.json() if r.ok else []) or []:
+                if it.get("syncedLyrics") or it.get("plainLyrics"):
+                    return (it.get("plainLyrics") or "", it.get("syncedLyrics") or "")
+            return ("", "")
+
+        def ovh():
+            r = requests.get(f"https://api.lyrics.ovh/v1/{quote(artist)}/{quote(title)}", timeout=6)
+            return (((r.json() or {}).get("lyrics") or ""), "") if r.ok else ("", "")
+
+        try:
+            with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+                futs = [ex.submit(fn) for fn in (lrclib_get, lrclib_search, ovh)]
+                for fut in _cf.as_completed(futs, timeout=8):
+                    try:
+                        p, s = fut.result()
+                    except Exception:
+                        continue
+                    if s and not synced:
+                        synced = s
+                    if p and not plain:
+                        plain = p
+                    if synced and plain:
+                        break
+        except Exception:
+            pass
+    if synced or plain:
+        source = "lrclib" if (synced or plain) else "lyrics.ovh"
+    return {"plain": plain, "synced": synced, "source": source}
 
 
 def _chat_ai(uid: int, notebook_id: int, question: str) -> str:
@@ -771,6 +841,31 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         if not pid or not fp:
             return {"result": {"ok": False, "msg": "playlist_and_path"}, "skip_snap": True}
         return {"result": db.add_song_to_playlist(uid, pid, fp), "skip_snap": True}
+
+    if path == "/api/music/playlist-rename":
+        pid = int(body.get("playlistId") or 0)
+        name = (body.get("name") or "").strip()
+        if not pid or not name:
+            return {"result": {"ok": False, "msg": "playlist_and_name"}, "skip_snap": True}
+        db.rename_playlist(uid, pid, name)
+        return {"result": {"ok": True}}
+    if path == "/api/music/playlist-delete":
+        pid = int(body.get("playlistId") or 0)
+        return {"result": {"ok": db.delete_playlist(uid, pid)}, "skip_snap": True}
+    if path == "/api/music/playlist-track-remove":
+        pid = int(body.get("playlistId") or 0)
+        idx = int(body.get("index")) if body.get("index") is not None else -1
+        return {"result": db.remove_song_from_playlist(uid, pid, idx), "skip_snap": True}
+    if path == "/api/music/playlist-track-move":
+        fpid = int(body.get("fromPlaylistId") or 0)
+        tpid = int(body.get("toPlaylistId") or 0)
+        idx = int(body.get("index")) if body.get("index") is not None else -1
+        return {"result": db.move_song_to_playlist(uid, fpid, tpid, idx), "skip_snap": True}
+    if path == "/api/music/playlist-track-copy":
+        fpid = int(body.get("fromPlaylistId") or 0)
+        tpid = int(body.get("toPlaylistId") or 0)
+        idx = int(body.get("index")) if body.get("index") is not None else -1
+        return {"result": db.copy_song_to_playlist(uid, fpid, tpid, idx), "skip_snap": True}
 
     if path == "/api/love/profile":
         cur = db.get_relationship_profile(uid) or {}
