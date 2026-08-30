@@ -3,8 +3,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import database as db
+
+# Konversi tipe generasi tersimpan (nama channel Gemini) ke gaya PyQt/web
+# LearningPage._studio_generators: audio_overview→audio-overview, mind_map→mindmap, …
+_LEGACY_STUDIO_TYPE = {
+    "audio_overview": "audio-overview",
+    "mind_map": "mindmap",
+    "study_guide": "study-guide",
+}
 
 
 def _nb_map(row: dict, uid: int) -> dict:
@@ -109,6 +118,22 @@ def _nb_map(row: dict, uid: int) -> dict:
             out["timeline"] = raw
         elif typ == "summary" and not out["summary"]:
             out["summary"] = raw
+    # Parity LearningPage: riwayat generasi Studio (tipe/topic/waktu) untuk combo
+    # history + aksi hapus (_delete_generation). Slot tipe di atas = generasi terbaru.
+    try:
+        out["generations"] = [
+            {
+                "id": str(g.get("id") or ""),
+                "gtype": _LEGACY_STUDIO_TYPE.get((g.get("type") or "").lower(), (g.get("type") or "").lower()),
+                "topic": g.get("title") or "",
+                "fileName": g.get("title") or "",
+                "createdAt": g.get("created_at") or "",
+                "content": g.get("content") or "",
+            }
+            for g in gens
+        ]
+    except Exception:
+        out["generations"] = []
     return out
 
 
@@ -187,6 +212,8 @@ def _love_map(uid: int) -> dict:
                 "weekStart": w.get("week_start") or "",
                 "appreciation": w.get("appreciation") or "",
                 "wins": w.get("wins") or "",
+                "support": w.get("support_needed") or "",
+                "intention": w.get("shared_intention") or "",
             }
             for w in (db.get_relationship_weekly_reviews(uid) or [])
         ]
@@ -201,6 +228,77 @@ def _love_map(uid: int) -> dict:
         ]
     except Exception:
         pass
+    # Parity LovePage: riwayat check-in, respons prompt + favorit, album galeri,
+    # dan status couple aktif (mengendalikan visibilitas shared & tombol end-couple).
+    try:
+        data["checkins"] = [
+            {
+                "id": str(c.get("id")),
+                "date": c.get("checkin_date") or "",
+                "myMood": int(c.get("my_mood") or 3),
+                "partnerMood": int(c.get("partner_mood") or 3),
+                "connectionScore": int(c.get("connection_score") or 3),
+                "note": c.get("note") or "",
+            }
+            for c in (db.get_relationship_checkins(uid) or [])
+        ]
+    except Exception:
+        data["checkins"] = []
+    try:
+        data["promptResponses"] = [
+            {
+                "id": str(p.get("id")),
+                "promptKey": p.get("prompt_key") or "",
+                "category": p.get("category") or "daily",
+                "prompt": p.get("prompt_text") or p.get("prompt") or "",
+                "answer": p.get("my_answer") or p.get("answer") or "",
+                "partnerAnswer": p.get("partner_answer") or "",
+                "createdAt": p.get("created_at") or p.get("response_date") or "",
+            }
+            for p in (db.get_relationship_prompt_responses(uid) or [])
+        ]
+    except Exception:
+        data["promptResponses"] = []
+    try:
+        data["promptFavorites"] = sorted(db.get_relationship_prompt_favorites(uid) or set())
+    except Exception:
+        data["promptFavorites"] = []
+    try:
+        data["albums"] = [
+            {
+                "id": str(a.get("id")),
+                "name": a.get("name") or "",
+                "scope": a.get("scope") or "personal",
+                "photoIds": [str(x) for x in (db.get_love_album_photo_ids(uid, a.get("id")) or [])],
+            }
+            for a in (db.get_love_albums(uid) or [])
+        ]
+    except Exception:
+        data["albums"] = []
+    try:
+        data["coupleActive"] = bool((db.get_couple_context(uid) or {}).get("active"))
+    except Exception:
+        data["coupleActive"] = False
+    # Parity tab Cycle: settings + prediksi periode (db.get_menstrual_prediction).
+    try:
+        s = db.get_menstrual_settings(uid) or {}
+        data["cycleSettings"] = {
+            "trackedPerson": s.get("tracked_person") or "partner",
+            "lastPeriodStart": s.get("last_period_start") or "",
+            "cycleLength": int(s.get("cycle_length") or 28),
+            "periodLength": int(s.get("period_length") or 5),
+        }
+    except Exception:
+        data["cycleSettings"] = {"trackedPerson": "partner", "lastPeriodStart": "", "cycleLength": 28, "periodLength": 5}
+    try:
+        p = db.get_menstrual_prediction(uid)
+        data["cyclePrediction"] = {
+            "predictedStart": p.get("predicted_start") or "",
+            "predictedEnd": p.get("predicted_end") or "",
+            "daysUntil": int(p.get("days_until") or 0),
+        } if p else None
+    except Exception:
+        data["cyclePrediction"] = None
     return data
 
 
@@ -263,7 +361,14 @@ def _guild_map(uid: int) -> dict:
         "bossHp": int((boss or {}).get("boss_hp") or g.get("boss_hp") or 0),
         "bossMaxHp": int((boss or {}).get("boss_max_hp") or g.get("boss_max_hp") or 0),
         "bossName": (boss or {}).get("boss_name") or g.get("boss_name") or "",
+        "bossAttack": int((boss or {}).get("boss_attack") or 0),
+        "bossParticipants": (boss or {}).get("participants") or "[]",
         "leaderId": str(g.get("leader_id") or ""),
+        # Parity GuildPage._make_stats.
+        "buffXp": int(g.get("buff_xp") or 0),
+        "buffGold": int(g.get("buff_gold") or 0),
+        "buffDamage": int(g.get("buff_damage") or 0),
+        "critChance": float(g.get("crit_chance") or 0),
         "members": [
             {
                 "id": str(m.get("id")),
@@ -271,6 +376,9 @@ def _guild_map(uid: int) -> dict:
                 "name": m.get("display_name") or "",
                 "level": int(m.get("level") or 1),
                 "role": "leader" if str(m.get("id")) == str(g.get("leader_id")) else "member",
+                "avatarEmoji": m.get("avatar_emoji") or "⚔️",
+                "hp": int(m.get("hp") or 0),
+                "maxHp": int(m.get("max_hp") or 1),
             }
             for m in members
         ],
@@ -290,15 +398,42 @@ def _guild_map(uid: int) -> dict:
 
 
 def _friends_map(uid: int) -> list:
+    # Parity FriendsPage.load: tiap baris teman membawa status couple, presence
+    # (online/offline dari cache) & unread count untuk label tombol chat.
     out = []
     try:
+        linked = bool(db.get_cloud_user_link(uid))
+    except Exception:
+        linked = False
+    try:
         for f in db.get_friends(uid) or []:
+            fid = f.get("id")
+            try:
+                status = (db.get_couple_status_between(uid, fid) or {}).get("status", "friend")
+            except Exception:
+                status = "friend"
+            presence = ""
+            try:
+                if f.get("cloud_user_id"):
+                    presence = (db.get_cached_presence(f.get("cloud_user_id")) or {}).get("status", "")
+            except Exception:
+                presence = ""
+            try:
+                if linked and f.get("cloud_user_id"):
+                    unread = db.get_cloud_unread_count(uid, fid)
+                else:
+                    unread = db.get_unread_count_between(uid, fid)
+            except Exception:
+                unread = 0
             out.append({
-                "id": str(f.get("id")),
+                "id": str(fid),
                 "displayName": f.get("display_name") or f.get("username") or "",
                 "username": f.get("username") or "",
                 "avatarEmoji": f.get("avatar_emoji") or "⚔️",
                 "level": int(f.get("level") or 1),
+                "coupleStatus": status if status in ("accepted", "pending") else "friend",
+                "presence": presence or "offline",
+                "unreadCount": int(unread or 0),
             })
     except Exception:
         pass
@@ -328,6 +463,7 @@ def _pvp_map(uid: int) -> list:
                 "playerScore": int(c.get("my_score") or 0),
                 "opponentScore": int(c.get("opponent_score") or 0),
                 "daysLeft": int(c.get("days_left") or 0),
+                "winnerId": (str(c.get("winner_id")) if c.get("winner_id") is not None else None),
                 "rewardXp": int(c.get("xp_reward") or 100),
                 "rewardGold": int(c.get("gold_reward") or 50),
             })
@@ -442,9 +578,44 @@ def handle_get(path: str, uid: int, qs=None):
         return {"ok": True, "playlists": s["playlists"], "history": s["musicHistory"]}
     if path == "/api/love":
         return {"ok": True, "loveSpace": snapshot(uid)["loveSpace"]}
+    if re.match(r"^/api/friends/[^/]+/chat$", path):
+        # Parity ChatDialog._load_messages (lokal): mark read + pesan lengkap.
+        fid = path.split("/")[3]
+        try:
+            fid_i = int(fid)
+        except ValueError:
+            return {"ok": False, "msg": "not found"}
+        try:
+            db.mark_messages_read(uid, fid_i)
+        except Exception:
+            pass
+        try:
+            limit = int((qs or {}).get("limit", [100])[0] or 100)
+        except Exception:
+            limit = 100
+        limit = max(1, min(500, limit))
+        msgs = []
+        for m in db.get_messages(uid, fid_i, limit) or []:
+            rxn = m.get("reactions") or {}
+            msgs.append({
+                "id": str(m.get("id")),
+                "senderId": str(m.get("sender_id")),
+                "text": m.get("message") or "",
+                "isSelf": bool(m.get("sender_id") == uid),
+                "createdAt": m.get("created_at") or "",
+                "editedAt": m.get("edited_at") or "",
+                "deletedAt": m.get("deleted_at") or "",
+                "replyToId": str(m.get("reply_to_id")) if m.get("reply_to_id") else None,
+                # di-agregat di client (_reaction_text): dict uid→emoji mentah dibawa
+                "reactions": rxn,
+            })
+        return {"ok": True, "messages": msgs}
     if path == "/api/friends":
         s = snapshot(uid)
         return {"ok": True, "friends": s["friends"], "friendRequests": s.get("friendRequests") or [], "coupleRequests": s.get("coupleRequests") or []}
+    if path == "/api/pvp":
+        s = snapshot(uid)
+        return {"ok": True, "pvpChallenges": s.get("pvpChallenges") or []}
     if path.startswith("/api/friends/") and path.endswith("/profile"):
         try:
             fid = int(path.split("/")[3])
@@ -495,7 +666,37 @@ def handle_get(path: str, uid: int, qs=None):
     if path == "/api/guild":
         s = snapshot(uid)
         return {"ok": True, "guild": s["guild"], "guildInvites": s.get("guildInvites") or []}
-    if path == "/api/pvp":
+    if path == "/api/guild/rewards":
+        # Parity GuildPage._show_unclaimed_rewards (dialog check saat load page).
+        return {"ok": True, "rewards": db.get_unclaimed_boss_rewards(uid)}
+    if path == "/api/guild/bosses":
+        # Parity _fill_boss_cb: semua boss utk guild (default + custom), filter
+        # tier & ketersediaan seasonal diterapkan di client; server kirim flag.
+        u = db.get_user(uid) or {}
+        gid = u.get("guild_id")
+        items = []
+        try:
+            for bid, bd in (db.get_all_bosses_for_guild(gid) or {}).items():
+                try:
+                    avail = bool(db.is_boss_available(bid))
+                except Exception:
+                    avail = True
+                items.append({
+                    "id": bid,
+                    "name": bd.get("name") or bid,
+                    "icon": bd.get("icon") or "🐉",
+                    "tier": bd.get("tier") or "normal",
+                    "hp": int(bd.get("hp") or 0),
+                    "atk": int(bd.get("boss_attack") or bd.get("atk") or 0),
+                    "xp": int(bd.get("xp") or 0),
+                    "gold": int(bd.get("gold") or 0),
+                    "minLevel": int(bd.get("min_level") or 1),
+                    "maxLevel": int(bd["max_level"]) if bd.get("max_level") is not None else None,
+                    "available": avail,
+                })
+        except Exception:
+            items = []
+        return {"ok": True, "bosses": items}
         return {"ok": True, "pvpChallenges": snapshot(uid)["pvpChallenges"]}
     if path == "/api/music/library":
         try:
@@ -748,16 +949,87 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
             pass
     return {"result": payload, "skip_snap": True}
 
+def _add_source_from_upload(nid: int, uid: int, path: str) -> dict:
+    """Ekstraksi file upload Learning (parity LearningPage._add_source_files)."""
+    if not path or not os.path.isfile(path):
+        return {"ok": False, "msg": "learning_not_found"}
+    ext = os.path.splitext(path)[1].lower()
+    ftype = "docx" if ext == ".docx" else "pdf" if ext == ".pdf" else "txt"
+    try:
+        import learning_helper as lh
+        if ftype == "pdf":
+            content = lh.extract_from_pdf(path)
+        elif ftype == "docx":
+            content = lh.extract_from_docx(path)
+        else:
+            content = lh.extract_from_txt(path)
+    except Exception:
+        try:
+            if ftype == "txt":
+                content = open(path, "r", encoding="utf-8", errors="ignore").read()[:50000]
+            else:
+                content = open(path, "rb").read().decode(errors="ignore")[:50000]
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+    content = str(content or "").strip()
+    if not content or content.startswith("[Gagal"):
+        return {"ok": False, "msg": content or "learning_source_empty_file"}
+    return db.add_learning_source(
+        nid, uid, ftype, os.path.basename(path), path, content[:80000],
+    )
+
+
 def handle_post(path: str, uid: int, body: dict, parts: list):
     if path == "/api/learning/notebooks":
         title = (body.get("title") or "Notebook").strip()
         return {"result": db.create_learning_notebook(uid, title)}
+
+    if path == "/api/learning/source-content":
+        # Parity LearningPage._view_source: tampilkan isi penuh source (lookup
+        # lewat notebook pemilik; tabel sources terikat notebook_id).
+        try:
+            sid = int(body.get("sourceId") or body.get("id") or 0)
+            nid = int(body.get("notebookId") or 0)
+        except (TypeError, ValueError):
+            sid = nid = 0
+        if not sid or not nid:
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        src_row = None
+        try:
+            for s in db.get_learning_sources(nid, uid) or []:
+                if int(s.get("id") or 0) == sid:
+                    src_row = s
+                    break
+        except Exception:
+            src_row = None
+        if not src_row:
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        return {"result": {"ok": True, "source": src_row}, "skip_snap": True}
+
 
     if len(parts) >= 4 and parts[1] == "learning" and parts[2] == "notebooks":
         nid = int(parts[3])
         if len(parts) >= 5 and parts[4] == "delete":
             db.delete_learning_notebook(nid, uid)
             return {"result": {"ok": True}}
+        if len(parts) >= 5 and parts[4] == "rename":
+            # Parity LearningPage._rename_notebook (QInputDialog judul baru).
+            title = (body.get("title") or "").strip()
+            if not title:
+                return {"result": {"ok": False, "msg": "learning_no_title"}}
+            db.update_learning_notebook(nid, uid, title)
+            return {"result": {"ok": True}}
+        if len(parts) >= 5 and parts[4] == "upload-source":
+            # Parity LearningPage._add_source_files: ekstrak per ekstensi →
+            # db.add_learning_source(type, basename, path, content[:80000]).
+            path = body.get("path") or ""
+            res = _add_source_from_upload(nid, uid, path)
+            try:
+                if res.get("ok"):
+                    os.remove(path)
+            except Exception:
+                pass
+            return {"result": res}
         if len(parts) >= 5 and parts[4] == "sources":
             if len(parts) >= 7 and parts[6] == "delete":
                 try:
@@ -801,6 +1073,29 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             return {"result": {"ok": True, "jobId": jid}, "skip_snap": True}
         except Exception as e:
             return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
+    if path == "/api/learning/generations/delete":
+        # Parity LearningPage._delete_generation (hapus entri history Studio).
+        try:
+            gid = int(body.get("generationId") or 0)
+            nid = int(body.get("notebookId") or 0)
+        except (TypeError, ValueError):
+            gid = nid = 0
+        if not gid or not nid:
+            return {"result": {"ok": False, "msg": "learning_not_found"}}
+        return {"result": db.delete_learning_generation(gid, nid)}
+    if path == "/api/learning/generate":
+        # Parity LearningPage._generate_studio / _start_learning_job via REST ringkas.
+        gtype = (body.get("type") or body.get("gtype") or "").strip()
+        mapping = {
+            "study-guide": "study_guide", "mindmap": "mind_map", "podcast": "audio_overview",
+            "audio-overview": "audio_overview", "quiz": "quiz", "flashcards": "flashcards",
+            "faq": "faq", "timeline": "timeline", "summary": "summary",
+        }
+        st = mapping.get(gtype, gtype)
+        if st not in ("quiz", "flashcards", "mind_map", "audio_overview", "study_guide", "faq", "timeline", "summary"):
+            return {"result": {"ok": False, "msg": "learning_type_invalid"}, "skip_snap": True}
+        body = {**body, "notebookId": body.get("notebookId")}
+        return _studio_generate(uid, body, st)
     if path == "/api/ai/quiz":
         return _studio_generate(uid, body, "quiz")
     if path == "/api/ai/flashcards":
@@ -940,8 +1235,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             body.get("weekStart") or body.get("week_start") or "",
             body.get("appreciation") or "",
             body.get("wins") or "",
-            body.get("challenges") or "",
-            body.get("nextWeek") or body.get("next_week") or "",
+            body.get("support") or body.get("supportNeeded") or body.get("challenges") or "",
+            body.get("intention") or body.get("nextWeek") or body.get("next_week") or "",
         )}
     if path == "/api/love/cycle":
         if body.get("settings"):
@@ -993,6 +1288,54 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 break
         return {"result": db.toggle_relationship_bucket_item(uid, bid, done)}
 
+    # --- Love parity: delete handlers per tab (parity tombol "love_delete_selected") ---
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "memories" and parts[4] == "delete":
+        return {"result": db.delete_relationship_memory(uid, int(parts[3]))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "prompts" and parts[4] == "delete":
+        return {"result": db.delete_relationship_prompt_response(uid, int(parts[3]))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "weekly" and parts[4] == "delete":
+        return {"result": db.delete_relationship_weekly_review(uid, int(parts[3]))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "cycles" and parts[4] == "delete":
+        return {"result": db.delete_menstrual_cycle(uid, int(parts[3]))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "events" and parts[4] == "delete":
+        return {"result": db.delete_relationship_event(uid, int(parts[3]))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "bucket" and parts[4] == "delete":
+        return {"result": db.delete_relationship_bucket_item(uid, int(parts[3]))}
+    if path == "/api/love/prompt-favorite":
+        return {"result": db.toggle_relationship_prompt_favorite(uid, body.get("promptKey") or body.get("prompt_key") or "")}
+
+    # --- Love gallery parity: hapus foto + CRUD album + keanggotaan foto ---
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "photos" and parts[4] == "delete":
+        ph = db.get_love_space_photo(uid, int(parts[3]))
+        if ph and db.get_cloud_user_link(uid):
+            try:
+                db.enqueue_sync(uid, "gallery_photo", ph["id"], "delete",
+                                {"cloud_photo_id": ph.get("cloud_photo_id")})
+            except Exception:
+                pass
+        return {"result": db.delete_love_space_photo(uid, int(parts[3]))}
+    if path == "/api/love/albums":
+        # Parity _create_album: scope 'shared' hanya bila couple aktif.
+        try:
+            couple_active = bool((db.get_couple_context(uid) or {}).get("active"))
+        except Exception:
+            couple_active = False
+        scope = "shared" if ((body.get("scope") or "personal") == "shared" and couple_active) else "personal"
+        return {"result": db.create_love_album(uid, body.get("name") or "Album", scope)}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "albums" and parts[4] == "rename":
+        return {"result": db.rename_love_album(uid, int(parts[3]), body.get("name") or "")}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "albums" and parts[4] == "delete":
+        return {"result": db.delete_love_album(uid, int(parts[3]))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "albums" and parts[4] == "photo":
+        # Parity "love_album_copy_to" (add_photo_to_love_album).
+        return {"result": db.add_photo_to_love_album(uid, int(parts[3]), int(body.get("photoId") or 0))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "albums" and parts[4] == "photo-move":
+        src_raw = body.get("sourceAlbumId")
+        src = int(src_raw) if src_raw not in (None, "", 0, "0") else None
+        return {"result": db.move_photo_to_love_album(uid, src, int(parts[3]), int(body.get("photoId") or 0))}
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "albums" and parts[4] == "photo-remove":
+        return {"result": db.remove_photo_from_love_album(uid, int(parts[3]), int(body.get("photoId") or 0))}
+
     if path == "/api/social/messages":
         other = body.get("otherId")
         friends = _friends_map(uid)
@@ -1006,6 +1349,40 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             except Exception:
                 pass
         return {"result": db.send_message(uid, oid, body.get("text") or "")}
+    if re.match(r"^/api/friends/[^/]+/chat$", path):
+        # Parity ChatDialog._send_message (dengan reply_to).
+        fid = path.split("/")[3]
+        try:
+            fid_i = int(fid)
+        except ValueError:
+            return _bad("not found")
+        text = (body.get("text") or "").strip()
+        if not text:
+            return _bad("empty message")
+        reply_to = body.get("replyToId")
+        try:
+            reply_to = int(reply_to) if reply_to else None
+        except (TypeError, ValueError):
+            reply_to = None
+        return db.send_message(uid, fid_i, text, reply_to_id=reply_to)
+    if re.match(r"^/api/friends/[^/]+/clear$", path):
+        # Parity ChatDialog._clear_chat (non-cloud, konfirmasi di client).
+        fid = path.split("/")[3]
+        try:
+            fid_i = int(fid)
+        except ValueError:
+            return _bad("not found")
+        db.clear_friend_chat(uid, fid_i)
+        return {"ok": True}
+    if re.match(r"^/api/friends/messages/\d+/edit$", path):
+        mid = int(path.split("/")[4])
+        return db.edit_local_message(uid, mid, body.get("text") or "")
+    if re.match(r"^/api/friends/messages/\d+/delete$", path):
+        mid = int(path.split("/")[4])
+        return db.delete_local_message(uid, mid)
+    if re.match(r"^/api/friends/messages/\d+/reaction$", path):
+        mid = int(path.split("/")[4])
+        return db.set_local_message_reaction(uid, mid, body.get("reaction"))
     if path == "/api/friends/request":
         username = body.get("username") or ""
         ca = _cloud_mod()
@@ -1130,10 +1507,46 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
     if len(parts) >= 4 and parts[1] == "couple" and parts[3] == "cancel":
         return {"result": db.cancel_couple_request(uid, int(parts[2]))}
     if path == "/api/guild/boss/attack":
+        # Parity GuildPage._perform_action: aksi "light"|"heavy"|"block"|"ultimate".
         u = db.get_user(uid) or {}
         gid = u.get("guild_id") or 0
-        result = db.attack_boss(uid, gid, action="light")
+        action = (body.get("action") or "light").strip().lower()
+        if action not in ("light", "heavy", "block", "ultimate"):
+            action = "light"
+        result = db.attack_boss(uid, gid, action=action)
         return {"result": result}
+
+    if path == "/api/guild/boss/start":
+        # Parity GuildPage._start_boss / _start_boss_with_team (raid team maks
+        # 4 anggota + leader, filter level boss diterapkan di UI; server tetap
+        # menerima participant_ids eksplisit).
+        u = db.get_user(uid) or {}
+        gid = u.get("guild_id") or 0
+        if not gid:
+            return {"result": {"ok": False, "msg": "no_guild"}}
+        bid = body.get("bossId") or body.get("boss_id")
+        team = body.get("teamIds") or body.get("participant_ids") or None
+        if isinstance(team, list):
+            try:
+                team = [int(x) for x in team]
+            except Exception:
+                team = None
+        if team and uid not in team:
+            team.insert(0, uid)
+        result = db.start_boss(gid, bid, u, team)
+        return {"result": result}
+
+    if path == "/api/guild/skill":
+        # Parity GuildPage._skill → db.use_class_skill.
+        return {"result": db.use_class_skill(uid)}
+
+    if path == "/api/guild/quick-heal":
+        # Parity GuildPage._quick_heal → db.use_item('golden_apple').
+        return {"result": db.use_item(uid, "golden_apple")}
+
+    if len(parts) >= 5 and parts[1] == "guild" and parts[2] == "rewards" and parts[4] == "claim":
+        # Parity GuildPage._claim_reward.
+        return {"result": db.claim_boss_reward(int(parts[3]), uid)}
 
     if path == "/api/pvp":
         return {"result": db.send_pvp_challenge(uid, int(body.get("friendId") or 0))}
@@ -1165,6 +1578,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         result = db.reject_guild_request(g, uid, int(parts[3])) if g else {"ok": False, "msg": "no guild"}
         return {"result": result}
     if len(parts) >= 5 and parts[1] == "love" and parts[2] == "photos" and parts[4] == "meta":
+        # Parity db.update_love_space_photo_visibility: toggle shared boleh kapan pun
+        # (foto di-bind otomatis ke space saat couple terbentuk).
         result = db.update_love_space_photo_meta(
             uid,
             int(parts[3]),

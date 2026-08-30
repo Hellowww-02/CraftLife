@@ -157,6 +157,26 @@ def handle_get(path: str, uid: int):
     if path == "/api/cloud/migrate-preview":
         preview = get_sync_service().initial_migration_preview(uid)
         return {"ok": True, "preview": preview}
+    if path.startswith("/api/cloud/leaderboard"):
+        # Parity LeaderboardPage.load cloud mode:
+        # bila linked → get_online_guild_leaderboard(50) / get_global_productivity_leaderboard(30,50)
+        from urllib.parse import urlparse, parse_qs
+        q = parse_qs(urlparse(path).query)
+        mode = (q.get("mode") or ["cloud_productivity"])[0]
+        if not db.get_cloud_user_link(uid):
+            return {"ok": True, "linked": False, "rows": []}
+        cloud = get_cloud_service()
+        sync = get_sync_service()
+        if not sync.ensure_session(uid):
+            return {"ok": False, "error": "auth_required", "linked": True, "rows": []}
+        try:
+            if mode == "cloud_guild":
+                rows = cloud.get_online_guild_leaderboard(50)
+            else:
+                rows = cloud.get_global_productivity_leaderboard(30, 50)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc), "linked": True, "rows": []}
+        return {"ok": True, "linked": True, "mode": mode, "rows": rows or []}
     return None
 
 
@@ -359,7 +379,16 @@ def love_photo_from_path(uid: int, file_path: str) -> dict:
     if not path.is_file():
         raise RuntimeError("file_not_found")
     raw = path.read_bytes()
-    mime = "image/jpeg"
+    return love_photo_from_bytes(uid, raw)
+
+
+def love_photo_from_bytes(uid: int, raw: bytes, mime_hint: str = "image/jpeg",
+                          caption=None, photo_date=None, visibility=None) -> dict:
+    """Simpan foto Love Space dari bytes (upload web) — parity dengan love_photo_from_path
+    yang dipakai dialog QFileDialog PyQt. Bekerja offline (BLOB SQLite) dan tetap
+    antre-kan sync cloud bila akun ter-link."""
+    import io
+    mime = mime_hint or "image/jpeg"
     width, height = 800, 800
     try:
         from PIL import Image
@@ -370,7 +399,9 @@ def love_photo_from_path(uid: int, file_path: str) -> dict:
             mime = {"PNG": "image/png", "WEBP": "image/webp", "JPEG": "image/jpeg"}.get(fmt, "image/jpeg")
     except Exception:
         pass
-    result = db.add_love_space_photo(uid, raw, mime, width, height, visibility="private")
+    result = db.add_love_space_photo(uid, raw, mime, width, height,
+                                     caption=caption, photo_date=photo_date,
+                                     visibility=visibility or "private")
     if not result.get("ok"):
         return result
     local_id = result.get("photo_id")
