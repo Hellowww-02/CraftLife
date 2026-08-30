@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { playReminderSound, ReminderSound } from '../utils/sound';
+import { t as i18nT } from '../i18n';
+import { startPomoAlarm, stopPomoAlarm } from '../utils/pomoAlarm';
+import { playReminderSound, ReminderSound, startReminderLoop, stopReminderLoop } from '../utils/sound';
 import confetti from 'canvas-confetti';
 import {
   UserProfile,
@@ -25,7 +27,6 @@ import {
   HealthMetricLog,
   PomodoroSession,
   TaskDifficulty,
-  AvatarClass,
   LearningNotebook,
   LoveSpaceData,
   FriendUser,
@@ -39,24 +40,15 @@ import {
   SHOP_ITEMS,
   PETS_DATA,
   BOSSES,
-  INITIAL_ACHIEVEMENTS,
-  AVATAR_CLASSES,
   CRAFT_RECIPES,
 } from '../data/gameData';
-import { DEFAULT_NOTEBOOKS } from '../data/learningSampleData';
 import { apiGet, apiPost } from '../api/client';
+import { ensureCurrencyRates } from '../utils/currency';
 import { rpg } from '../api/rpg';
 import { life } from '../api/life';
 import { studio } from '../api/studio';
-import { loadMessages } from '../i18n';
+import { loadMessages, t } from '../i18n';
 import { applyBootstrapCatalogs, liveShopItems, livePets } from '../data/liveCatalog';
-import {
-  DEFAULT_LOVE_SPACE,
-  DEFAULT_FRIENDS,
-  DEFAULT_CHAT_MESSAGES,
-  DEFAULT_GUILD,
-  DEFAULT_PVP_CHALLENGES,
-} from '../data/socialSampleData';
 
 interface NotificationToast {
   id: string;
@@ -69,11 +61,15 @@ interface GameContextType {
   // User Profile
   user: UserProfile;
   setUser: React.Dispatch<React.SetStateAction<UserProfile>>;
-  updateUserStats: (xpDelta: number, goldDelta: number, hpDelta?: number, mpDelta?: number) => void;
+  /** Terapkan payload server ({ok, result, user, ...snapshot}) ke state — satu
+   * sumber kebenaran perberubahan (parity _ok_payload/api_server). */
+  applyLive: (res: any) => boolean;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   completeOnboarding: (profile?: Partial<UserProfile>) => Promise<void>;
   rebirthCharacter: () => void;
-  changeAvatarClass: (newClass: AvatarClass) => void;
+  hydrated: boolean;
+  apiError: string | null;
+  retryBootstrap: () => void;
 
   // Language & Settings
   lang: 'id' | 'en';
@@ -125,7 +121,8 @@ interface GameContextType {
 
   // Sport Tracker
   sportLogs: SportLog[];
-  addSportLog: (sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string) => void;
+  addSportLog: (sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string, difficulty?: string) => void;
+  updateSportLog: (id: string, body: Record<string, unknown>) => void;
   completeSportLog: (id: string) => void;
   deleteSportLog: (id: string) => void;
 
@@ -140,7 +137,7 @@ interface GameContextType {
   // Shop & Inventory & Crafting
   inventory: InventoryItem[];
   buyItem: (itemId: string) => boolean;
-  sellItem: (itemId: string) => void;
+  sellItem: (itemId: string, quantity?: number) => void;
   useConsumable: (itemId: string) => boolean;
   equipItem: (itemId: string) => void;
   unequipItem: (itemId: string) => void;
@@ -153,7 +150,7 @@ interface GameContextType {
   feedPet: (petId: string) => void;
   trainPet: (petId: string) => void;
   equipPet: (petId: string) => void;
-  unequipPet: () => void;
+  unequipPet: (petId: string) => void;
 
   // Boss Combat
   activeBoss: Boss | null;
@@ -165,8 +162,9 @@ interface GameContextType {
 
   // Economy & Budget
   transactions: Transaction[];
-  addTransaction: (type: 'income' | 'expense', category: string, amount: number, notes?: string) => void;
+  addTransaction: (type: 'income' | 'expense', category: string, amount: number, notes?: string, folderId?: string | null, name?: string, date?: string) => void;
   deleteTransaction: (id: string) => void;
+  moveTransaction: (id: string, folderId: string | null) => void;
   debts: Debt[];
   addDebt: (title: string, type: 'payable' | 'receivable', totalAmount: number, dueDate: string, notes?: string) => void;
   payDebtInstallment: (id: string, amount: number) => void;
@@ -194,6 +192,8 @@ interface GameContextType {
   noteFolders: NoteFolder[];
   addNoteFolder: (name: string, icon: string, parentId?: string | null) => void;
   deleteNoteFolder: (id: string) => void;
+  updateNoteFolder: (id: string, updates: { name?: string; icon?: string }) => void;
+  duplicateNoteFolder: (id: string) => void;
   notes: Note[];
   addNote: (title: string, content: string, folderId?: string | null) => void;
   archiveNote: (id: string, archived: boolean) => void;
@@ -206,7 +206,28 @@ interface GameContextType {
   healthLogs: HealthMetricLog[];
   addHealthLog: (steps: number, sleepHours: number, weightKg?: number, heartRate?: number, mood?: 'great' | 'good' | 'neutral' | 'tired' | 'stressed', notes?: string) => void;
   pomodoroSessions: PomodoroSession[];
+  pomodoroStats: { todaySessions: number; todayMinutes: number; totalSessions: number; totalMinutes: number };
   completePomodoroSession: (durationMinutes: number, label: string) => void;
+  // ── Pomodoro engine (parity PomodoroPage; hidup di context → tidak reset
+  // saat pindah halaman; timestamp-based endsAt bukan tick lokal) ──
+  pomo: {
+    phase: 'idle' | 'focus' | 'break';
+    paused: boolean;
+    remainingSec: number;
+    totalSec: number;
+    focusMin: number;
+    breakMin: number;
+    taskLabel: string;
+  };
+  pomoAlert: { phase: 'focus' | 'break'; title: string; msg: string } | null;
+  pomoStart: () => void;
+  pomoPauseToggle: () => void;
+  pomoReset: () => void;
+  pomoGiveUp: () => void;
+  pomoSetDurations: (focusMin: number, breakMin: number) => void;
+  pomoSetTask: (label: string) => void;
+  pomoAckAlert: () => void;
+  pomoTestAlarm: () => void;
 
   // Achievements
   achievements: Achievement[];
@@ -217,6 +238,7 @@ interface GameContextType {
   addNotebook: (title: string, description: string, icon?: string) => void;
   updateNotebook: (id: string, updates: Partial<LearningNotebook>) => void;
   deleteNotebook: (id: string) => void;
+  refreshNotebooks: () => void;
   addNotebookSource: (notebookId: string, title: string, content: string, type?: 'text' | 'doc' | 'pdf' | 'url') => void;
   deleteNotebookSource: (notebookId: string, sourceId: string) => void;
   addNotebookChat: (notebookId: string, text: string, sender: 'user' | 'ai') => void;
@@ -246,20 +268,41 @@ interface GameContextType {
   loveEvent: (body: Record<string, unknown>) => void;
   loveWeekly: (body: Record<string, unknown>) => void;
   loveCycle: (body: Record<string, unknown>) => void;
+  // LovePage parity ops (P5)
+  refreshLoveSpace: () => void;
+  deleteLoveMemory: (id: string) => void;
+  deleteLovePrompt: (id: string) => void;
+  deleteLoveWeekly: (id: string) => void;
+  deleteLoveCycle: (id: string) => void;
+  deleteLoveEvent: (id: string) => void;
+  deleteLoveBucket: (id: string) => void;
+  deleteLovePhoto: (id: string) => void;
+  lovePromptFavorite: (promptKey: string) => void;
+  createLoveAlbum: (name: string, scope: string) => void;
+  renameLoveAlbum: (id: string, name: string) => void;
+  deleteLoveAlbum: (id: string) => void;
+  loveAlbumAddPhoto: (albumId: string, photoId: string) => void;
+  loveAlbumMovePhoto: (albumId: string, photoId: string, sourceAlbumId?: string | null) => void;
+  loveAlbumRemovePhoto: (albumId: string, photoId: string) => void;
   refreshSocial: () => void;
   guild: GuildData;
-  attackGuildBoss: (damage: number) => void;
+  attackGuildBoss: (action?: 'light' | 'heavy' | 'block' | 'ultimate') => void;
   pvpChallenges: PvPChallenge[];
   claimPvPReward: (id: string) => void;
 
   // Calendar & Reminders
   reminders: ReminderItem[];
-  addReminder: (title: string, time: string, repeat?: 'none' | 'daily' | 'weekdays' | 'weekly', sound?: 'beep' | 'bell' | 'magic' | 'fanfare') => void;
+  // Parity ReminderDialog._save — payload penuh (title, description, datetime
+  // "YYYY-MM-DD HH:mm:ss", repeat, repeatDays, soundType, soundFile).
+  addReminder: (payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => void;
+  editReminder: (id: string, payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => void;
+  dismissReminderAlarm: () => void;
   toggleReminder: (id: string) => void;
   deleteReminder: (id: string) => void;
   calendarNotes: { date: string; note: string }[];
   dailyTaskCounts: Record<string, number>;
   saveCalendarNote: (date: string, note: string) => void;
+  deleteCalendarNote: (date: string) => void;
 
   // Level Up Celebrations & Toasts
   levelUpInfo: { level: number; hpGain: number; mpGain: number; goldGain: number } | null;
@@ -269,6 +312,7 @@ interface GameContextType {
   showToast: (type: 'success' | 'damage' | 'level_up' | 'info' | 'boss', title: string, message: string) => void;
 
   // Calculated Stats
+  activeBuffs: string[];
   totalBuffs: {
     xp_pct: number;
     gold_pct: number;
@@ -282,227 +326,38 @@ interface GameContextType {
   // State Management Export / Import / Reset
   exportDataJson: () => string;
   importDataJson: (jsonStr: string) => boolean;
-  resetAllData: () => void;
+  resetAllData: (password?: string) => Promise<boolean>;
 }
 
 const STORAGE_KEY = 'craftlife_app_data_v1';
 
-const defaultUser: UserProfile = {
-  id: 'user_default',
-  username: 'steve',
-  displayName: 'Steve The Miner',
-  bio: 'Turning daily routines into legendary quests!',
-  avatarClass: 'warrior',
-  avatarEmoji: '⚔️',
-  avatarColor: '#ef4444',
-  level: 1,
-  xp: 0,
-  xpToNextLevel: 100,
-  hp: 100,
-  maxHp: 100,
-  mp: 50,
-  maxMp: 50,
-  gold: 80,
-  gems: 5,
-  rebirthCount: 0,
-  sportLevel: 1,
-  sportXp: 0,
-  activePetId: null,
-  equippedWeapon: null,
-  equippedArmor: null,
-  equippedTool: null,
-  equippedLegendary: null,
-  freezeSlots: 1,
-  createdAt: new Date().toISOString(),
+// ── P2: Data demo/seed dihapus ───────────────────────────────────────────────
+// Server (SQLite via /api/bootstrap dan _ok_payload setiap aksi) adalah satu-satunya
+// sumber kebenaran. Bentuk kosong di bawah hanya shape awal sebelum bootstrap;
+// App meng-gate UI memakai hydrated/apiError sehingga bentuk ini tidak pernah
+// tampil sebagai data palsu.
+const emptyUser: UserProfile = {
+  id: '', username: '', displayName: '', bio: '',
+  avatarClass: 'warrior', avatarEmoji: '⚔️', avatarColor: '#ef4444',
+  level: 1, xp: 0, xpToNextLevel: 150,
+  hp: 50, maxHp: 50, mp: 30, maxMp: 30,
+  gold: 0, gems: 0, rebirthCount: 0, sportLevel: 1, sportXp: 0,
+  activePetId: null, equippedWeapon: null, equippedArmor: null,
+  equippedTool: null, equippedLegendary: null,
+  freezeSlots: 0, createdAt: '',
 };
 
-const defaultFolders: TaskFolder[] = [
-  { id: 'f_health', name: 'Health & Fitness', icon: '💪', color: '#10b981' },
-  { id: 'f_work', name: 'Work & Study', icon: '📚', color: '#3b82f6' },
-  { id: 'f_lifestyle', name: 'Mindset & Habits', icon: '✨', color: '#8b5cf6' },
-];
+const emptyWaterLog: WaterLog = { date: '', amountMl: 0, targetMl: 2000 };
 
-const defaultHabits: Habit[] = [
-  {
-    id: 'h_water',
-    title: 'Drink 2L Water Daily',
-    notes: 'Stay hydrated for high energy',
-    folderId: 'f_health',
-    difficulty: 'easy',
-    isPositive: true,
-    isNegative: false,
-    positiveStreak: 4,
-    negativeStreak: 0,
-    history: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'h_read',
-    title: 'Read 15 mins of a Book',
-    notes: 'Expand wisdom and focus',
-    folderId: 'f_work',
-    difficulty: 'medium',
-    isPositive: true,
-    isNegative: false,
-    positiveStreak: 2,
-    negativeStreak: 0,
-    history: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'h_junkfood',
-    title: 'Late Night Sugary Snacks',
-    notes: 'Avoid empty calories after 9pm',
-    folderId: 'f_health',
-    difficulty: 'medium',
-    isPositive: false,
-    isNegative: true,
-    positiveStreak: 0,
-    negativeStreak: 1,
-    history: [],
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const defaultDailies: Daily[] = [
-  {
-    id: 'd_morning',
-    title: 'Morning 10-Minute Stretch & Pushups',
-    notes: 'Awaken muscles and spine',
-    folderId: 'f_health',
-    difficulty: 'easy',
-    streak: 5,
-    isCompletedToday: false,
-    repeatDays: [0, 1, 2, 3, 4, 5, 6],
-    lastCompletedDate: null,
-    isFrozen: false,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'd_plan',
-    title: 'Plan Daily Priority Objectives',
-    notes: 'Organize top 3 tasks for the day',
-    folderId: 'f_work',
-    difficulty: 'medium',
-    streak: 3,
-    isCompletedToday: false,
-    repeatDays: [1, 2, 3, 4, 5],
-    lastCompletedDate: null,
-    isFrozen: false,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'd_sleep',
-    title: 'Sleep Before 11:30 PM',
-    notes: 'Deep 8-hour restoration sleep',
-    folderId: 'f_lifestyle',
-    difficulty: 'hard',
-    streak: 2,
-    isCompletedToday: false,
-    repeatDays: [0, 1, 2, 3, 4, 5, 6],
-    lastCompletedDate: null,
-    isFrozen: false,
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const defaultQuests: Quest[] = [
-  {
-    id: 'q_project',
-    title: 'Finalize CraftLife Web Architecture',
-    notes: 'Complete responsive React UI with game engine integration',
-    folderId: 'f_work',
-    difficulty: 'hard',
-    dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-    isCompleted: false,
-    completedAt: null,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'q_clean',
-    title: 'Declutter workspace desk',
-    notes: 'Clear monitors and cables',
-    folderId: 'f_lifestyle',
-    difficulty: 'easy',
-    dueDate: null,
-    isCompleted: false,
-    completedAt: null,
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const defaultSportLogs: SportLog[] = [
-  {
-    id: 'sp_1',
-    sportType: 'running',
-    sportName: 'Morning Jogging',
-    icon: '🏃',
-    durationMinutes: 30,
-    caloriesBurned: 280,
-    intensity: 'moderate',
-    notes: '5km park loop',
-    date: new Date().toISOString().split('T')[0],
-    sportXpEarned: 75,
-  },
-];
-
-const defaultMeals: MealLog[] = [
-  {
-    id: 'm_1',
-    mealType: 'breakfast',
-    foodName: 'Oatmeal & Boiled Eggs',
-    icon: '🥣',
-    portion: 1,
-    calories: 320,
-    protein: 18,
-    carbs: 35,
-    fat: 9,
-    date: new Date().toISOString().split('T')[0],
-  },
-];
-
-const defaultWater: WaterLog = {
-  date: new Date().toISOString().split('T')[0],
-  amountMl: 1250,
-  targetMl: 2500,
+const emptyLoveSpace: LoveSpaceData = {
+  isEnabled: false, partnerName: '', partnerAvatar: '', anniversaryDate: '',
+  connectionScore: 0, dailyLoveNote: '', memories: [], prompts: [], bucketList: [],
 };
 
-const defaultTransactions: Transaction[] = [
-  {
-    id: 'tx_1',
-    type: 'income',
-    category: 'Salary / Project',
-    amount: 1500000,
-    date: new Date().toISOString().split('T')[0],
-    notes: 'Monthly milestone reward',
-  },
-  {
-    id: 'tx_2',
-    type: 'expense',
-    category: 'Food & Groceries',
-    amount: 125000,
-    date: new Date().toISOString().split('T')[0],
-    notes: 'Healthy pantry restocking',
-  },
-];
-
-const defaultNotes: Note[] = [
-  {
-    id: 'n_1',
-    folderId: null,
-    title: '✨ Welcome to CraftLife',
-    content: `# CraftLife Adventurer Manual
-Welcome to your gamified productivity realm!
-- **Habits**: Train positive habits (+) and extinguish negative ones (-).
-- **Dailies**: Complete your recurring daily routine to maintain streaks and deal extra boss damage.
-- **Quests**: Tackle your to-do lists for large Gold & XP bounties.
-- **Sport & Nutrition**: Log your workouts, calories, macros, and daily water goals.
-- **RPG Forge & Shop**: Buy weapons, craft legendary gear, adopt pets, and defeat mighty dungeon bosses!`,
-    isPinned: true,
-    isArchived: false,
-    updatedAt: new Date().toISOString(),
-  },
-];
+const emptyGuild: GuildData = {
+  id: '', name: '', tag: '', level: 1, exp: 0, maxExp: 0,
+  description: '', members: [], bossHp: 0, bossMaxHp: 0, bossName: '',
+};
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -522,186 +377,125 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const saved = loadSavedState();
 
-  const [user, setUser] = useState<UserProfile>(saved?.user || defaultUser);
+  const [user, setUser] = useState<UserProfile>(emptyUser);
   const [lang, setLang] = useState<'id' | 'en'>(saved?.lang || 'en');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(saved?.soundEnabled !== undefined ? saved.soundEnabled : true);
   const [activeTheme, setActiveTheme] = useState<'dark' | 'emerald' | 'amber' | 'slate'>(saved?.activeTheme || 'dark');
-  const [taskFolders, setTaskFolders] = useState<TaskFolder[]>(saved?.taskFolders || defaultFolders);
-  const [habits, setHabits] = useState<Habit[]>(saved?.habits || defaultHabits);
-  const [dailies, setDailies] = useState<Daily[]>(saved?.dailies || defaultDailies);
+  const [taskFolders, setTaskFolders] = useState<TaskFolder[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [dailies, setDailies] = useState<Daily[]>([]);
   // P8 Heatmap: jumlah task sukses per hari (28 hari), dari `task_history`.
   const [dailyTaskCounts, setDailyTaskCounts] = useState<Record<string, number>>({});
-  const [quests, setQuests] = useState<Quest[]>(saved?.quests || defaultQuests);
-  const [sportLogs, setSportLogs] = useState<SportLog[]>(saved?.sportLogs || defaultSportLogs);
-  const [mealLogs, setMealLogs] = useState<MealLog[]>(saved?.mealLogs || defaultMeals);
-  const [waterLog, setWaterLog] = useState<WaterLog>(saved?.waterLog || defaultWater);
-  const [inventory, setInventory] = useState<InventoryItem[]>(saved?.inventory || [
-    { itemId: 'wooden_sword', quantity: 1, equipped: true },
-    { itemId: 'health_potion', quantity: 2, equipped: false },
-    { itemId: 'ice_block', quantity: 1, equipped: false },
-  ]);
-  const [userPets, setUserPets] = useState<UserPet[]>(saved?.userPets || [
-    { petId: 'wolf', nickname: 'Fang', level: 1, xp: 20, hunger: 90, isEquipped: true, adoptedAt: new Date().toISOString() },
-  ]);
-  const [activeBoss, setActiveBoss] = useState<Boss | null>(saved?.activeBoss || null);
-  const [activeBossHp, setActiveBossHp] = useState<number>(saved?.activeBossHp !== undefined ? saved.activeBossHp : 0);
-  const [transactions, setTransactions] = useState<Transaction[]>(saved?.transactions || defaultTransactions);
-  const [debts, setDebts] = useState<Debt[]>(saved?.debts || []);
+  const [quests, setQuests] = useState<Quest[]>([]);
+  const [sportLogs, setSportLogs] = useState<SportLog[]>([]);
+  const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
+  const [waterLog, setWaterLog] = useState<WaterLog>(emptyWaterLog);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [userPets, setUserPets] = useState<UserPet[]>([]);
+  const [activeBuffs, setActiveBuffs] = useState<string[]>([]);
+  const [activeBoss, setActiveBoss] = useState<Boss | null>(null);
+  const [activeBossHp, setActiveBossHp] = useState<number>(0);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [savings, setSavings] = useState<SavingGoal[]>([]);
   const [investments, setInvestments] = useState<InvestmentItem[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
   const [debtNotes, setDebtNotes] = useState<DebtNote[]>([]);
-  const [noteFolders, setNoteFolders] = useState<NoteFolder[]>(saved?.noteFolders || []);
-  const [notes, setNotes] = useState<Note[]>(saved?.notes || defaultNotes);
-  const [healthLogs, setHealthLogs] = useState<HealthMetricLog[]>(saved?.healthLogs || []);
-  const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>(saved?.pomodoroSessions || []);
-  const [achievements, setAchievements] = useState<Achievement[]>(saved?.achievements || INITIAL_ACHIEVEMENTS);
+  const [noteFolders, setNoteFolders] = useState<NoteFolder[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [healthLogs, setHealthLogs] = useState<HealthMetricLog[]>([]);
+  const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
 
   // New modules
-  const [notebooks, setNotebooks] = useState<LearningNotebook[]>(saved?.notebooks || DEFAULT_NOTEBOOKS);
-  const [loveSpace, setLoveSpace] = useState<LoveSpaceData>(saved?.loveSpace || DEFAULT_LOVE_SPACE);
-  const [friends, setFriends] = useState<FriendUser[]>(saved?.friends || DEFAULT_FRIENDS);
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(saved?.friendRequests || []);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(saved?.chatMessages || DEFAULT_CHAT_MESSAGES);
-  const [guild, setGuild] = useState<GuildData>(saved?.guild || DEFAULT_GUILD);
-  const [pvpChallenges, setPvpChallenges] = useState<PvPChallenge[]>(saved?.pvpChallenges || DEFAULT_PVP_CHALLENGES);
-  const [reminders, setReminders] = useState<ReminderItem[]>(saved?.reminders || [
-    { id: 'rem_1', title: 'Morning Hydration & Routine Check', time: '08:00', repeat: 'daily', isActive: true, sound: 'bell' },
-    { id: 'rem_2', title: 'Guild Boss Raid & Daily Review', time: '20:00', repeat: 'daily', isActive: true, sound: 'magic' },
-  ]);
-  const [calendarNotes, setCalendarNotes] = useState<{ date: string; note: string }[]>(saved?.calendarNotes || []);
+  const [notebooks, setNotebooks] = useState<LearningNotebook[]>([]);
+  const [loveSpace, setLoveSpace] = useState<LoveSpaceData>(emptyLoveSpace);
+  const [friends, setFriends] = useState<FriendUser[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [guild, setGuild] = useState<GuildData>(emptyGuild);
+  const [pvpChallenges, setPvpChallenges] = useState<PvPChallenge[]>([]);
+  const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  const [calendarNotes, setCalendarNotes] = useState<{ date: string; note: string }[]>([]);
 
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
   const [levelUpInfo, setLevelUpInfo] = useState<{ level: number; hpGain: number; mpGain: number; goldGain: number } | null>(null);
   const [lastDelete, setLastDelete] = useState<{ trashId: string; label: string } | null>(null);
-  const [, setLiveHydrated] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiGet<any>('/api/bootstrap');
-        if (cancelled || !data?.ok) return;
-        if (data.user) {
-          setUser((prev) => ({
-            ...prev,
-            ...data.user,
-            xpToNextLevel: data.user.xpToNextLevel || (data.user.level || 1) * 150,
-          }));
-        }
-        if (Array.isArray(data.taskFolders)) setTaskFolders(data.taskFolders);
-        if (Array.isArray(data.habits)) setHabits(data.habits);
-        if (Array.isArray(data.dailies)) setDailies(data.dailies);
-        if (Array.isArray(data.quests)) setQuests(data.quests);
-        if (Array.isArray(data.inventory)) setInventory(data.inventory);
-        if (Array.isArray(data.userPets)) setUserPets(data.userPets);
-        if (Array.isArray(data.achievements) && data.achievements.length) setAchievements(data.achievements);
-        if (Array.isArray(data.sportLogs)) setSportLogs(data.sportLogs);
-        if (Array.isArray(data.mealLogs)) setMealLogs(data.mealLogs);
-        if (data.waterLog) setWaterLog(data.waterLog);
-        if (Array.isArray(data.transactions)) setTransactions(data.transactions);
-        if (Array.isArray(data.debts)) setDebts(data.debts);
-        if (Array.isArray(data.savings)) setSavings(data.savings);
-        if (Array.isArray(data.investments)) setInvestments(data.investments);
-        if (Array.isArray(data.subscriptions)) setSubscriptions(data.subscriptions);
-        if (Array.isArray(data.debtNotes)) setDebtNotes(data.debtNotes);
-        if (Array.isArray(data.notes)) setNotes(data.notes);
-        if (Array.isArray(data.noteFolders)) setNoteFolders(data.noteFolders);
-        if (Array.isArray(data.reminders)) setReminders(data.reminders);
-        if (Array.isArray(data.calendarNotes)) setCalendarNotes(data.calendarNotes);
-        if (Array.isArray(data.healthLogs)) setHealthLogs(data.healthLogs);
-        if (Array.isArray(data.pomodoroSessions)) setPomodoroSessions(data.pomodoroSessions);
-        if (Array.isArray(data.notebooks)) setNotebooks(data.notebooks);
-        if (data.loveSpace) setLoveSpace((prev) => ({ ...prev, ...data.loveSpace }));
-        if (Array.isArray(data.friends)) setFriends(data.friends);
-        if (Array.isArray(data.friendRequests)) setFriendRequests(data.friendRequests);
-        if (Array.isArray(data.chatMessages)) setChatMessages(data.chatMessages);
-        if (data.guild) setGuild((prev) => ({ ...prev, ...data.guild }));
-        if (Array.isArray(data.pvpChallenges)) setPvpChallenges(data.pvpChallenges);
-        if (data.lang === 'id' || data.lang === 'en') setLang(data.lang);
-        applyBootstrapCatalogs(data);
-        await loadMessages(data.lang === 'en' ? 'en' : 'id');
-        setLiveHydrated(true);
-      } catch {
-        setLiveHydrated(false);
+  const fetchBootstrap = useCallback(async () => {
+    setApiError(null);
+    try {
+      // Kurs mata uang (single source dari server: db.CURRENCY_RATES)
+      await ensureCurrencyRates();
+      const data = await apiGet<any>('/api/bootstrap');
+      if (data?.user) {
+        setUser((prev) => ({
+          ...prev,
+          ...data.user,
+          xpToNextLevel: data.user.xpToNextLevel || (data.user.level || 1) * 150,
+        }));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      if (Array.isArray(data.taskFolders)) setTaskFolders(data.taskFolders);
+      if (Array.isArray(data.habits)) setHabits(data.habits);
+      if (Array.isArray(data.dailies)) setDailies(data.dailies);
+      if (Array.isArray(data.quests)) setQuests(data.quests);
+      if (Array.isArray(data.inventory)) setInventory(data.inventory);
+      if (Array.isArray(data.userPets)) setUserPets(data.userPets);
+      if (Array.isArray(data.achievements)) setAchievements(data.achievements);
+      if (Array.isArray(data.sportLogs)) setSportLogs(data.sportLogs);
+      if (Array.isArray(data.mealLogs)) setMealLogs(data.mealLogs);
+      if (data.waterLog) setWaterLog(data.waterLog);
+      if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+      if (Array.isArray(data.debts)) setDebts(data.debts);
+      if (Array.isArray(data.savings)) setSavings(data.savings);
+      if (Array.isArray(data.investments)) setInvestments(data.investments);
+      if (Array.isArray(data.subscriptions)) setSubscriptions(data.subscriptions);
+      if (Array.isArray(data.debtNotes)) setDebtNotes(data.debtNotes);
+      if (Array.isArray(data.notes)) setNotes(data.notes);
+      if (Array.isArray(data.noteFolders)) setNoteFolders(data.noteFolders);
+      if (Array.isArray(data.reminders)) setReminders(data.reminders);
+      if (Array.isArray(data.calendarNotes)) setCalendarNotes(data.calendarNotes);
+      if (data.dailyTaskCounts && typeof data.dailyTaskCounts === 'object') setDailyTaskCounts(data.dailyTaskCounts);
+      if (Array.isArray(data.healthLogs)) setHealthLogs(data.healthLogs);
+      if (Array.isArray(data.pomodoroSessions)) setPomodoroSessions(data.pomodoroSessions);
+      if (data.pomodoroStats && typeof data.pomodoroStats === 'object') setPomodoroStats(data.pomodoroStats);
+      if (Array.isArray(data.notebooks)) setNotebooks(data.notebooks);
+      if (data.loveSpace) setLoveSpace((prev) => ({ ...prev, ...data.loveSpace }));
+      if (Array.isArray(data.friends)) setFriends(data.friends);
+      if (Array.isArray(data.friendRequests)) setFriendRequests(data.friendRequests);
+      if (Array.isArray(data.chatMessages)) setChatMessages(data.chatMessages);
+      if (data.guild) setGuild((prev) => ({ ...prev, ...data.guild }));
+      if (Array.isArray(data.pvpChallenges)) setPvpChallenges(data.pvpChallenges);
+      if (data.lang === 'id' || data.lang === 'en') setLang(data.lang);
+      applyBootstrapCatalogs(data);
+      await loadMessages(data.lang === 'en' ? 'en' : 'id');
+      setHydrated(true);
+    } catch (e) {
+      // P2: TIDAK ada lagi fallback data demo — tampilkan error gate (App.tsx).
+      setApiError(e instanceof Error ? e.message : String(e));
+    }
   }, []);
 
-  // Auto-persist to localStorage
+  useEffect(() => {
+    fetchBootstrap();
+  }, [fetchBootstrap]);
+
+  const retryBootstrap = useCallback(() => {
+    fetchBootstrap();
+  }, [fetchBootstrap]);
+
+  // P2: localStorage hanya untuk PREFERENSI lokal (bukan data server).
+  // Data user selalu hidup di SQLite dan dimuat ulang via bootstrap —
+  // mencegah stale-state / dual persistence (gold lama muncul setelah reload).
   useEffect(() => {
     try {
-      const state = {
-        user,
-        lang,
-        soundEnabled,
-        activeTheme,
-        taskFolders,
-        habits,
-        dailies,
-        quests,
-        sportLogs,
-        mealLogs,
-        waterLog,
-        inventory,
-        userPets,
-        activeBoss,
-        activeBossHp,
-        transactions,
-        debts,
-        noteFolders,
-        notes,
-        healthLogs,
-        pomodoroSessions,
-        achievements,
-        notebooks,
-        loveSpace,
-        friends,
-        chatMessages,
-        guild,
-        pvpChallenges,
-        reminders,
-        calendarNotes,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ lang, soundEnabled, activeTheme }));
     } catch {
       // Ignore storage errors
     }
-  }, [
-    user,
-    lang,
-    soundEnabled,
-    activeTheme,
-    taskFolders,
-    habits,
-    dailies,
-    quests,
-    sportLogs,
-    mealLogs,
-    waterLog,
-    inventory,
-    userPets,
-    activeBoss,
-    activeBossHp,
-    transactions,
-    debts,
-    noteFolders,
-    notes,
-    healthLogs,
-    pomodoroSessions,
-    achievements,
-    notebooks,
-    loveSpace,
-    friends,
-    chatMessages,
-    guild,
-    pvpChallenges,
-    reminders,
-    calendarNotes,
-  ]);
+  }, [lang, soundEnabled, activeTheme]);
 
   const showToast = useCallback((type: 'success' | 'damage' | 'level_up' | 'info' | 'boss', title: string, message: string) => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -715,6 +509,28 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // ── P2 Error policy: TIDAK ADA silent failure ─────────────────────────────
+  // PyQt menampilkan dialog error saat aksi gagal (_show(...,"error")).
+  // Versi web: setiap aksi API yang gagal memunculkan toast 'damage'.
+  // Dedup 4 detik agar retry beruntun tidak membanjiri layar.
+  const lastErrRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
+  const notifyApiErr = useCallback((e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    const now = Date.now();
+    if (lastErrRef.current.key === msg && now - lastErrRef.current.at < 4000) return;
+    lastErrRef.current = { key: msg, at: now };
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, {
+      id,
+      type: 'damage',
+      title: t('web_err_action', lang === 'id' ? 'Aksi gagal' : 'Action failed'),
+      message: msg,
+    }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((x) => x.id !== id));
+    }, 5000);
+  }, [lang]);
+
   const applyLive = useCallback((res: any) => {
     if (!res || !res.ok) return false;
     if (res.user) {
@@ -724,12 +540,14 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         xpToNextLevel: res.user.xpToNextLevel || (res.user.level || 1) * 150,
       }));
     }
+    if (res.pomodoroStats && typeof res.pomodoroStats === 'object') setPomodoroStats(res.pomodoroStats);
     if (Array.isArray(res.taskFolders)) setTaskFolders(res.taskFolders);
     if (Array.isArray(res.habits)) setHabits(res.habits);
     if (Array.isArray(res.dailies)) setDailies(res.dailies);
     if (Array.isArray(res.quests)) setQuests(res.quests);
     if (Array.isArray(res.inventory)) setInventory(res.inventory);
     if (Array.isArray(res.userPets)) setUserPets(res.userPets);
+    if (Array.isArray(res.activeBuffs)) setActiveBuffs(res.activeBuffs);
     if (Array.isArray(res.achievements) && res.achievements.length) setAchievements(res.achievements);
     if (Array.isArray(res.sportLogs)) setSportLogs(res.sportLogs);
     if (Array.isArray(res.mealLogs)) setMealLogs(res.mealLogs);
@@ -836,118 +654,13 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [inventory, userPets]);
 
   // Update user stats with XP, Gold, HP, MP, and handle leveling up
-  const updateUserStats = useCallback((xpDelta: number, goldDelta: number, hpDelta: number = 0, mpDelta: number = 0) => {
-    setUser((prev) => {
-      let finalXpGain = xpDelta;
-      let finalGoldGain = goldDelta;
 
-      if (xpDelta > 0 && totalBuffs.xp_pct > 0) {
-        finalXpGain = Math.round(xpDelta * (1 + totalBuffs.xp_pct / 100));
-      }
-      if (goldDelta > 0 && totalBuffs.gold_pct > 0) {
-        finalGoldGain = Math.round(goldDelta * (1 + totalBuffs.gold_pct / 100));
-      }
-
-      let newXp = prev.xp + finalXpGain;
-      let newLevel = prev.level;
-      let newXpToNext = prev.xpToNextLevel;
-      let newMaxHp = prev.maxHp;
-      let newMaxMp = prev.maxMp;
-      let newHp = Math.min(newMaxHp, Math.max(0, prev.hp + hpDelta));
-      let newMp = Math.min(newMaxMp, Math.max(0, prev.mp + mpDelta));
-      let newGold = Math.max(0, prev.gold + finalGoldGain);
-
-      // Check level up
-      let leveledUp = false;
-      let hpGained = 0;
-      let mpGained = 0;
-      let goldGained = 0;
-
-      while (newXp >= newXpToNext) {
-        newXp -= newXpToNext;
-        newLevel += 1;
-        newXpToNext = Math.round(100 * Math.pow(1.25, newLevel - 1));
-        const hpIncrease = 15;
-        const mpIncrease = 10;
-        const rewardGold = newLevel * 25;
-
-        newMaxHp += hpIncrease;
-        newMaxMp += mpIncrease;
-        newHp = newMaxHp; // Fully heal upon level up
-        newMp = newMaxMp;
-        newGold += rewardGold;
-
-        hpGained += hpIncrease;
-        mpGained += mpIncrease;
-        goldGained += rewardGold;
-        leveledUp = true;
-      }
-
-      if (leveledUp) {
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-        setLevelUpInfo({
-          level: newLevel,
-          hpGain: hpGained,
-          mpGain: mpGained,
-          goldGain: goldGained,
-        });
-        showToast('level_up', `🎉 LEVEL UP! Level ${newLevel}`, `HP & MP fully restored! +${goldGained} Gold!`);
-      }
-
-      // Check Death & Totem of Undying
-      if (newHp <= 0) {
-        const totemItem = inventory.find((i) => i.itemId === 'totem' && i.quantity > 0);
-        if (totemItem) {
-          // Consume totem
-          setInventory((invs) =>
-            invs
-              .map((i) => (i.itemId === 'totem' ? { ...i, quantity: i.quantity - 1 } : i))
-              .filter((i) => i.quantity > 0)
-          );
-          newHp = Math.round(newMaxHp * 0.3);
-          showToast('info', '🗿 Totem of Undying Triggered!', 'You were saved from fatal defeat and restored to 30% HP!');
-        } else {
-          // Penalize gold and restore to 20% HP
-          newHp = Math.round(newMaxHp * 0.2);
-          newGold = Math.max(0, newGold - 30);
-          showToast('damage', '☠️ You Fainted from Exhaustion', 'Resting restored 20% HP, but 30 Gold was lost.');
-        }
-      }
-
-      return {
-        ...prev,
-        level: newLevel,
-        xp: newXp,
-        xpToNextLevel: newXpToNext,
-        hp: newHp,
-        maxHp: newMaxHp,
-        mp: newMp,
-        maxMp: newMaxMp,
-        gold: newGold,
-      };
-    });
-  }, [totalBuffs, inventory, showToast]);
 
   const closeLevelUpModal = useCallback(() => {
     setLevelUpInfo(null);
   }, []);
 
-  const changeAvatarClass = useCallback((newClass: AvatarClass) => {
-    const classMeta = AVATAR_CLASSES[newClass];
-    setUser((prev) => ({
-      ...prev,
-      avatarClass: newClass,
-      avatarEmoji: classMeta.icon,
-      avatarColor: classMeta.color,
-      maxHp: Math.max(50, 100 + (prev.level - 1) * 15 + classMeta.hpBonus),
-      maxMp: Math.max(30, 50 + (prev.level - 1) * 10 + classMeta.mpBonus),
-    }));
-    showToast('success', 'Class Changed', `You are now a ${classMeta.name}!`);
-  }, [showToast]);
+
 
   const rebirthCharacter = useCallback(() => {
     apiPost<any>('/api/profile/rebirth', {}).then((res) => {
@@ -1017,7 +730,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Habits
   const addHabit = useCallback((title: string, difficulty: TaskDifficulty, isPositive: boolean, isNegative: boolean, folderId?: string | null, notes?: string) => {
-    rpg.addHabit({ title, difficulty, isPositive, isNegative, notes, folderId }).then((res) => applyLive(res)).catch(() => {});
+    rpg.addHabit({ title, difficulty, isPositive, isNegative, notes, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const editHabit = useCallback((id: string, updates: Partial<Habit>) => {
@@ -1027,7 +740,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive]);
 
   const duplicateHabit = useCallback((id: string) => {
-    rpg.duplicateHabit(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.duplicateHabit(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const deleteHabit = useCallback((id: string) => {
@@ -1039,7 +752,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLastDelete({ trashId: String(trashId), label });
       }
       applyLive(res);
-    }).catch(() => {});
+    }).catch(notifyApiErr);
   }, [applyLive, habits])
 
   const triggerHabit = useCallback((id: string, isPos: boolean) => {
@@ -1049,18 +762,18 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (habit) {
         showToast(isPos ? 'success' : 'damage', habit.title, res.result?.msg || '');
       }
-    }).catch(() => {});
+    }).catch(notifyApiErr);
   }, [habits, applyLive, showToast])
 
   const reorderHabits = useCallback((ordered: Habit[]) => {
     setHabits(ordered);
     rpg.reorderTasks('habit', ordered.map((h) => ({ id: h.id, folderId: h.folderId })))
-      .then((res) => applyLive(res)).catch(() => {});
+      .then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Dailies
   const addDaily = useCallback((title: string, difficulty: TaskDifficulty, repeatDays: number[], folderId?: string | null, notes?: string) => {
-    rpg.addDaily({ title, difficulty, repeatDays, notes, folderId }).then((res) => applyLive(res)).catch(() => {});
+    rpg.addDaily({ title, difficulty, repeatDays, notes, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const editDaily = useCallback((id: string, updates: Partial<Daily>) => {
@@ -1070,7 +783,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive]);
 
   const duplicateDaily = useCallback((id: string) => {
-    rpg.duplicateDaily(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.duplicateDaily(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const deleteDaily = useCallback((id: string) => {
@@ -1082,30 +795,30 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLastDelete({ trashId: String(trashId), label });
       }
       applyLive(res);
-    }).catch(() => {});
+    }).catch(notifyApiErr);
   }, [applyLive, dailies])
 
   const toggleDaily = useCallback((id: string) => {
-    rpg.completeDaily(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.completeDaily(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const useDailyFreeze = useCallback((id: string) => {
-    rpg.freezeDaily(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.freezeDaily(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const failDaily = useCallback((id: string) => {
-    rpg.failDaily(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.failDaily(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const reorderDailies = useCallback((ordered: Daily[]) => {
     setDailies(ordered);
     rpg.reorderTasks('daily', ordered.map((d) => ({ id: d.id, folderId: d.folderId })))
-      .then((res) => applyLive(res)).catch(() => {});
+      .then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Quests / Todos
   const addQuest = useCallback((title: string, difficulty: TaskDifficulty, dueDate?: string | null, folderId?: string | null, notes?: string) => {
-    rpg.addQuest({ title, difficulty, dueDate, notes, folderId }).then((res) => applyLive(res)).catch(() => {});
+    rpg.addQuest({ title, difficulty, dueDate, notes, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const editQuest = useCallback((id: string, updates: Partial<Quest>) => {
@@ -1115,7 +828,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive]);
 
   const duplicateQuest = useCallback((id: string) => {
-    rpg.duplicateQuest(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.duplicateQuest(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const deleteQuest = useCallback((id: string) => {
@@ -1127,30 +840,30 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLastDelete({ trashId: String(trashId), label });
       }
       applyLive(res);
-    }).catch(() => {});
+    }).catch(notifyApiErr);
   }, [applyLive, quests])
 
   const toggleQuest = useCallback((id: string) => {
-    rpg.completeQuest(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.completeQuest(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const reorderQuests = useCallback((ordered: Quest[]) => {
     setQuests(ordered);
     rpg.reorderTasks('quest', ordered.map((q) => ({ id: q.id, folderId: q.folderId })))
-      .then((res) => applyLive(res)).catch(() => {});
+      .then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const moveTaskAcrossFolders = useCallback((mode: string, id: string, folderId: string | null) => {
     const fid = folderId || null;
     if (mode === 'habit') {
       setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, folderId: fid } : h)));
-      rpg.reorderTasks('habit', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(() => {});
+      rpg.reorderTasks('habit', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(notifyApiErr);
     } else if (mode === 'daily') {
       setDailies((prev) => prev.map((d) => (d.id === id ? { ...d, folderId: fid } : d)));
-      rpg.reorderTasks('daily', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(() => {});
+      rpg.reorderTasks('daily', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(notifyApiErr);
     } else {
       setQuests((prev) => prev.map((q) => (q.id === id ? { ...q, folderId: fid } : q)));
-      rpg.reorderTasks('quest', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(() => {});
+      rpg.reorderTasks('quest', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(notifyApiErr);
     }
   }, [applyLive])
 
@@ -1159,7 +872,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (applyLive(res)) {
         showToast('success', lang === 'id' ? 'Tugas dipulihkan' : 'Task restored', '');
       }
-    }).catch(() => {});
+    }).catch(notifyApiErr);
   }, [applyLive, showToast, lang])
 
   const undoDelete = useCallback(() => {
@@ -1170,34 +883,38 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [lastDelete, restoreTask])
 
   // Sport Tracker
-  const addSportLog = useCallback((sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string) => {
-    life.addSport({ sportType, sportName, icon, durationMinutes, caloriesBurned, intensity, notes, complete: false }).then((res) => applyLive(res)).catch(() => {});
+  const addSportLog = useCallback((sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string, difficulty?: string) => {
+    life.addSport({ sportType, sportName, icon, durationMinutes, caloriesBurned, intensity, difficulty, notes, complete: false }).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive])
+
+  const updateSportLog = useCallback((id: string, body: Record<string, unknown>) => {
+    life.updateSport(id, body).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const completeSportLog = useCallback((id: string) => {
-    life.completeSport(id).then((res) => applyLive(res)).catch(() => {});
+    life.completeSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteSportLog = useCallback((id: string) => {
-    life.deleteSport(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Nutrition
   const addMealLog = useCallback((mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack', foodName: string, icon: string, portion: number, calories: number, protein: number, carbs: number, fat: number) => {
-    life.logFood({ mealType, foodName, icon, portion, calories, protein, carbs, fat }).then((res) => applyLive(res)).catch(() => {});
+    life.logFood({ mealType, foodName, icon, portion, calories, protein, carbs, fat }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteMealLog = useCallback((id: string) => {
-    life.deleteFoodLog(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteFoodLog(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const addWater = useCallback((amountMl: number) => {
-    life.addWater(amountMl).then((res) => applyLive(res)).catch(() => {});
+    life.addWater(amountMl).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const resetWater = useCallback(() => {
     setWaterLog((prev) => ({ ...prev, amountMl: 0 }));
-    life.resetWater().then((res) => applyLive(res)).catch(() => {});
+    life.resetWater().then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   // Shop & Inventory & Crafting
@@ -1206,21 +923,21 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return true;
   }, [applyLive, showToast])
 
-  const sellItem = useCallback((itemId: string) => {
-    rpg.sellItem(itemId).then((res) => applyLive(res)).catch(() => {});
+  const sellItem = useCallback((itemId: string, quantity: number = 1) => {
+    rpg.sellItem(itemId, quantity).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const useConsumable = useCallback((itemId: string): boolean => {
-    rpg.useItem(itemId).then((res) => applyLive(res)).catch(() => {});
+    rpg.useItem(itemId).then((res) => applyLive(res)).catch(notifyApiErr);
     return true;
   }, [applyLive])
 
   const equipItem = useCallback((itemId: string) => {
-    rpg.equipItem(itemId, true).then((res) => applyLive(res)).catch(() => {});
+    rpg.equipItem(itemId, true).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const unequipItem = useCallback((itemId: string) => {
-    rpg.equipItem(itemId, false).then((res) => applyLive(res)).catch(() => {});
+    rpg.equipItem(itemId, false).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const craftItem = useCallback((recipeResultId: string): boolean => {
@@ -1234,26 +951,26 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Pets
   const adoptPet = useCallback((petId: string, nickname?: string): boolean => {
-    rpg.adoptPet(petId).then((res) => applyLive(res)).catch(() => {});
+    rpg.adoptPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
     return true;
   }, [applyLive])
 
   const feedPet = useCallback((petId: string) => {
-    rpg.feedPet(petId).then((res) => applyLive(res)).catch(() => {});
+    rpg.feedPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const trainPet = useCallback((petId: string) => {
-    rpg.trainPet(petId).then((res) => applyLive(res)).catch(() => {});
+    rpg.trainPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const equipPet = useCallback((petId: string) => {
-    rpg.equipPet(petId).then((res) => applyLive(res)).catch(() => {});
+    rpg.equipPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
-  const unequipPet = useCallback(() => {
-    const equipped = userPets.find((p) => p.isEquipped);
-    if (equipped) rpg.unequipPet(equipped.petId).then((res) => applyLive(res)).catch(() => {});
-  }, [applyLive, userPets])
+  // Parity PetsPage._unequip: lepas pet spesifik (tanpa fallback auto).
+  const unequipPet = useCallback((petId: string) => {
+    if (petId) rpg.unequipPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive, notifyApiErr])
 
   // Boss Combat
   const startBossFight = useCallback((bossId: string) => {
@@ -1262,7 +979,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setActiveBoss(boss);
       setActiveBossHp(boss.hp);
     }
-    rpg.startBoss(bossId).then((res) => applyLive(res)).catch(() => {});
+    rpg.startBoss(bossId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const attackBoss = useCallback((action: string | boolean = 'light') => {
@@ -1277,76 +994,88 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const fleeBoss = useCallback(() => {
     setActiveBoss(null);
     setActiveBossHp(0);
-    rpg.fleeBoss().then((res) => applyLive(res)).catch(() => {});
+    rpg.fleeBoss().then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   // Economy
-  const addTransaction = useCallback((type: 'income' | 'expense', category: string, amount: number, notes?: string) => {
-    life.addEconomy({ type, category, amount, notes }).then((res) => applyLive(res)).catch(() => {});
+  const addTransaction = useCallback((type: 'income' | 'expense', category: string, amount: number, notes?: string, folderId?: string | null, name?: string, date?: string) => {
+    life.addEconomy({ type, category, amount, notes, folderId: folderId || undefined, name, date }).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive])
+
+  const moveTransaction = useCallback((id: string, folderId: string | null) => {
+    life.moveEconomy(id, folderId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteTransaction = useCallback((id: string) => {
-    life.deleteEconomy(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteEconomy(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const addDebt = useCallback((title: string, type: 'payable' | 'receivable', totalAmount: number, dueDate: string, notes?: string) => {
-    life.addDebt({ title, type, totalAmount, dueDate, notes }).then((res) => applyLive(res)).catch(() => {});
+    life.addDebt({ title, type, totalAmount, dueDate, notes }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const payDebtInstallment = useCallback((id: string, amount: number) => {
-    life.payDebt(id, amount).then((res) => applyLive(res)).catch(() => {});
+    life.payDebt(id, amount).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteDebt = useCallback((id: string) => {
-    life.deleteDebt(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteDebt(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const addSaving = useCallback((name: string, targetAmount: number, currentAmount?: number, targetDate?: string) => {
-    life.addSaving({ name, targetAmount, currentAmount: currentAmount || 0, targetDate }).then((res) => applyLive(res)).catch(() => {});
+    life.addSaving({ name, targetAmount, currentAmount: currentAmount || 0, targetDate }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const addToSaving = useCallback((id: string, amount: number) => {
-    life.addToSaving(id, amount).then((res) => applyLive(res)).catch(() => {});
+    life.addToSaving(id, amount).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const withdrawFromSaving = useCallback((id: string, amount: number) => {
-    life.withdrawSaving(id, amount).then((res) => applyLive(res)).catch(() => {});
+    life.withdrawSaving(id, amount).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const deleteSaving = useCallback((id: string) => {
-    life.deleteSaving(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteSaving(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const addInvestment = useCallback((name: string, amount: number, notes?: string) => {
-    life.addInvestment({ name, amount, notes }).then((res) => applyLive(res)).catch(() => {});
+    life.addInvestment({ name, amount, notes }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const collectInvestmentReturn = useCallback((id: string) => {
-    life.investmentReturn(id).then((res) => applyLive(res)).catch(() => {});
+    life.investmentReturn(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const withdrawInvestment = useCallback((id: string) => {
-    life.withdrawInvestment(id).then((res) => applyLive(res)).catch(() => {});
+    life.withdrawInvestment(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const addSubscription = useCallback((name: string, amount: number, dueDate: string, period?: string) => {
-    life.addSubscription({ name, amount, dueDate, period: period || 'monthly' }).then((res) => applyLive(res)).catch(() => {});
+    life.addSubscription({ name, amount, dueDate, period: period || 'monthly' }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const renewSubscription = useCallback((id: string) => {
-    life.renewSubscription(id).then((res) => applyLive(res)).catch(() => {});
+    life.renewSubscription(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const deleteSubscription = useCallback((id: string) => {
-    life.deleteSubscription(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteSubscription(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const addDebtNote = useCallback((personName: string, amount: number, date?: string, notes?: string) => {
-    life.addDebtNote({ personName, amount, date, notes }).then((res) => applyLive(res)).catch(() => {});
+    life.addDebtNote({ personName, amount, date, notes }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const settleDebtNote = useCallback((id: string) => {
-    life.settleDebtNote(id).then((res) => applyLive(res)).catch(() => {});
+    life.settleDebtNote(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const deleteDebtNote = useCallback((id: string) => {
-    life.deleteDebtNote(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteDebtNote(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const applyTaskTemplate = useCallback((mode: string, key: string) => {
-    life.applyTemplate(mode, key).then((res) => applyLive(res)).catch(() => {});
+    life.applyTemplate(mode, key).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   // Notes
+  const updateNoteFolder = useCallback((id: string, updates: { name?: string; icon?: string }) => {
+    life.updateNoteFolder(id, updates as Record<string, unknown>).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive, notifyApiErr]);
+
+  const duplicateNoteFolder = useCallback((id: string) => {
+    life.duplicateNoteFolder(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive, notifyApiErr]);
+
   const addNoteFolder = useCallback((name: string, icon: string, parentId?: string | null) => {
-    life.addNoteFolder({ name, icon, parentId }).then((res) => applyLive(res)).catch(() => {});
+    life.addNoteFolder({ name, icon, parentId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteNoteFolder = useCallback((id: string) => {
@@ -1354,23 +1083,23 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive]);
 
   const addNote = useCallback((title: string, content: string, folderId?: string | null) => {
-    life.addNote({ title, content, folderId }).then((res) => applyLive(res)).catch(() => {});
+    life.addNote({ title, content, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const updateNote = useCallback((id: string, title: string, content: string, folderId?: string | null) => {
-    life.updateNote(id, { title, content, folderId }).then((res) => applyLive(res)).catch(() => {});
+    life.updateNote(id, { title, content, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteNote = useCallback((id: string) => {
-    life.deleteNote(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteNote(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const archiveNote = useCallback((id: string, archived: boolean) => {
-    life.archiveNote(id, archived).then((res) => applyLive(res)).catch(() => {});
+    life.archiveNote(id, archived).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const duplicateNoteItem = useCallback((id: string) => {
-    life.duplicateNote(id).then((res) => applyLive(res)).catch(() => {});
+    life.duplicateNote(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   // Optimistic notes reorder (drag & drop within a folder), then persist to DB.
@@ -1386,26 +1115,167 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     rpg
       .reorderNotes(orderedIds.map((id) => ({ id })))
       .then((res) => applyLive(res))
-      .catch(() => {});
+      .catch(notifyApiErr);
   }, [applyLive]);
 
   // Health Metrics
   const addHealthLog = useCallback((steps: number, sleepHours: number, weightKg?: number, heartRate?: number, mood: 'great' | 'good' | 'neutral' | 'tired' | 'stressed' = 'good', notes?: string) => {
-    life.addHealth({ steps, sleepHours, weightKg, heartRate, mood, notes }).then((res) => applyLive(res)).catch(() => {});
+    life.addHealth({ steps, sleepHours, weightKg, heartRate, mood, notes }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const completePomodoroSession = useCallback((durationMinutes: number, label: string) => {
-    life.completePomodoro(durationMinutes, label).then((res) => applyLive(res)).catch(() => {});
+    life.completePomodoro(durationMinutes, label).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
+
+  const [pomodoroStats, setPomodoroStats] = useState({ todaySessions: 0, todayMinutes: 0, totalSessions: 0, totalMinutes: 0 });
+
+  // ── Pomodoro engine parity PomodoroPage ────────────────────────────────────
+  // State machine idle→focus→(alert)→break→(alert)→idle. Timer memakai deadline
+  // absolut (endsAt Ref) sehingga akurat walau komponen PomodoroView unmount atau
+  // tab browser throttle — penyebab issue #7 (reset saat ganti halaman).
+  interface PomoState {
+    phase: 'idle' | 'focus' | 'break';
+    paused: boolean;
+    remainingSec: number;
+    totalSec: number;
+    focusMin: number;
+    breakMin: number;
+    taskLabel: string;
+  }
+  const [pomo, setPomo] = useState<PomoState>({
+    phase: 'idle', paused: false, remainingSec: 25 * 60, totalSec: 25 * 60,
+    focusMin: 25, breakMin: 5, taskLabel: '',
+  });
+  const [pomoAlert, setPomoAlert] = useState<{ phase: 'focus' | 'break'; title: string; msg: string } | null>(null);
+  const pomoRef = useRef(pomo);
+  pomoRef.current = pomo;
+  const pomoDeadlineRef = useRef<number | null>(null);
+  const pomoRemainingRef = useRef<number>(25 * 60);
+
+  const pomoBeginPhase = useCallback((phase: 'focus' | 'break') => {
+    const st = pomoRef.current;
+    // parity _begin_phase: baca durasi dari "spin" yang sudah di-clamp range.
+    const focusMin = Math.min(120, Math.max(5, Math.round(st.focusMin) || 25));
+    const breakMin = Math.min(30, Math.max(1, Math.round(st.breakMin) || 5));
+    const minutes = phase === 'focus' ? focusMin : breakMin;
+    const total = minutes * 60;
+    pomoDeadlineRef.current = Date.now() + total * 1000;
+    pomoRemainingRef.current = total;
+    setPomo((p) => ({ ...p, phase, paused: false, totalSec: total, remainingSec: total, focusMin, breakMin }));
+  }, []);
+
+  const pomoFinishFocus = useCallback(async () => {
+    const st = pomoRef.current;
+    pomoDeadlineRef.current = null;
+    const minutes = Math.min(120, Math.max(5, Math.round(st.focusMin) || 25));
+    let xp = 0, gold = 0, extra = '';
+    try {
+      const res = await life.completePomodoro(minutes, st.taskLabel.trim());
+      applyLive(res);
+      const r = (res as any)?.result || res || {};
+      xp = Number(r.xp_gained || r.xpGained || 0);
+      gold = Number(r.gold_gained || r.goldGained || 0);
+      if (r.leveled_up && r.new_level) {
+        extra = `\n🎉 ${i18nT('level_up_msg', 'Naik ke Level {lvl}!').replace('{lvl}', String(r.new_level))}`;
+      }
+    } catch { /* offline: pesan tanpa hadiah */ }
+    const msg = i18nT('pomodoro_complete_msg', 'Kerja bagus! +{xp} XP, +{gold} G dari {mins} menit fokus.')
+      .replace('{xp}', String(xp)).replace('{gold}', String(gold)).replace('{mins}', String(minutes)) + extra;
+    // Alarm berulang sampai diakui; break DIMULAI setelah ack (parity PyQt).
+    startPomoAlarm('focus');
+    setPomoAlert({ phase: 'focus', title: i18nT('pomodoro_complete_title', 'Sesi Fokus Selesai! 🎉'), msg });
+  }, [applyLive]);
+
+  const pomoFinishBreak = useCallback(() => {
+    pomoDeadlineRef.current = null;
+    const st = pomoRef.current;
+    const focusMin = Math.min(120, Math.max(5, Math.round(st.focusMin) || 25));
+    const total = focusMin * 60;
+    pomoRemainingRef.current = total;
+    setPomo((p) => ({ ...p, phase: 'idle', paused: false, remainingSec: total, totalSec: total }));
+    startPomoAlarm('break');
+    setPomoAlert({
+      phase: 'break',
+      title: i18nT('pomodoro_break_done_title', 'Istirahat Selesai'),
+      msg: i18nT('pomodoro_break_done', 'Istirahat selesai — tubuh dan pikiranmu sudah siap untuk fokus kembali.'),
+    });
+  }, []);
+
+  // Interval tunggal hidup di provider — PERMANEN selama app jalan.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const st = pomoRef.current;
+      if (st.phase === 'idle' || st.paused || !pomoDeadlineRef.current) return;
+      const rem = Math.max(0, Math.ceil((pomoDeadlineRef.current - Date.now()) / 1000));
+      if (rem <= 0) {
+        const phase = st.phase;
+        setPomo((p) => ({ ...p, remainingSec: 0 }));
+        if (phase === 'focus') { void pomoFinishFocus(); } else { void pomoFinishBreak(); }
+        return;
+      }
+      pomoRemainingRef.current = rem;
+      setPomo((p) => (p.remainingSec === rem ? p : { ...p, remainingSec: rem }));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [pomoFinishFocus, pomoFinishBreak]);
+
+  const pomoStart = useCallback(() => { pomoBeginPhase('focus'); }, [pomoBeginPhase]);
+  const pomoPauseToggle = useCallback(() => {
+    const st = pomoRef.current;
+    if (st.phase === 'idle') return; // parity: pause tidak berlaku saat idle
+    if (st.paused) {
+      pomoDeadlineRef.current = Date.now() + pomoRemainingRef.current * 1000;
+    } else {
+      pomoRemainingRef.current = st.remainingSec;
+      pomoDeadlineRef.current = null;
+    }
+    setPomo((p) => ({ ...p, paused: !p.paused }));
+  }, []);
+  const pomoReset = useCallback(() => {
+    stopPomoAlarm();
+    pomoDeadlineRef.current = null;
+    const st = pomoRef.current;
+    const focusMin = Math.min(120, Math.max(5, Math.round(st.focusMin) || 25));
+    const total = focusMin * 60;
+    pomoRemainingRef.current = total;
+    setPomo((p) => ({ ...p, phase: 'idle', paused: false, remainingSec: total, totalSec: total }));
+  }, []);
+  const pomoGiveUp = useCallback(() => {
+    if (pomoRef.current.phase === 'idle') return; // parity _give_up guard
+    pomoReset();
+  }, [pomoReset]);
+  const pomoSetDurations = useCallback((focusMin: number, breakMin: number) => {
+    const st = pomoRef.current;
+    if (st.phase !== 'idle') return; // parity: spin disabled saat running
+    const f = Math.min(120, Math.max(5, Math.round(focusMin) || 25));
+    const b = Math.min(30, Math.max(1, Math.round(breakMin) || 5));
+    pomoRemainingRef.current = f * 60;
+    setPomo((p) => ({ ...p, focusMin: f, breakMin: b, remainingSec: f * 60, totalSec: f * 60 }));
+  }, []);
+  const pomoSetTask = useCallback((label: string) => {
+    setPomo((p) => (p.phase === 'idle' ? { ...p, taskLabel: label } : p)); // parity: input disabled saat running
+  }, []);
+  const pomoAckAlert = useCallback(() => {
+    const alert = pomoAlert;
+    stopPomoAlarm();
+    setPomoAlert(null);
+    if (alert?.phase === 'focus') pomoBeginPhase('break'); // parity: break setelah akui
+  }, [pomoAlert, pomoBeginPhase]);
+  const pomoTestAlarm = useCallback(() => {
+    startPomoAlarm('focus');
+    window.setTimeout(stopPomoAlarm, 6000); // parity _test_alarm 6 detik
+    showToast('info', i18nT('pomodoro_test_alarm', 'Uji Alarm Berulang'),
+      i18nT('pomodoro_test_alarm_info', 'Alarm akan berulang selama 6 detik.'));
+  }, [showToast]);
 
   // Achievements
   const claimAchievement = useCallback((id: string) => {
-    rpg.claimAchievement(id).then((res) => applyLive(res)).catch(() => {});
+    rpg.claimAchievement(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Learning Notebook Actions
   const addNotebook = useCallback((title: string, description: string, icon: string = '📚') => {
-    studio.addNotebook(title, description, icon).then((res) => applyLive(res)).catch(() => {});
+    studio.addNotebook(title, description, icon).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const updateNotebook = useCallback((id: string, updates: Partial<LearningNotebook>) => {
@@ -1413,11 +1283,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const deleteNotebook = useCallback((id: string) => {
-    studio.deleteNotebook(id).then((res) => applyLive(res)).catch(() => {});
+    studio.deleteNotebook(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
+  const refreshNotebooks = useCallback(() => {
+    studio.listNotebooks().then((res) => {
+      if (res?.ok && Array.isArray(res.notebooks)) setNotebooks(res.notebooks);
+    }).catch(notifyApiErr);
+  }, [notifyApiErr]);
+
   const addNotebookSource = useCallback((notebookId: string, title: string, content: string, type: 'text' | 'doc' | 'pdf' | 'url' = 'text') => {
-    studio.addSource(notebookId, title, content, type).then((res) => applyLive(res)).catch(() => {});
+    studio.addSource(notebookId, title, content, type).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteNotebookSource = useCallback((notebookId: string, sourceId: string) => {
@@ -1430,24 +1306,24 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addNotebookChat = useCallback((notebookId: string, text: string, sender: 'user' | 'ai') => {
     if (sender !== 'user') return;
-    studio.chat(notebookId, text).then((res) => applyLive(res)).catch(() => {});
+    studio.chat(notebookId, text).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Love Space Actions
   const updateLoveSpace = useCallback((updates: Partial<LoveSpaceData>) => {
-    studio.updateLove(updates as Record<string, unknown>).then((res) => applyLive(res)).catch(() => {});
+    studio.updateLove(updates as Record<string, unknown>).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const addLoveMemory = useCallback((title: string, date: string, description: string, emoji: string) => {
-    studio.addMemory(title, date, description, emoji).then((res) => applyLive(res)).catch(() => {});
+    studio.addMemory(title, date, description, emoji).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const toggleLoveBucketItem = useCallback((id: string) => {
-    studio.toggleBucket(id).then((res) => applyLive(res)).catch(() => {});
+    studio.toggleBucket(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const answerLovePrompt = useCallback((promptId: string, answer: string) => {
-    studio.lovePrompt({ id: promptId, answer }).then((res) => applyLive(res)).catch(() => {});
+    studio.lovePrompt({ id: promptId, answer }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   // Social & Guild Actions
@@ -1507,6 +1383,32 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     studio.loveCycle(body).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
   }, [applyLive, showToast]);
 
+  // --- LovePage parity ops (P5): delete handlers + album + favorit prompt ---
+  const loveOp = useCallback((p: Promise<any>) => {
+    p.then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [applyLive, showToast]);
+
+  const refreshLoveSpace = useCallback(() => {
+    studio.love().then((res) => {
+      if (res?.loveSpace) setLoveSpace((prev) => ({ ...prev, ...res.loveSpace }));
+    }).catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [showToast]);
+
+  const deleteLoveMemory = useCallback((id: string) => loveOp(studio.deleteLoveMemory(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLovePrompt = useCallback((id: string) => loveOp(studio.deleteLovePrompt(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLoveWeekly = useCallback((id: string) => loveOp(studio.deleteLoveWeekly(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLoveCycle = useCallback((id: string) => loveOp(studio.deleteLoveCycle(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLoveEvent = useCallback((id: string) => loveOp(studio.deleteLoveEvent(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLoveBucket = useCallback((id: string) => loveOp(studio.deleteLoveBucket(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLovePhoto = useCallback((id: string) => loveOp(studio.deleteLovePhoto(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const lovePromptFavorite = useCallback((promptKey: string) => loveOp(studio.lovePromptFavorite(promptKey).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const createLoveAlbum = useCallback((name: string, scope: string) => loveOp(studio.createLoveAlbum({ name, scope }).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const renameLoveAlbum = useCallback((id: string, name: string) => loveOp(studio.renameLoveAlbum(id, name).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const deleteLoveAlbum = useCallback((id: string) => loveOp(studio.deleteLoveAlbum(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const loveAlbumAddPhoto = useCallback((albumId: string, photoId: string) => loveOp(studio.loveAlbumAddPhoto(albumId, photoId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const loveAlbumMovePhoto = useCallback((albumId: string, photoId: string, sourceAlbumId?: string | null) => loveOp(studio.loveAlbumMovePhoto(albumId, photoId, sourceAlbumId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const loveAlbumRemovePhoto = useCallback((albumId: string, photoId: string) => loveOp(studio.loveAlbumRemovePhoto(albumId, photoId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+
   const refreshSocial = useCallback(() => {
     Promise.all([studio.friends(), studio.guild(), studio.pvp(), studio.love()])
       .then(([f, g, p, l]) => {
@@ -1522,59 +1424,78 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       .catch(() => undefined);
   }, [applyLive]);
 
-  const attackGuildBoss = useCallback((damage: number) => {
-    studio.attackGuildBoss(damage).then((res) => applyLive(res)).catch(() => {});
+  const attackGuildBoss = useCallback((action: 'light' | 'heavy' | 'block' | 'ultimate' = 'light') => {
+    studio.attackGuildBoss(action).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const claimPvPReward = useCallback((id: string) => {
-    studio.claimPvp(id).then((res) => applyLive(res)).catch(() => {});
+    studio.claimPvp(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Calendar Reminders
-  const addReminder = useCallback((title: string, time: string, repeat: 'none' | 'daily' | 'weekdays' | 'weekly' = 'daily', sound: 'beep' | 'bell' | 'magic' | 'fanfare' = 'bell') => {
-    life.addReminder({ title, time, repeat, sound }).then((res) => applyLive(res)).catch(() => {});
+  const addReminder = useCallback((payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => {
+    life.addReminder(payload).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive])
+  const editReminder = useCallback((id: string, payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => {
+    life.updateReminder(id, payload).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const toggleReminder = useCallback((id: string) => {
-    life.toggleReminder(id).then((res) => applyLive(res)).catch(() => {});
+    life.toggleReminder(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteReminder = useCallback((id: string) => {
-    life.deleteReminder(id).then((res) => applyLive(res)).catch(() => {});
+    life.deleteReminder(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const saveCalendarNote = useCallback((date: string, note: string) => {
-    life.saveCalendarNote(date, note).then((res) => applyLive(res)).catch(() => {});
+    life.saveCalendarNote(date, note).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive]);
+  const deleteCalendarNote = useCallback((date: string) => {
+    life.deleteCalendarNote(date).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   // ── Phase P8: Reminder auto-trigger (sound + toast) — parity dengan RemindersPage PyQt ──
-  // Menjalankan timer tiap 30 detik; saat HH:MM aktif & repeat cocok, bunyikan
-  // alarm (WebAudio) & tampilkan toast, lalu tandai sudah dibunyikan untuk menit itu.
-  const firedRemindersRef = useRef<Set<string>>(new Set());
+  // Parity MainWindow._check_reminders (QTimer 5 detik → web poling tiap 10
+  // detik ke GET /api/reminders/due). Reminder yang due dibunyikan sebagai
+  // ALARM LOOP (beep tiap 2 detik / MP3 custom loop) sampai pengguna menekan
+  // OK (dismissReminderAlarm) — lalu POST /trigger per reminder agar server
+  // menjadwalkan ulang repeat (logika jadwal tetap di Python, parity db).
+  const dueAlarmRef = useRef<any[]>([])
+  const [alarmDue, setAlarmDue] = useState<any[]>([])
+  const alarmLockRef = useRef(false)
+  const dismissReminderAlarm = useCallback(() => {
+    stopReminderLoop()
+    const dueList = dueAlarmRef.current
+    dueAlarmRef.current = []
+    setAlarmDue([])
+    alarmLockRef.current = false
+    for (const r of dueList) {
+      life.triggerReminder(r.id).then((res) => applyLive(res)).catch(() => { /* abaikan */ })
+    }
+  }, [applyLive])
   useEffect(() => {
-    const check = () => {
-      const now = new Date();
-      const hhmm = [String(now.getHours()).padStart(2, '0'), String(now.getMinutes()).padStart(2, '0')].join(':');
-      const dow = now.getDay(); // 0 = Minggu
-      const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${hhmm}`;
-      for (const rem of reminders) {
-        if (!rem.isActive) continue;
-        if ((rem.time || '') !== hhmm) continue;
-        // repeat rule
-        if (rem.repeat === 'none') continue; // none = hanya manual test (belum ada tanggal khusus di web)
-        if (rem.repeat === 'weekdays' && (dow === 0 || dow === 6)) continue;
-        const key = `${rem.id}:${minuteKey}`;
-        if (firedRemindersRef.current.has(key)) continue;
-        firedRemindersRef.current.add(key);
-        const msg = rem.title || (lang === 'id' ? 'Pengingat' : 'Reminder');
-        showToast(rem.sound === 'fanfare' ? 'level_up' : 'info', '⏰ ' + msg, `${rem.time} · ${rem.repeat}`);
-        playReminderSound((rem.sound as ReminderSound) || 'bell');
-      }
-    };
-    check();
-    const id = setInterval(check, 30000);
-    return () => clearInterval(id);
-  }, [reminders, showToast, lang]);
+    const poll = () => {
+      life.dueReminders().then((res) => {
+        const dueList = (res?.due as any[]) || []
+        if (!dueList.length) return
+        // kunci: satu alarm aktif; reminder berikutnya ikut antre (parity dialog berurut)
+        if (alarmLockRef.current) return
+        alarmLockRef.current = true
+        dueAlarmRef.current = dueList
+        setAlarmDue(dueList)
+        const first = dueList[0]
+        // File streaming lewat /music/stream (route yang sama seperti MusicPage web).
+        const fileUrl = first.soundFile ? `/music/stream?path=${encodeURIComponent(first.soundFile)}` : undefined
+        startReminderLoop(first.sound, fileUrl)
+        const titles = dueList.map((r: any) => r.title).join(', ') || (lang === 'id' ? 'Pengingat' : 'Reminder')
+        showToast('info', '⏰ ' + titles, lang === 'id' ? 'Alarm berbunyi — tekan OK untuk menghentikan.' : 'Alarm ringing — press OK to stop.')
+      }).catch(() => { /* server tidak tersedia */ })
+    }
+    poll()
+    const id = setInterval(poll, 10000)
+    return () => { clearInterval(id); stopReminderLoop(); }
+  }, [showToast, lang])
 
 
   // JSON Export / Import / Reset
@@ -1641,37 +1562,33 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [showToast]);
 
-  const resetAllData = useCallback(() => {
-    setUser(defaultUser);
-    setHabits(defaultHabits);
-    setDailies(defaultDailies);
-    setQuests(defaultQuests);
-    setInventory([
-      { itemId: 'wooden_sword', quantity: 1, equipped: true },
-      { itemId: 'health_potion', quantity: 2, equipped: false },
-      { itemId: 'ice_block', quantity: 1, equipped: false },
-    ]);
-    setUserPets([
-      { petId: 'wolf', nickname: 'Fang', level: 1, xp: 20, hunger: 90, isEquipped: true, adoptedAt: new Date().toISOString() },
-    ]);
-    setSportLogs(defaultSportLogs);
-    setMealLogs(defaultMeals);
-    setTransactions(defaultTransactions);
-    setNotes(defaultNotes);
-    localStorage.removeItem(STORAGE_KEY);
-    showToast('info', 'Progress Reset', 'Restored to clean state.');
-  }, [showToast]);
+  // Parity SettingsPage._reset_progress PyQt: verifikasi password di server,
+  // db.reset_user_progress, lalu paksa reload agar kembali ke login/bootstrap bersih.
+  const resetAllData = useCallback(async (password?: string): Promise<boolean> => {
+    try {
+      const res = await apiPost<any>('/api/tracker/reset', { password: password || '' });
+      if (!res?.ok) return false;
+      localStorage.removeItem(STORAGE_KEY);
+      window.location.reload();
+      return true;
+    } catch {
+      notifyApiErr(new Error('wrong_password'));
+      return false;
+    }
+  }, [notifyApiErr]);
 
   return (
     <GameContext.Provider
       value={{
         user,
         setUser,
-        updateUserStats,
+        applyLive,
         updateUserProfile,
         completeOnboarding,
         rebirthCharacter,
-        changeAvatarClass,
+        hydrated,
+        apiError,
+        retryBootstrap,
         lang,
         setLang,
         soundEnabled,
@@ -1712,6 +1629,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         reorderQuests,
         sportLogs,
         addSportLog,
+        updateSportLog,
         completeSportLog,
         deleteSportLog,
         mealLogs,
@@ -1743,6 +1661,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         transactions,
         addTransaction,
         deleteTransaction,
+        moveTransaction,
         debts,
         addDebt,
         payDebtInstallment,
@@ -1768,6 +1687,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         noteFolders,
         addNoteFolder,
         deleteNoteFolder,
+        updateNoteFolder,
+        duplicateNoteFolder,
         notes,
         addNote,
         updateNote,
@@ -1779,12 +1700,16 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addHealthLog,
         pomodoroSessions,
         completePomodoroSession,
+        pomodoroStats,
+        pomo, pomoAlert, pomoStart, pomoPauseToggle, pomoReset, pomoGiveUp,
+        pomoSetDurations, pomoSetTask, pomoAckAlert, pomoTestAlarm,
         achievements,
         claimAchievement,
         notebooks,
         addNotebook,
         updateNotebook,
         deleteNotebook,
+        refreshNotebooks,
         addNotebookSource,
         deleteNotebookSource,
         addNotebookChat,
@@ -1803,6 +1728,21 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         approveGuildRequest,
         rejectGuildRequest,
         updateLovePhotoMeta,
+        refreshLoveSpace,
+        deleteLoveMemory,
+        deleteLovePrompt,
+        deleteLoveWeekly,
+        deleteLoveCycle,
+        deleteLoveEvent,
+        deleteLoveBucket,
+        deleteLovePhoto,
+        lovePromptFavorite,
+        createLoveAlbum,
+        renameLoveAlbum,
+        deleteLoveAlbum,
+        loveAlbumAddPhoto,
+        loveAlbumMovePhoto,
+        loveAlbumRemovePhoto,
         friendRequests,
         sendPvpChallenge,
         loveCheckin,
@@ -1817,16 +1757,20 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         claimPvPReward,
         reminders,
         addReminder,
+        editReminder,
+        dismissReminderAlarm,
         toggleReminder,
         deleteReminder,
         calendarNotes,
         saveCalendarNote,
+        deleteCalendarNote,
         dailyTaskCounts,
         levelUpInfo,
         closeLevelUpModal,
         toasts,
         removeToast,
         showToast,
+        activeBuffs,
         totalBuffs,
         exportDataJson,
         importDataJson,
@@ -1834,6 +1778,48 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }}
     >
       {children}
+      {alarmDue.length > 0 && (
+        <div className="fixed inset-0 z-[95] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/60 rounded-2xl p-6 w-full max-w-md text-center space-y-4 shadow-2xl shadow-amber-500/20">
+            <div className="text-4xl animate-pulse">⏰</div>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {alarmDue.map((r: any) => (
+                <div key={r.id}>
+                  <div className="text-base font-black text-slate-100">{r.title}</div>
+                  {r.description ? <div className="text-xs text-slate-400">{r.description}</div> : null}
+                  <div className="text-[11px] text-slate-500 font-mono">{(r.datetime || '').slice(0, 16).replace('T', ' ')}</div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={dismissReminderAlarm}
+              className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm"
+            >
+              {lang === 'id' ? 'OK — Hentikan Alarm' : 'OK — Stop Alarm'}
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Alert fase Pomodoro global: timer bisa selesai di halaman mana pun
+          (parity _show_phase_alert + alarm loop sampai diakui). */}
+      {pomoAlert && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-md w-full space-y-5 shadow-2xl text-center">
+            <div className="text-4xl">{pomoAlert.phase === 'focus' ? '✓' : '☕'}</div>
+            <h3 className="text-lg font-black text-slate-100">{pomoAlert.title}</h3>
+            <p className="text-sm text-slate-300 whitespace-pre-wrap">{pomoAlert.msg}</p>
+            <button
+              onClick={pomoAckAlert}
+              className="w-full py-3 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm transition-colors"
+            >
+              {pomoAlert.phase === 'focus'
+                ? i18nT('pomodoro_start_break', 'Mulai Istirahat')
+                : i18nT('pomodoro_back_to_focus', 'Siap Fokus Lagi')}
+            </button>
+          </div>
+        </div>
+      )}
     </GameContext.Provider>
   );
 };

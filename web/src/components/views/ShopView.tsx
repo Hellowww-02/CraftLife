@@ -1,242 +1,276 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useGame } from '../../context/GameContext';
-import { liveShopItems } from '../../data/liveCatalog';
-import { ShopItemType } from '../../types';
+import { liveShopItems, livePets } from '../../data/liveCatalog';
 import { t } from '../../i18n';
-import { ShoppingBag, Coins, PackageOpen } from 'lucide-react';
 
-export const ShopView: React.FC = () => {
-  const { user, inventory, buyItem, sellItem, useConsumable, equipItem, unequipItem, enchantItem, lang } = useGame();
-  const [activeTab, setActiveTab] = useState<'shop' | 'inventory'>('shop');
-  const [shopCategory, setShopCategory] = useState<ShopItemType | 'all'>('all');
-
-  const shopItemsList = Object.values(liveShopItems()).filter((item) => !item.craftOnly);
-  const filteredShopItems = shopItemsList.filter((i) => {
-    if (shopCategory === 'all') return true;
-    return i.type === shopCategory;
+const tr = (key: string, vars?: Record<string, string | number>) => {
+  let s = t(key, key);
+  if (!vars) return s;
+  s = s.replace(/\{(\w+)(:[^}]*)?\}/g, (m, name, spec) => {
+    if (!(name in vars)) return m;
+    const v: any = (vars as any)[name];
+    return String(typeof v === 'number' && spec ? (Math.round(v * 10) / 10) : v);
   });
+  return s;
+};
+
+const EQUIP_TYPES = ['weapon', 'armor', 'shoes', 'accessory'] as const;
+const enchantCost = (lvl: number) => (lvl + 1) * 50; // parity ENCHANT_COST_FORMULA client-side display
+const sellPriceOf = (cost: number) => Math.max(1, Math.floor(cost * 0.1));
+
+/** Parity ShopPage (MainPyQt6.py): buff bar + tab Items/Pets + kartu dengan
+ * owned/use/buy again/sell/enchant/adopt/equip/unequip + SellDialog qty. */
+export const ShopView: React.FC = () => {
+  const {
+    user, inventory, userPets, activeBuffs,
+    buyItem, sellItem, useConsumable, equipItem, unequipItem,
+    adoptPet, equipPet, unequipPet, enchantItem, lang,
+  } = useGame();
+  const SHOP_ITEMS = liveShopItems() as Record<string, any>;
+  const PETS_DATA = livePets() as Record<string, any>;
+
+  const [tab, setTab] = useState<'items' | 'pets'>('items');
+  const [sellDlg, setSellDlg] = useState<{ inv: any; it: any } | null>(null);
+
+  const invMap = useMemo(() => new Map(inventory.map((i: any) => [i.itemId, i])), [inventory]);
+  const ownedPetIds = useMemo(() => new Set(userPets.map((p) => p.petId)), [userPets]);
+  const activePetIds = useMemo(() => new Set(userPets.filter((p) => p.isEquipped).map((p) => p.petId)), [userPets]);
+
+  // ── Buff bar (parity db.get_all_active_buffs) ──
+  const buffText = activeBuffs && activeBuffs.length
+    ? `⚡ Buff Aktif :  ${activeBuffs.join('  ·  ')}`
+    : '⚡ Buff Aktif :  Tidak ada buff aktif.';
+
+  const visibleItems = useMemo(
+    () => Object.entries(SHOP_ITEMS)
+      .map(([id, it]: [string, any]) => ({ id, ...it }))
+      .filter((it: any) => it.visible !== false)
+      .filter((it: any) => !(it.seasonal && it.available === false)),
+    [SHOP_ITEMS],
+  );
+
+  const gold = user.gold || 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="w-6 h-6 text-yellow-400" />
-            <h2 className="text-xl font-black text-slate-100">{t('web_shop_title', lang === 'id' ? 'Toko Perlengkapan & Pandai Besi' : 'Armory Shop & Crafting Forge')}</h2>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {lang === 'id'
-              ? 'Beli senjata perkasa, armor pelindung, ramuan restorasi, atau tempa perlengkapan legendaris di Pandai Besi.'
-              : 'Acquire mighty blades, protective armors, recovery elixirs, or forge legendary mythic gear at the Forge.'}
-          </p>
-          {user.cloudLinked && (
-            <p className="text-[11px] text-sky-300 mt-1">
-              {t('cloud_shop_wallet', lang === 'id'
-                ? `Toko memakai wallet cloud: ${(user.goldCloud ?? user.gold).toLocaleString()} Gold (lokal ${ (user.goldLocal ?? 0).toLocaleString() }).`
-                : `Shop uses cloud wallet: ${(user.goldCloud ?? user.gold).toLocaleString()} Gold (local ${ (user.goldLocal ?? 0).toLocaleString() }).`)}
-            </p>
-          )}
-        </div>
+    <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
+      {/* Header (parity _page_header('shop')) */}
+      <header>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
+          {tr('page_shop_subtitle')}
+        </p>
+        <h2 className="text-2xl font-black text-slate-100">{tr('page_shop_title')}</h2>
+      </header>
 
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1 rounded-xl text-xs">
-          <button
-            onClick={() => setActiveTab('shop')}
-            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-              activeTab === 'shop' ? 'bg-yellow-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {lang === 'id' ? '🛒 Toko' : '🛒 Shop'}
-          </button>
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-              activeTab === 'inventory' ? 'bg-yellow-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            {lang === 'id' ? '🎒 Tas Inventory' : '🎒 Inventory'} ({inventory.length})
-          </button>
-        </div>
+      {/* Buff bar */}
+      <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3.5 py-2.5 text-xs text-amber-300">
+        {buffText}
       </div>
 
-      {/* SHOP VIEW */}
-      {activeTab === 'shop' && (
-        <div className="space-y-4">
-          {/* Categories */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-            {(['all', 'weapon', 'armor', 'tool', 'consumable', 'legendary'] as const).map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setShopCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl font-semibold capitalize shrink-0 transition-colors ${
-                  shopCategory === cat
-                    ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
-                    : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+      {/* Tabs (parity _tabs items/pets) */}
+      <div className="inline-flex rounded-2xl bg-slate-900 border border-slate-800 p-1 gap-1">
+        {(['items', 'pets'] as const).map((tb) => (
+          <button key={tb} type="button" onClick={() => setTab(tb)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wider transition-all ${tab === tb
+              ? 'bg-amber-500 text-slate-950 shadow-[0_2px_12px_rgba(251,191,36,0.35)]'
+              : 'text-slate-400 hover:text-slate-200'}`}>
+            {tb === 'items' ? tr('shop_tab_items') : tr('shop_tab_pets')}
+          </button>
+        ))}
+      </div>
 
-          {/* Shop Item Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredShopItems.map((item) => {
-              const inInventory = inventory.find((i) => i.itemId === item.id);
-              const canAfford = user.gold >= item.cost;
+      {/* ── TAB ITEMS (4 kolom) ── */}
+      {tab === 'items' && (
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {visibleItems.map((it: any) => {
+            const inv: any = invMap.get(it.id);
+            const qty = inv?.qty || 0;
+            const owned = qty > 0;
+            const elvl = Number(inv?.enchantLevel || inv?.enchant_level || 0);
+            const cost = Number(it.cost || 0);
+            return (
+              <div key={it.id}
+                className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
+                <span className="text-3xl">{it.icon}</span>
+                <span className="text-xs font-bold text-slate-100">{it.name}</span>
+                {it.seasonal && (
+                  <span className="text-[9px] font-bold text-teal-400">{tr('shop_seasonal_badge')}</span>
+                )}
+                <p className="text-[10px] text-amber-300 leading-relaxed">{it.buffDesc || it.buff_desc || ''}</p>
+                <p className="text-[10px] text-slate-500">{tr(`shop_type_${it.type}`)}</p>
 
-              return (
-                <div
-                  key={item.id}
-                  className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 flex flex-col justify-between gap-4 transition-all shadow-sm"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-2xl shrink-0">
-                      {item.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="font-bold text-sm text-slate-100 truncate">{item.name}</h4>
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded-full bg-slate-800 text-slate-400">
-                          {item.type}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-2">{item.desc}</p>
-                      {item.buffDesc && (
-                        <div className="text-[11px] font-bold text-emerald-400 mt-1">
-                          ✨ {item.buffDesc}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-800">
-                    <div className="flex items-center gap-1 font-black text-amber-300 text-xs">
-                      <Coins className="w-4 h-4 text-amber-400" />
-                      <span>{item.cost} Gold</span>
-                    </div>
-
-                    <button
-                      onClick={() => buyItem(item.id)}
-                      disabled={!canAfford}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 transition-all ${
-                        canAfford
-                          ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-950 shadow-md active:scale-95'
-                          : 'bg-slate-800 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>{inInventory ? (lang === 'id' ? 'Beli Lagi' : 'Buy More') : (lang === 'id' ? 'Beli' : 'Purchase')}</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* INVENTORY VIEW */}
-      {activeTab === 'inventory' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {inventory.map((inv) => {
-              const item = (liveShopItems() as Record<string, any>)[inv.itemId];
-              if (!item) return null;
-
-              const isConsumable = item.type === 'consumable';
-
-              return (
-                <div
-                  key={inv.itemId}
-                  className={`p-4 rounded-2xl border flex flex-col justify-between gap-4 transition-all ${
-                    inv.equipped
-                      ? 'bg-yellow-950/20 border-yellow-500/50 shadow-md shadow-yellow-500/10'
-                      : 'bg-slate-900/80 border-slate-800'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-2xl shrink-0">
-                      {item.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="font-bold text-sm text-slate-100 truncate">{item.name}</h4>
-                        {inv.quantity > 1 && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-amber-400">
-                            x{inv.quantity}
-                          </span>
+                {owned ? (
+                  <>
+                    <span className="text-[11px] font-bold text-sky-300">{tr('shop_owned')}</span>
+                    {it.type === 'consumable' ? (
+                      <>
+                        <button type="button" onClick={() => useConsumable(it.id)}
+                          className="h-[30px] rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold">
+                          {tr('shop_use', { qty })}
+                        </button>
+                        <button type="button" onClick={() => buyItem(it.id)}
+                          className="h-[30px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black">
+                          {tr('shop_buy_again')}
+                        </button>
+                        <button type="button"
+                          onClick={() => setSellDlg({ inv, it })}
+                          className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                          {tr('shop_sell')}
+                        </button>
+                        <span className="text-[10px] text-slate-500">{tr('shop_sell_price', { gold: sellPriceOf(cost) })}</span>
+                      </>
+                    ) : (
+                      <>
+                        {/* equip/unequip untuk tipe equipment (parity toggle via _stats/_equipped) */}
+                        {EQUIP_TYPES.includes(it.type as any) && (
+                          inv?.equipped ? (
+                            <button type="button" onClick={() => unequipItem(it.id)}
+                              className="h-[30px] rounded-xl bg-rose-900/50 hover:bg-rose-900/80 text-rose-200 text-[11px] font-bold">
+                              {tr('shop_unequip')}
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => equipItem(it.id)}
+                              className="h-[30px] rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold">
+                              {tr('shop_equip')}
+                            </button>
+                          )
                         )}
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
-                      {(inv.enchantLevel || 0) > 0 && (
-                        <div className="text-[11px] font-bold text-fuchsia-300 mt-1">+{inv.enchantLevel} enchant</div>
-                      )}
-                      {item.buffDesc && (
-                        <div className="text-[11px] font-bold text-emerald-400 mt-1">
-                          ✨ {item.buffDesc}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-800 gap-2">
-                    <button
-                      onClick={() => sellItem(item.id)}
-                      className="px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 text-xs font-semibold hover:bg-slate-800"
-                    >
-                      {lang === 'id' ? 'Jual (+40%)' : 'Sell (+40%)'}
+                        <button type="button"
+                          onClick={() => setSellDlg({ inv, it })}
+                          className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                          {tr('shop_sell')}
+                        </button>
+                        <span className="text-[10px] text-slate-500">{tr('shop_sell_price', { gold: sellPriceOf(cost) })}</span>
+                        {/* Enchanting (parity _enchant, equipment saja) */}
+                        {equipTypesWithEnchant(it.type) && (
+                          <>
+                            {elvl > 0 && (
+                              <span className="text-[11px] font-bold text-violet-400">{tr('enchant_level_tag', { lvl: elvl })}</span>
+                            )}
+                            {elvl >= 5 ? (
+                              <span className="text-[10px] font-bold text-violet-400">{tr('enchant_max_tag')}</span>
+                            ) : (
+                              <button type="button" onClick={() => {
+                                const c = enchantCost(elvl);
+                                if ((user.xp || 0) < c) return;
+                                enchantItem(it.id);
+                              }}
+                                className="h-[30px] rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-[11px] font-bold disabled:opacity-40"
+                                disabled={(user.xp || 0) < enchantCost(elvl)}
+                                title={(user.xp || 0) < enchantCost(elvl) ? tr('db_enchant_no_xp', { cost: enchantCost(elvl) }) : undefined}>
+                                {tr(elvl > 0 ? 'enchant_btn' : 'enchant_first_btn', { lvl: elvl + 1, cost: enchantCost(elvl) })}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="text-xs font-black text-amber-400">💰 {cost} G</span>
+                    <button type="button" onClick={() => buyItem(it.id)} disabled={gold < cost}
+                      className="h-[30px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
+                      {tr('shop_buy')}
                     </button>
-
-                    <div className="flex items-center gap-2">
-                      {isConsumable ? (
-                        <button
-                          onClick={() => useConsumable(item.id)}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
-                        >
-                          {lang === 'id' ? 'Gunakan' : 'Use Item'}
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => enchantItem(item.id)}
-                            className="px-2 py-1.5 rounded-xl bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-200 font-bold text-xs"
-                          >
-                            {t('web_enchant', lang === 'id' ? 'Enchant' : 'Enchant')}
-                          </button>
-                      {inv.equipped ? (
-                        <button
-                          onClick={() => unequipItem(item.id)}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs"
-                        >
-                          {lang === 'id' ? 'Lepas' : 'Unequip'}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => equipItem(item.id)}
-                          className="px-3 py-1.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs"
-                        >
-                          {lang === 'id' ? 'Pakai' : 'Equip'}
-                        </button>
-                      )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {inventory.length === 0 && (
-            <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
-              <PackageOpen className="w-8 h-8 text-yellow-500/40 mx-auto mb-2" />
-              <p className="text-sm font-semibold">{lang === 'id' ? 'Tas Inventory masih kosong.' : 'Inventory is empty.'}</p>
-            </div>
-          )}
-        </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </section>
       )}
 
+      {/* ── TAB PETS (3 kolom) ── */}
+      {tab === 'pets' && (
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Object.entries(PETS_DATA).map(([pid, pet]: [string, any]) => {
+            const owned = ownedPetIds.has(pid);
+            const active = activePetIds.has(pid);
+            return (
+              <div key={pid} className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
+                <span className="text-3xl">{pet.icon}</span>
+                <span className="text-xs font-bold text-slate-100">{pet.name}</span>
+                <p className="text-[10px] font-bold text-cyan-300 leading-relaxed">{pet.bonus}</p>
+                {owned ? (
+                  active ? (
+                    <>
+                      <span className="text-[11px] font-bold text-cyan-300">{tr('shop_active')}</span>
+                      <button type="button" onClick={() => unequipPet(pid)}
+                        className="h-[30px] rounded-xl bg-rose-900/50 hover:bg-rose-900/80 text-rose-200 text-[11px] font-bold">
+                        {tr('shop_unequip')}
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => equipPet(pid)}
+                      className="h-[30px] rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold">
+                      {tr('shop_equip')}
+                    </button>
+                  )
+                ) : (
+                  <>
+                    <span className="text-xs font-black text-amber-400">💰 {pet.cost} G</span>
+                    <button type="button" onClick={() => adoptPet(pid)} disabled={gold < (pet.cost || 0)}
+                      className="h-[30px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
+                      {tr('shop_adopt')}
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
+
+      {/* SellDialog (parity _sell_item) */}
+      {sellDlg && (
+        <SellDialog inv={sellDlg.inv} it={sellDlg.it}
+          onClose={() => setSellDlg(null)}
+          onSell={(qty) => {
+            sellItem(sellDlg.it.id, qty);
+            setSellDlg(null);
+          }} />
+      )}
     </div>
   );
 };
+
+function equipTypesWithEnchant(tp: string): boolean {
+  // Parity ShopPage: enchant hanya untuk equipment (weapon/armor/shoes/accessory)
+  return (EQUIP_TYPES as readonly string[]).includes(tp);
+}
+
+function SellDialog({ inv, it, onClose, onSell }: {
+  inv: any; it: any; onClose: () => void; onSell: (qty: number) => void;
+}) {
+  const pricePer = sellPriceOf(Number(it.cost || 0));
+  const maxQty = Math.max(1, inv?.qty || 1);
+  const [qty, setQty] = useState(1);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" onClick={onClose}>
+      <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4"
+        style={{ minWidth: 300 }}
+        onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-black text-slate-100">{tr('shop_sell_title')}</h3>
+        <p className="text-sm text-slate-300">
+          {tr('shop_sell_confirm', { name: it.name, qty: 1, gold: pricePer })}
+        </p>
+        <div className="flex items-center gap-3">
+          <input type="number" min={1} max={maxQty} value={qty}
+            onChange={(e) => setQty(Math.min(Math.max(1, Number(e.target.value) || 1), maxQty))}
+            className="w-24 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100" />
+          <span className="text-xs text-slate-500">(max {maxQty})</span>
+          <span className="text-xs font-bold text-amber-400">= 💰 {pricePer * qty} G</span>
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">{tr('btn_cancel')}</button>
+          <button type="button" onClick={() => onSell(qty)}
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
+            {tr('shop_sell')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

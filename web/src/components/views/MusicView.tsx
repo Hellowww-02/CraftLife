@@ -100,6 +100,11 @@ export const MusicView: React.FC = () => {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [newPlaylistName, setNewPlaylistName] = useState('');
 
+  // Import MP3/folder (parity MusicPage._add_files/_select_folder)
+  const [importing, setImporting] = useState(false);
+  const importFilesRef = useRef<HTMLInputElement | null>(null);
+  const importFolderRef = useRef<HTMLInputElement | null>(null);
+
   // Lyrics
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [lyrics, setLyrics] = useState<{ plain: string; synced: string }>({ plain: '', synced: '' });
@@ -167,6 +172,31 @@ export const MusicView: React.FC = () => {
     showToast('info', 'Now Playing', entry.title || entry.name);
   };
 
+  // Parity MusicPage._play_path: mainkan path apa pun dari daftar (playlist/library).
+  const playLibraryPath = (path: string) => {
+    const entry = library.find((f) => f.path === path);
+    const base = path.split(/[\\/]/).pop() || path;
+    handlePlayLibraryFile(entry || { path, name: base, title: base, size: 0 });
+  };
+
+  // Parity MusicPage._favorite_track: tambah ke playlist favorit (disabled bila tak ada).
+  const addToFavorites = (path: string) => {
+    const fav = playlists.find((p) => p.isFavorite);
+    if (!fav) {
+      showToast('info', 'Playlist', lang === 'id' ? 'Playlist favorit tidak tersedia' : 'Favorite playlist unavailable');
+      return;
+    }
+    studio.addPlaylistTrack(fav.id, path)
+      .then((r) => {
+        const ok = r?.result;
+        if (ok) showToast('success', lang === 'id' ? 'Favorit' : 'Favorites', lang === 'id' ? 'Lagu ditambahkan ke favorit.' : 'Added to favorites.');
+        refreshMusic();
+      })
+      .catch(() => {});
+  };
+
+
+
   const playLofiTrack = (index: number) => {
     setIsLibraryPlaying(false);
     setPlayingFile(null);
@@ -207,6 +237,49 @@ export const MusicView: React.FC = () => {
       poll();
     } catch {
       showToast('damage', 'yt-dlp', 'download failed');
+    }
+  };
+
+  // Parity MusicPage._add_paths: validasi ekstensi AUDIO_EXTENSIONS
+  // (.mp3/.wav/.flac/.m4a/.mp4/.ogg), urut (sorted), tambahkan ke playlist aktif.
+  const MUSIC_EXT = ['.mp3', '.wav', '.flac', '.m4a', '.mp4', '.ogg'];
+  const handleImportFiles = async (files: FileList | File[]) => {
+    if (selectedPlaylistId === null) return; // parity: current_playlist_id None → return
+    const list = Array.from(files).sort((a, b) => {
+      const ra = (a as any).webkitRelativePath || a.name;
+      const rb = (b as any).webkitRelativePath || b.name;
+      return String(ra).localeCompare(String(rb));
+    });
+    setImporting(true);
+    let added = 0;
+    let skipped = 0;
+    for (const f of list) {
+      const ext = `.${(f.name.split('.').pop() || '').toLowerCase()}`;
+      if (!MUSIC_EXT.includes(ext)) { skipped++; continue; }
+      try {
+        const up = await studio.uploadMusicFile(f);
+        if (up?.ok && up.path) {
+          await studio.addPlaylistTrack(selectedPlaylistId, up.path);
+          added++;
+        } else {
+          skipped++;
+        }
+      } catch {
+        skipped++;
+      }
+    }
+    setImporting(false);
+    if (added) {
+      showToast('success',
+        lang === 'id' ? `${added} file ditambahkan` : `${added} file(s) added`,
+        lang === 'id' ? 'Lagu masuk ke playlist & library.' : 'Tracks stored to library and playlist.');
+      refreshMusic();
+      refreshLibrary();
+    }
+    if (skipped) {
+      showToast('info',
+        lang === 'id' ? `${skipped} file dilewati` : `${skipped} file(s) skipped`,
+        lang === 'id' ? 'Hanya .mp3/.wav/.flac/.m4a/.mp4/.ogg yang diterima.' : 'Only .mp3/.wav/.flac/.m4a/.mp4/.ogg are accepted.');
     }
   };
 
@@ -306,12 +379,45 @@ export const MusicView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repeat, isLibraryPlaying]);
 
+  // Parity MusicPage._next/_previous untuk pemutaran daftar lokal:
+  // urutan mengikuti playlist aktif bila track ada di sana, jika tidak library.
+  const localSequence = (): string[] => {
+    if (playingFile && activeTracks.includes(playingFile.path)) return activeTracks;
+    return libraryFiltered.map((f) => f.path);
+  };
+
   const handleNextTrack = () => {
-    if (!isLibraryPlaying) setCurrentTrackIndex((p) => shuffle ? Math.floor(Math.random() * Math.max(1, tracks.length)) : (p < tracks.length - 1 ? p + 1 : 0));
+    if (isLibraryPlaying && playingFile) {
+      const list = localSequence();
+      if (!list.length) return;
+      let idx = list.indexOf(playingFile.path);
+      if (idx < 0) idx = 0;
+      if (shuffle && list.length > 1) {
+        const choices = list.filter((_, i2) => i2 !== idx);
+        idx = list.indexOf(choices[Math.floor(Math.random() * choices.length)]);
+      } else {
+        idx = (idx + 1) % list.length;
+      }
+      playLibraryPath(list[idx]);
+      return;
+    }
+    setCurrentTrackIndex((p) => shuffle ? Math.floor(Math.random() * Math.max(1, tracks.length)) : (p < tracks.length - 1 ? p + 1 : 0));
     setIsPlaying(true);
   };
   const handlePrevTrack = () => {
-    if (!isLibraryPlaying) setCurrentTrackIndex((p) => (p > 0 ? p - 1 : tracks.length - 1));
+    if (isLibraryPlaying && playingFile) {
+      // Parity _previous: bila posisi > 3 detik, restart lagu sekarang dulu.
+      const a = audioRef.current;
+      if (a && a.currentTime > 3) { a.currentTime = 0; return; }
+      const list = localSequence();
+      if (!list.length) return;
+      let idx = list.indexOf(playingFile.path);
+      if (idx < 0) idx = 0;
+      idx = (idx - 1 + list.length) % list.length;
+      playLibraryPath(list[idx]);
+      return;
+    }
+    setCurrentTrackIndex((p) => (p > 0 ? p - 1 : tracks.length - 1));
     setIsPlaying(true);
   };
 
@@ -455,7 +561,36 @@ export const MusicView: React.FC = () => {
                 <ListMusic className="w-4 h-4 text-emerald-400" />
                 <span>{lang === 'id' ? 'Playlist' : 'Playlists'}</span>
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Parity _add_files (dialog multi-file) & _select_folder (walk folder) */}
+                <input
+                  ref={importFilesRef} type="file" multiple
+                  accept=".mp3,.wav,.flac,.m4a,.mp4,.ogg,audio/*"
+                  className="hidden"
+                  onChange={(e) => { if (e.target.files?.length) handleImportFiles(e.target.files); e.target.value = ''; }}
+                />
+                <input
+                  ref={importFolderRef} type="file" multiple
+                  {...({ webkitdirectory: '', directory: '' } as any)}
+                  className="hidden"
+                  onChange={(e) => { if (e.target.files?.length) handleImportFiles(e.target.files); e.target.value = ''; }}
+                />
+                <button
+                  onClick={() => importFilesRef.current?.click()}
+                  disabled={importing || selectedPlaylistId === null}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs"
+                >
+                  <FolderInput className="w-3.5 h-3.5" />
+                  <span>{importing ? '…' : (lang === 'id' ? 'Tambah File' : 'Add Files')}</span>
+                </button>
+                <button
+                  onClick={() => importFolderRef.current?.click()}
+                  disabled={importing || selectedPlaylistId === null}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs"
+                >
+                  <FolderInput className="w-3.5 h-3.5" />
+                  <span>{lang === 'id' ? 'Pilih Folder' : 'Select Folder'}</span>
+                </button>
                 <input value={newPlaylistName} onChange={(e) => setNewPlaylistName(e.target.value)} placeholder={lang === 'id' ? 'Nama playlist…' : 'Playlist name…'}
                   className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
                 <button onClick={createPlaylist} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
@@ -489,6 +624,8 @@ export const MusicView: React.FC = () => {
                         <button onClick={() => handlePlayLibraryFile({ path, name: base, title: base, size: 0 })} className="truncate text-xs text-slate-200 hover:text-emerald-300">{base}</button>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Parity _track_menu: mainkan, favorit, pindah, salin, hapus */}
+                        <button onClick={() => addToFavorites(path)} title={lang === 'id' ? 'Tambah ke favorit' : 'Add to favorites'} className="p-1 rounded-lg text-slate-400 hover:text-rose-400"><Heart className="w-3.5 h-3.5" /></button>
                         <select title={lang === 'id' ? 'Pindah/salin ke' : 'Move/copy to'}
                           defaultValue=""
                           onChange={(e) => { if (e.target.value) moveTrackTo(idx, e.target.value, false); }}
@@ -579,10 +716,14 @@ export const MusicView: React.FC = () => {
                 <div key={f.path} className="p-2 rounded-xl border border-slate-800/80 bg-slate-950/50 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <button onClick={() => handlePlayLibraryFile(f)} className="block truncate text-xs text-slate-200 hover:text-emerald-300 font-semibold">{f.title || f.name}</button>
-                    <p className="text-[10px] text-slate-500 truncate">{f.artist || f.name}</p>
+                    {/* Parity kolom tabel PyQt: artist · album · durasi */}
+                    <p className="text-[10px] text-slate-500 truncate">
+                      {f.artist || f.name}{f.album ? ` · ${f.album}` : ''}{f.duration ? ` · ${fmtDuration(f.duration)}` : ''}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => handlePlayLibraryFile(f)} className="p-1.5 text-emerald-400">{isLibraryPlaying && playingFile?.path === f.path ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}</button>
+                    <button onClick={() => addToFavorites(f.path)} title={lang === 'id' ? 'Tambah ke favorit' : 'Add to favorites'}><Heart className="w-3.5 h-3.5 text-slate-400 hover:text-rose-400" /></button>
                     <button onClick={() => loadLyrics(f.artist || '', f.title || f.name)} title="Lyrics"><Sparkles className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-300" /></button>
                     <button onClick={() => addToPlaylist(f.path)} title="Add to playlist"><Plus className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-300" /></button>
                   </div>

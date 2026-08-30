@@ -645,18 +645,28 @@ export const DEFAULT_FOODS: FoodItem[] = [
   { id: 'f25', nameId: 'Kopi Hitam', nameEn: 'Black Coffee', icon: '☕', calories: 5, protein: 0.3, carbs: 1, fat: 0, serving: '1 Cangkir' },
 ];
 
+// Parity 1:1 dengan db.SPORT_TYPES + AddSportActivityDialog.MET_VALUES PyQt.
+// `met` dipakai kalkulasi kalori profesional: MET × berat(kg) × jam × faktor intensitas.
 export const SPORT_TYPES = [
-  { id: 'running', name: 'Running / Jogging', icon: '🏃', defaultCalPerMin: 10, unit: 'km' },
-  { id: 'gym', name: 'Gym / Weightlifting', icon: '🏋️', defaultCalPerMin: 7, unit: 'sets' },
-  { id: 'cycling', name: 'Cycling / Sepeda', icon: '🚴', defaultCalPerMin: 8, unit: 'km' },
-  { id: 'swimming', name: 'Swimming / Renang', icon: '🏊', defaultCalPerMin: 9, unit: 'laps' },
-  { id: 'yoga', name: 'Yoga & Stretching', icon: '🧘', defaultCalPerMin: 4, unit: 'min' },
-  { id: 'football', name: 'Football / Futsal', icon: '⚽', defaultCalPerMin: 11, unit: 'match' },
-  { id: 'badminton', name: 'Badminton / Bulutangkis', icon: '🏸', defaultCalPerMin: 8, unit: 'match' },
-  { id: 'calisthenics', name: 'Calisthenics / Bodyweight', icon: '🤸', defaultCalPerMin: 7, unit: 'reps' },
-  { id: 'martial_arts', name: 'Martial Arts / Boxing', icon: '🥊', defaultCalPerMin: 10, unit: 'rounds' },
-  { id: 'walking', name: 'Walking / Jalan Santai', icon: '🚶', defaultCalPerMin: 4, unit: 'steps' },
+  { id: 'running', name: 'Lari / Running', icon: '🏃', met: 9.8 },
+  { id: 'gym', name: 'Gym', icon: '🏋️', met: 6.0 },
+  { id: 'cycling', name: 'Bersepeda / Cycling', icon: '🚴', met: 7.5 },
+  { id: 'swimming', name: 'Renang / Swimming', icon: '🏊', met: 8.0 },
+  { id: 'yoga', name: 'Yoga', icon: '🧘', met: 3.0 },
+  { id: 'football', name: 'Olahraga Bola / Football', icon: '⚽', met: 7.0 },
+  { id: 'calisthenics', name: 'Kalistenik / Calisthenics', icon: '🤸', met: 5.0 },
+  { id: 'martial_arts', name: 'Bela Diri / Martial Arts', icon: '🥊', met: 8.0 },
+  { id: 'badminton', name: 'Badminton', icon: '🏸', met: 5.5 },
+  { id: 'other', name: 'Lainnya / Other', icon: '🏅', met: 4.0 },
 ];
+
+// Faktor intensitas parity AddSportActivityDialog.INTENSITY_FACTOR (difficulty TaskDifficulty).
+export const SPORT_INTENSITY_FACTOR: Record<string, number> = {
+  easy: 0.85,
+  medium: 1.0,
+  hard: 1.25,
+  epic: 1.5,
+};
 
 export const INITIAL_ACHIEVEMENTS: Achievement[] = [
   { id: 'lvl_5', title: 'Novice Adventurer', desc: 'Reach Character Level 5', category: 'level', icon: '🌱', xpReward: 100, goldReward: 50, currentProgress: 1, targetProgress: 5, isUnlocked: false, isClaimed: false },

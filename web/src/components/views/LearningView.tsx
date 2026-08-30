@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import {
   BookOpen,
@@ -19,12 +19,111 @@ import {
   Layers,
   Calculator,
   ExternalLink,
+  Pencil,
+  Eye,
+  Download,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  Upload,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { studio } from '../../api/studio';
+import { t as tr } from '../../i18n';
 
 type LearningTab = 'chat' | 'sources' | 'flashcards' | 'quiz' | 'podcast' | 'math' | 'studio';
+
+// Parity LearningPage._clamp_font: ukuran font 10..30, default 13.
+const clampFont = (v: number) => {
+  const n = Math.round(v);
+  return Number.isFinite(n) ? Math.max(10, Math.min(30, n)) : 13;
+};
+
+// Parity LearningPage._render_mindmap: cari blok JSON di teks mentah, toleran
+// kutip tunggal & trailing koma; pusat dari central/topic/title; maks. 8 cabang,
+// masing-masing maks. 6 anak, child sebagai string.
+type MindBranch = { label: string; children: string[] };
+
+const parseMindMap = (raw: unknown): { central: string; branches: MindBranch[] } | null => {
+  let data: any = raw;
+  if (typeof raw === 'string') {
+    const m = /\{[\s\S]*\}/.exec(raw);
+    const text = m ? m[0] : raw;
+    data = null;
+    const fixed = text.replace(/'/g, '"').replace(/,\s*([}\]])/g, '$1');
+    for (const cand of [text, fixed]) {
+      try { data = JSON.parse(cand); break; } catch { /* coba kandidat berikut */ }
+    }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const central = String(data.central || data.topic || data.title || 'Topic');
+  const branches: MindBranch[] = (Array.isArray(data.branches) ? data.branches : [])
+    .filter((b: any) => b && typeof b === 'object')
+    .slice(0, 8)
+    .map((b: any, i: number) => ({
+      label: String(b.label || `Branch ${i + 1}`),
+      children: (Array.isArray(b.children) ? b.children : []).slice(0, 6).map(String),
+    }));
+  return { central, branches };
+};
+
+// Parity LearningPage mind map QGraphicsView: node pusat → trunk → cabang + anak,
+// dengan kontrol zoom in/out/reset (≈ _fit_mindmap).
+const MindMapView: React.FC<{ raw: unknown; lang: string; fontSize: number }> = ({ raw, lang, fontSize }) => {
+  const [zoom, setZoom] = useState(1.15);
+  const map = useMemo(() => parseMindMap(raw), [raw]);
+  if (!map) {
+    return (
+      <pre className="text-[11px] overflow-x-auto bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+        {typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2)}
+      </pre>
+    );
+  }
+  const zoomStep = (d: number) => setZoom((z) => Math.max(0.4, Math.min(3, Math.round((z + d) * 10) / 10)));
+  return (
+    <div className="bg-slate-950/60 border border-slate-800 rounded-xl overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-800/80">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+          {lang === 'id' ? '🧠 Peta Pikiran' : '🧠 Mind Map'}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <button onClick={() => zoomStep(-0.2)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Zoom out"><ZoomOut className="w-3.5 h-3.5" /></button>
+          <button onClick={() => setZoom(1.15)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Fit"><Maximize className="w-3.5 h-3.5" /></button>
+          <button onClick={() => zoomStep(0.2)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Zoom in"><ZoomIn className="w-3.5 h-3.5" /></button>
+        </div>
+      </div>
+      <div className="max-h-[440px] overflow-auto">
+        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', fontSize }} className="inline-block min-w-full p-5">
+          <div className="flex items-start gap-6">
+            {/* Node pusat */}
+            <div className="shrink-0 self-center px-4 py-3 rounded-2xl bg-violet-600/25 border-2 border-violet-500 font-bold text-violet-200 text-center max-w-[220px]">
+              {map.central}
+            </div>
+            {/* Trunk → cabang */}
+            <div className="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-0 before:top-4 before:bottom-4 before:w-0.5 before:bg-violet-500/50">
+              {map.branches.map((b, bi) => (
+                <div key={bi} className="relative pl-4">
+                  <span className="absolute left-[-24px] top-4 w-6 h-0.5 bg-violet-500/50" />
+                  <div className="px-3 py-2 rounded-xl bg-indigo-950/40 border border-indigo-500/40 text-indigo-200 font-semibold inline-block">
+                    {b.label}
+                  </div>
+                  {b.children.length > 0 && (
+                    <ul className="mt-2 ml-1 space-y-1 border-l border-indigo-500/30 pl-3">
+                      {b.children.map((c, ci) => (
+                        <li key={ci} className="px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-300 inline-block w-full">{c}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const LearningView: React.FC = () => {
   const {
@@ -35,6 +134,7 @@ export const LearningView: React.FC = () => {
     deleteNotebookSource,
     addNotebookChat,
     updateNotebook,
+    refreshNotebooks,
     lang,
     showToast,
   } = useGame();
@@ -70,6 +170,84 @@ export const LearningView: React.FC = () => {
   const [newSourceType, setNewSourceType] = useState<'text' | 'doc' | 'pdf' | 'url'>('text');
   const [geminiKey, setGeminiKey] = useState('');
 
+  // ── Parity LearningPage: font chat/studio, rename, upload source, history ──
+  const [chatFontSize, setChatFontSize] = useState(13);
+  const [studioFontSize, setStudioFontSize] = useState(13);
+  const [renaming, setRenaming] = useState(false);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [studioTopic, setStudioTopic] = useState('');
+  const [selectedGen, setSelectedGen] = useState<any | null>(null);
+  const [viewingSource, setViewingSource] = useState<{ title: string; content: string } | null>(null);
+  const [uploadingSource, setUploadingSource] = useState(false);
+  const sourceFileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleRename = async () => {
+    if (!activeNotebook || !renameTitle.trim()) return;
+    try {
+      const r = await studio.renameNotebook(activeNotebook.id, renameTitle.trim());
+      const res = r?.result || r;
+      if (res?.ok === false) { showToast('damage', tr('learning_no_title', 'Judul tidak boleh kosong.'), ''); return; }
+      updateNotebook(activeNotebook.id, { title: renameTitle.trim() });
+      refreshNotebooks();
+      setRenaming(false);
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  const handleDeleteGeneration = async (genId: string) => {
+    if (!activeNotebook || !window.confirm(tr('learning_delete_gen', 'Hapus hasil generasi ini?'))) return;
+    try {
+      await studio.deleteGeneration(activeNotebook.id, genId);
+      if (selectedGen?.id === genId) setSelectedGen(null);
+      refreshNotebooks();
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  const handleUploadSource = async (file: File) => {
+    if (!activeNotebook || !file) return;
+    setUploadingSource(true);
+    try {
+      const r = await studio.uploadLearningSource(activeNotebook.id, file);
+      const res = r?.result || r;
+      if (res?.ok === false) { showToast('damage', tr(res?.msg || 'learning_source_empty_file', 'File tidak berisi teks yang dapat dibaca.'), ''); return; }
+      showToast('success', tr('learning_source_added', 'Source ditambahkan'), file.name);
+      refreshNotebooks();
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+    finally { setUploadingSource(false); }
+  };
+
+  const handleViewSource = async (sourceId: string) => {
+    if (!activeNotebook) return;
+    try {
+      const r = await studio.learningSourceContent(activeNotebook.id, sourceId);
+      const res = r?.result || r;
+      if (!res?.ok) { showToast('damage', tr(res?.msg || 'learning_not_found', 'Tidak ditemukan.'), ''); return; }
+      const src = res.source || res;
+      setViewingSource({ title: src.title || 'Source', content: src.content || '' });
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  // Ekspor hasil Studio ke .txt via download browser (parity _export_studio
+  // bagian Text (*.txt); body docx/pdf butuh lib binary — txt = jalur terverifikasi).
+  const handleExportStudio = () => {
+    if (!activeNotebook) return;
+    const nb: any = activeNotebook;
+    const parts: string[] = [];
+    if (selectedGen?.content) parts.push(String(selectedGen.content));
+    if (!parts.length && nb.studyGuide) parts.push(String(nb.studyGuide));
+    if (!parts.length && nb.summary) parts.push(String(nb.summary));
+    if (!parts.length && nb.faq) parts.push(String(nb.faq));
+    if (!parts.length && nb.timeline) parts.push(String(nb.timeline));
+    if (!parts.length && nb.mindMap) parts.push(typeof nb.mindMap === 'string' ? nb.mindMap : JSON.stringify(nb.mindMap, null, 2));
+    if (!parts.length) return;
+    const blob = new Blob([parts.join('\n\n')], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${(activeNotebook.title || 'studio').replace(/[^\w\- ]+/g, '').trim() || 'studio'}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('success', tr('learning_export_done', 'Ekspor selesai'), '');
+  };
+
   // Flashcards state
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
@@ -88,6 +266,7 @@ export const LearningView: React.FC = () => {
   const [isSolvingMath, setIsSolvingMath] = useState(false);
 
   const activeNotebook = notebooks.find((nb) => nb.id === activeNotebookId) || notebooks[0];
+  const activeGenList: any[] = (activeNotebook as any)?.generations || [];
 
   // AI Chat Handler
   const handleSendChat = async () => {
@@ -134,6 +313,7 @@ export const LearningView: React.FC = () => {
           flashcards: cards.map((f: any, i: number) => ({ id: 'fc_' + Date.now() + '_' + i, ...f })),
         });
         showToast('success', 'Flashcards Ready', `Generated ${cards.length} cards.`);
+        refreshNotebooks();
       } else {
         showToast('damage', 'AI', data.msg || 'empty');
       }
@@ -166,6 +346,7 @@ export const LearningView: React.FC = () => {
         setSelectedAnswers({});
         setQuizSubmitted(false);
         showToast('success', 'Quiz Generated', `Ready for test (${quiz.length} questions).`);
+        refreshNotebooks();
       } else {
         showToast('damage', 'AI', data.msg || 'empty');
       }
@@ -193,6 +374,7 @@ export const LearningView: React.FC = () => {
       if (dialogue.length > 0) {
         updateNotebook(activeNotebook.id, { podcast: dialogue });
         showToast('success', 'Deep Dive Ready', '2-Host conversation script generated.');
+        refreshNotebooks();
       } else {
         showToast('damage', 'AI', data.msg || 'empty');
       }
@@ -225,7 +407,7 @@ export const LearningView: React.FC = () => {
     try {
       const data = await studio.generate(kind, {
         content: combined,
-        topic: activeNotebook.title,
+        topic: studioTopic.trim() || activeNotebook.title,
         notebookId: activeNotebook.id,
       });
       const payload: any = {};
@@ -236,6 +418,8 @@ export const LearningView: React.FC = () => {
       if (kind === 'summary') payload.summary = data.summary || data.result?.summary || data.raw;
       updateNotebook(activeNotebook.id, payload);
       showToast('success', 'Studio', kind);
+      setSelectedGen(null);
+      refreshNotebooks();
     } catch {
       showToast('damage', 'AI Error', kind);
     } finally {
@@ -345,6 +529,14 @@ export const LearningView: React.FC = () => {
                     <h2 className="text-lg font-bold text-slate-100">{activeNotebook.title}</h2>
                     <p className="text-xs text-slate-400">{activeNotebook.description || 'No description provided.'}</p>
                   </div>
+                  {/* Parity LearningPage._rename_notebook */}
+                  <button
+                    onClick={() => { setRenameTitle(activeNotebook.title); setRenaming(true); }}
+                    className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-violet-300 hover:border-violet-500/50 transition-colors self-start mt-0.5"
+                    title={tr('learning_rename_title', 'Ubah judul notebook')}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
                 {/* Sub-tabs */}
@@ -418,7 +610,13 @@ export const LearningView: React.FC = () => {
               {/* TAB 1: AI Grounded Chat */}
               {activeTab === 'chat' && (
                 <div className="space-y-4">
-                  <div className="h-[420px] overflow-y-auto space-y-3 p-4 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                  {/* Parity LearningPage: kontrol font chat (A−/A+, clamp 10..30) */}
+                  <div className="flex items-center justify-end gap-2 text-xs text-slate-400">
+                    <span>{tr('learning_font_chat', 'Font Chat AI')}: <b className="text-slate-200">{chatFontSize}px</b></span>
+                    <button onClick={() => setChatFontSize((v) => clampFont(v - 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_decrease', 'A−')}</button>
+                    <button onClick={() => setChatFontSize((v) => clampFont(v + 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_increase', 'A+')}</button>
+                  </div>
+                  <div style={{ fontSize: chatFontSize }} className="h-[420px] overflow-y-auto space-y-3 p-4 bg-slate-950/60 rounded-xl border border-slate-800/80">
                     {(!activeNotebook.chatHistory || activeNotebook.chatHistory.length === 0) && (
                       <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
                         <Sparkles className="w-10 h-10 mb-3 text-violet-400/50" />
@@ -498,13 +696,35 @@ export const LearningView: React.FC = () => {
                         ? 'Sumber teks, dokumen, atau URL yang menjadi dasar rujukan AI.'
                         : 'Documents, raw text, and reference sources grounding the AI.'}
                     </span>
-                    <button
-                      onClick={() => setShowNewSourceModal(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-lg transition-colors border border-slate-700"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{lang === 'id' ? 'Tambah Sumber' : 'Add Source'}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Parity LearningPage._add_source_files (.txt/.md/.pdf/.docx) */}
+                      <input
+                        ref={sourceFileRef}
+                        type="file"
+                        accept=".txt,.md,.pdf,.docx"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleUploadSource(f);
+                          e.target.value = '';
+                        }}
+                      />
+                      <button
+                        onClick={() => sourceFileRef.current?.click()}
+                        disabled={uploadingSource}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-slate-200 rounded-lg transition-colors border border-slate-700"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{uploadingSource ? '...' : tr('learning_upload_source', 'Upload File')}</span>
+                      </button>
+                      <button
+                        onClick={() => setShowNewSourceModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-lg transition-colors border border-slate-700"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{lang === 'id' ? 'Tambah Sumber' : 'Add Source'}</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-3">
@@ -534,12 +754,22 @@ export const LearningView: React.FC = () => {
                             {src.content}
                           </p>
                         </div>
-                        <button
-                          onClick={() => deleteNotebookSource(activeNotebook.id, src.id)}
-                          className="text-slate-500 hover:text-rose-400 p-1.5 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex flex-col gap-1">
+                          {/* Parity LearningPage._view_source */}
+                          <button
+                            onClick={() => handleViewSource(src.id)}
+                            className="text-slate-500 hover:text-violet-300 p-1.5 transition-colors"
+                            title={tr('learning_view', 'Lihat')}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteNotebookSource(activeNotebook.id, src.id)}
+                            className="text-slate-500 hover:text-rose-400 p-1.5 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -890,6 +1120,14 @@ export const LearningView: React.FC = () => {
                       ? 'Study guide, peta pikiran, FAQ, timeline, dan ringkasan (generate_studio_content).'
                       : 'Study guide, mind map, FAQ, timeline, and summary via generate_studio_content.'}
                   </p>
+                  {/* Parity QInputDialog learning_topic_prompt: topik opsional */}
+                  <input
+                    type="text"
+                    value={studioTopic}
+                    onChange={(e) => setStudioTopic(e.target.value)}
+                    placeholder={tr('learning_topic_label', 'Topik (kosongkan = semua):')}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
+                  />
                   <div className="flex flex-wrap gap-2">
                     {(['study-guide', 'mindmap', 'faq', 'timeline', 'summary'] as const).map((k) => (
                       <button
@@ -898,19 +1136,83 @@ export const LearningView: React.FC = () => {
                         onClick={() => handleGenerateStudio(k)}
                         className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-xs font-semibold text-white"
                       >
-                        {k}
+                        {isAiLoading ? tr('learning_generating', 'Generate') : k}
                       </button>
                     ))}
                   </div>
-                  <div className="prose prose-invert prose-sm max-w-none text-slate-200 space-y-3">
-                    {(activeNotebook as any).studyGuide && <ReactMarkdown>{String((activeNotebook as any).studyGuide)}</ReactMarkdown>}
-                    {(activeNotebook as any).faq && <ReactMarkdown>{String((activeNotebook as any).faq)}</ReactMarkdown>}
-                    {(activeNotebook as any).timeline && <ReactMarkdown>{String((activeNotebook as any).timeline)}</ReactMarkdown>}
-                    {(activeNotebook as any).summary && <ReactMarkdown>{String((activeNotebook as any).summary)}</ReactMarkdown>}
-                    {(activeNotebook as any).mindMap && (
-                      <pre className="text-[11px] overflow-x-auto">{JSON.stringify((activeNotebook as any).mindMap, null, 2)}</pre>
+
+                  {/* Parity: kontrol font studio + ekspor */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <span>{tr('learning_font_studio', 'Font Hasil Studio')}: <b className="text-slate-200">{studioFontSize}px</b></span>
+                      <button onClick={() => setStudioFontSize((v) => clampFont(v - 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_decrease', 'A−')}</button>
+                      <button onClick={() => setStudioFontSize((v) => clampFont(v + 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_increase', 'A+')}</button>
+                      <button onClick={() => setStudioFontSize(13)} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_reset', 'Reset')}</button>
+                    </div>
+                    <button
+                      onClick={handleExportStudio}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-xs font-semibold text-white"
+                      title={tr('learning_export', 'Ekspor')}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{tr('learning_export_compact', 'Ekspor')}</span>
+                    </button>
+                  </div>
+
+                  {/* Output: history pilihan atau slot terbaru */}
+                  <div style={{ fontSize: studioFontSize }} className="prose prose-invert prose-sm max-w-none text-slate-200 space-y-3">
+                    {selectedGen ? (
+                      <div className="space-y-2">
+                        <div className="text-[10px] uppercase tracking-wider text-violet-400">
+                          {selectedGen.gtype} · {selectedGen.topic || '-'} · {selectedGen.createdAt || ''}
+                        </div>
+                        {selectedGen.gtype === 'mindmap'
+                          ? <MindMapView raw={selectedGen.content} lang={lang} fontSize={studioFontSize} />
+                          : <ReactMarkdown>{String(selectedGen.content || '')}</ReactMarkdown>}
+                      </div>
+                    ) : (
+                      <>
+                        {(activeNotebook as any).studyGuide && <ReactMarkdown>{String((activeNotebook as any).studyGuide)}</ReactMarkdown>}
+                        {(activeNotebook as any).faq && <ReactMarkdown>{String((activeNotebook as any).faq)}</ReactMarkdown>}
+                        {(activeNotebook as any).timeline && <ReactMarkdown>{String((activeNotebook as any).timeline)}</ReactMarkdown>}
+                        {(activeNotebook as any).summary && <ReactMarkdown>{String((activeNotebook as any).summary)}</ReactMarkdown>}
+                        {(activeNotebook as any).mindMap && (
+                          <MindMapView raw={(activeNotebook as any).mindMap} lang={lang} fontSize={studioFontSize} />
+                        )}
+                      </>
                     )}
                   </div>
+
+                  {/* Parity LearningPage._load_generations + _delete_generation */}
+                  {activeGenList.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                      <h4 className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                        {tr('learning_history', 'Riwayat Studio')} ({activeGenList.length})
+                      </h4>
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                        {activeGenList.map((g: any) => (
+                          <div key={g.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-950/70 border border-slate-800 text-xs">
+                            <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold shrink-0">{g.gtype}</span>
+                            <span className="truncate flex-1 text-slate-300">{g.topic || '(topik umum)'}</span>
+                            <span className="text-slate-600 shrink-0">{g.createdAt}</span>
+                            <button
+                              onClick={() => setSelectedGen(selectedGen?.id === g.id ? null : g)}
+                              className={`p-1 transition-colors ${selectedGen?.id === g.id ? 'text-violet-300' : 'text-slate-500 hover:text-violet-300'}`}
+                              title={tr('learning_view', 'Lihat')}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteGeneration(g.id)}
+                              className="text-slate-500 hover:text-rose-400 p-1 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -991,6 +1293,47 @@ export const LearningView: React.FC = () => {
       )}
 
       {/* Modal: New Source */}
+      {/* Modal: Rename Notebook (parity LearningPage._rename_notebook) */}
+      {renaming && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
+            <h3 className="font-bold text-lg text-slate-100">{tr('learning_rename_title', 'Judul notebook baru:')}</h3>
+            <input
+              type="text"
+              value={renameTitle}
+              onChange={(e) => setRenameTitle(e.target.value)}
+              autoFocus
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-slate-400 hover:text-slate-200">
+                {tr('msg_cancel', 'Batal')}
+              </button>
+              <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white">
+                {tr('msg_ok', 'OK')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: View Source (parity LearningPage._view_source) */}
+      {viewingSource && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <h3 className="font-bold text-lg text-slate-100 mb-3 shrink-0">{viewingSource.title}</h3>
+            <div className="overflow-y-auto pr-1 flex-1">
+              <pre className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300 font-mono bg-slate-950/60 border border-slate-800 rounded-xl p-4">{viewingSource.content}</pre>
+            </div>
+            <div className="flex justify-end mt-4 shrink-0">
+              <button onClick={() => setViewingSource(null)} className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white">
+                {tr('btn_close', 'Tutup')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNewSourceModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">

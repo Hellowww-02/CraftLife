@@ -16,9 +16,10 @@ import {
   type CloudStatus,
 } from '../../api/cloud';
 import { t } from '../../i18n';
-import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Check, Cloud, RefreshCw, LogOut, Smartphone } from 'lucide-react';
+import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Check, Cloud, RefreshCw, LogOut, Smartphone, Palette, Database, Save, RefreshCcw } from 'lucide-react';
 
-const AdminDebugPanel: React.FC<{ lang: string }> = ({ lang }) => {
+// ===== Parity SettingsPage: panel admin (debug cheats, gated is_admin) =====
+const AdminDebugPanel: React.FC = () => {
   const [xp, setXp] = useState(1000);
   const [gold, setGold] = useState(500);
   const [petExp, setPetExp] = useState(100);
@@ -27,23 +28,27 @@ const AdminDebugPanel: React.FC<{ lang: string }> = ({ lang }) => {
   };
   return (
     <div className="rounded-2xl bg-slate-900 border border-rose-800/40 p-5 space-y-3">
-      <h3 className="font-bold text-xs text-rose-300 uppercase">{lang === 'id' ? 'Panel admin' : 'Admin debug'}</h3>
+      <h3 className="font-bold text-xs text-rose-300 uppercase tracking-wider">{t('admin_panel', 'Panel Admin')}</h3>
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <input type="number" value={xp} onChange={(e) => setXp(Number(e.target.value))} className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700" />
-        <button type="button" onClick={() => run('xp', xp)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">+XP</button>
+        <button type="button" onClick={() => run('add_xp', xp)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_add_xp', '+ XP')}</button>
         <input type="number" value={gold} onChange={(e) => setGold(Number(e.target.value))} className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700" />
-        <button type="button" onClick={() => run('gold', gold)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">+Gold</button>
-        <button type="button" onClick={() => run('fill')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">HP/MP</button>
-        <button type="button" onClick={() => run('maxLevel')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">Lv50</button>
-        <button type="button" onClick={() => run('completeTasks')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{lang === 'id' ? 'Selesai tugas' : 'Complete tasks'}</button>
-        <button type="button" onClick={() => run('petLevel')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">Pet +1</button>
+        <button type="button" onClick={() => run('add_gold', gold)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_add_gold', '+ Gold')}</button>
+        <button type="button" onClick={() => run('fill_hp_mp')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_fill_hp_mp', 'Isi HP/MP')}</button>
+        <button type="button" onClick={() => run('max_level')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_max_level', 'Max Level (50)')}</button>
+        <button type="button" onClick={() => run('complete_tasks')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_complete_tasks', 'Tuntaskan Semua Tugas')}</button>
+        <button type="button" onClick={() => run('pet_level_up')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_pet_level_up', 'Pet +1 Level')}</button>
         <input type="number" value={petExp} onChange={(e) => setPetExp(Number(e.target.value))} className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700" />
-        <button type="button" onClick={() => run('petExp', petExp)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">Pet EXP</button>
-        <button type="button" onClick={() => run('feedPets')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{lang === 'id' ? 'Feed pets' : 'Feed pets'}</button>
+        <button type="button" onClick={() => run('pet_add_exp', petExp)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_pet_add_exp', 'Pet + EXP')}</button>
+        <button type="button" onClick={() => run('pet_feed')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_pet_feed', 'Beri Makan Semua Pet')}</button>
       </div>
+      <p className="text-[11px] text-rose-300/80">{t('admin_warning', 'Alat debug — mengubah data game Anda. Gunakan untuk keperluan pengujian.')}</p>
     </div>
   );
 };
+
+interface ThemeRow { key: string; label: string; primary: string; glow: string; }
+interface ClassRow { key: string; name: string; icon: string; bonus: string; }
 
 export const SettingsView: React.FC = () => {
   const { user, updateUserProfile, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast } = useGame();
@@ -61,15 +66,19 @@ export const SettingsView: React.FC = () => {
   const [devices, setDevices] = useState<CloudDevice[]>([]);
   const [showDevices, setShowDevices] = useState(false);
 
+  // Parity SettingsPage state: theme, currency, font scale, high contrast
+  const [themes, setThemes] = useState<ThemeRow[]>([]);
+  const [currentTheme, setCurrentTheme] = useState(String((user as any).theme || 'modern_dark'));
+  const [currency, setCurrency] = useState(String(user.currency || 'IDR'));
+  const [fontScale, setFontScale] = useState(Number(user.fontScale || 100));
+  const [highContrast, setHighContrast] = useState(Boolean((user as any).highContrast));
+  const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [dbPath, setDbPath] = useState('');
+  const [appVersion, setAppVersion] = useState('');
+
+  const isAdmin = Boolean((user as any).isAdmin);
+
   const AVATAR_OPTIONS = ['🧙‍♂️', '🧝‍♀️', '⚔️', '🛡️', '🏹', '🥷', '🧙‍♀️', '👑', '🐉', '🐺', '🦊', '🦅'];
-  const CLASS_OPTIONS = [
-    { id: 'warrior', label: 'Warrior (Pejuang)', bonus: '+HP / armor' },
-    { id: 'mage', label: 'Mage (Penyihir)', bonus: '+MP / skill' },
-    { id: 'rogue', label: 'Rogue (Pencuri)', bonus: '+gold / crit' },
-    { id: 'paladin', label: 'Paladin', bonus: 'tank / shield' },
-    { id: 'ranger', label: 'Ranger (Archer)', bonus: 'ranged / pet' },
-    { id: 'healer', label: 'Healer (Penyembuh)', bonus: '+HP recovery' },
-  ];
 
   const loadCloud = async () => {
     try {
@@ -82,22 +91,57 @@ export const SettingsView: React.FC = () => {
 
   useEffect(() => {
     loadCloud();
+    // Katalog tema (parity SettingsPage theme radios dari db.THEMES)
+    apiGet<any>('/api/catalog/themes')
+      .then((d) => setThemes(d.themes || []))
+      .catch(() => setThemes([]));
+    // Katalog kelas (parity db.AVATAR_CLASSES) — jika route tidak ada, fallback lokal
+    apiGet<any>('/api/catalog/avatar-classes')
+      .then((d) => setClasses(d.classes || d.items || []))
+      .catch(() => setClasses([]));
+    // Versi app + path DB (parity update_version + settings_db_path)
+    apiGet<any>('/api/version')
+      .then((d) => {
+        setAppVersion(String(d?.version || ''));
+        setDbPath(String(d?.dbPath || ''));
+      })
+      .catch(() => undefined);
   }, []);
+
+  /** Parity: perubahan setting tertentu butuh restart (web = reload). */
+  const confirmRestart = () => {
+    if (window.confirm(t('settings_change_restart_msg', 'Perubahan ini membutuhkan muat ulang agar diterapkan sepenuhnya. Muat ulang sekarang?'))) {
+      window.location.reload();
+    }
+  };
+
+  const changeLanguage = (l: 'id' | 'en') => {
+    setLang(l);
+    apiPost('/api/settings', { language: l })
+      .then(() => {
+        if (window.confirm(
+          t('settings_language_restart_msg', 'Bahasa telah diganti. Muat ulang sekarang untuk menerapkan sepenuhnya?'),
+        )) {
+          window.location.reload();
+        }
+      })
+      .catch(() => undefined);
+  };
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    updateUserProfile({
-      name,
-      avatar,
-      heroClass,
-      bio,
-    });
+    updateUserProfile({ name, avatar, heroClass, bio });
     apiPost('/api/settings', { displayName: name, avatar, heroClass, bio }).catch(() => undefined);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
 
   const handleExportData = async () => {
+    if (isAdmin) {
+      // Parity: admin diblokir dari ekspor/impor (admin_export_blocked)
+      showToast('info', t('admin_export_blocked', 'Ekspor dinonaktifkan untuk akun admin.'), '');
+      return;
+    }
     try {
       const res = await apiGet<any>('/api/tracker/export');
       const payload = res?.tracker ?? res;
@@ -108,18 +152,21 @@ export const SettingsView: React.FC = () => {
       a.download = `craftlife_tracker_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast('success', t('export_success', 'Tracker data exported successfully!'), '');
+      showToast('success', t('export_success', 'Data tracker diekspor!'), '');
     } catch (err: any) {
-      showToast('info', t('export_failed', 'Export failed: {error}').replace('{error}', String(err?.message || err)), '');
+      showToast('info', t('export_failed', 'Ekspor gagal: {error}').replace('{error}', String(err?.message || err)), '');
     }
   };
 
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!window.confirm(t('import_confirm_warning', lang === 'id'
-      ? 'Semua data tracker saat ini akan DIGANTI. Data akun tetap aman. Lanjutkan?'
-      : 'All current tracker data will be REPLACED. Account data remains safe. Continue?'))) {
+    if (isAdmin) {
+      showToast('info', t('admin_import_blocked', 'Impor dinonaktifkan untuk akun admin.'), '');
+      e.target.value = '';
+      return;
+    }
+    if (!window.confirm(t('import_confirm_warning', 'Semua data tracker saat ini akan DIGANTI. Data akun tetap aman. Lanjutkan?'))) {
       e.target.value = '';
       return;
     }
@@ -129,26 +176,38 @@ export const SettingsView: React.FC = () => {
         const parsed = JSON.parse(event.target?.result as string);
         const res = await apiPost<any>('/api/tracker/import', { tracker: parsed.tracker || parsed });
         if (res?.ok === false) throw new Error(res.error || 'import');
-        showToast('success', t('import_success', 'Tracker data imported successfully!'), '');
+        showToast('success', t('import_success', 'Data tracker diimpor!'), '');
         window.location.reload();
       } catch (err: any) {
-        showToast('info', t('import_failed', 'Import failed: {error}').replace('{error}', String(err?.message || err)), '');
+        showToast('info', t('import_failed', 'Impor gagal: {error}').replace('{error}', String(err?.message || err)), '');
       }
     };
     reader.readAsText(file);
   };
 
+  /** Parity _manual_backup → db.backup_database() */
+  const handleBackupNow = async () => {
+    try {
+      const res = await apiPost<any>('/api/settings/backup', {});
+      if (res?.ok === false) throw new Error(res.error || 'backup');
+      showToast('success', t('berhasil_title', 'Berhasil'), String(res?.path || ''));
+    } catch (err: any) {
+      showToast('info', t('msg_error', 'Error'), String(err?.message || err));
+    }
+  };
+
+  /** Parity update group → /api/update/check */
   const handleCheckUpdate = async () => {
     try {
       const res = await apiGet<any>('/api/update/check');
       if (res?.update) {
         const ver = res.update.version || res.update.latest || '';
-        showToast('success', t('update_available', 'Update available: v{version}').replace('{version}', String(ver)), '');
+        showToast('success', t('update_available', 'Update tersedia: v{version}').replace('{version}', String(ver)), '');
       } else {
-        showToast('success', t('update_latest', 'You are on the latest version.'), '');
+        showToast('success', t('update_latest', 'Kamu sudah di versi terbaru.'), '');
       }
-    } catch (err: any) {
-      showToast('info', t('update_check_offline', 'Could not check for updates.'), '');
+    } catch {
+      showToast('info', t('update_check_offline', 'Tidak bisa memeriksa update.'), '');
     }
   };
 
@@ -159,6 +218,33 @@ export const SettingsView: React.FC = () => {
       /* ignore */
     }
     window.location.reload();
+  };
+
+  /** Parity Reset Progress: password verify → dialog ketik "RESET PROGRESS" → reset → toast sukses → reload */
+  const handleResetProgress = async () => {
+    const pwd = window.prompt(
+      `${t('reset_verify_password_title', 'Verifikasi Password')}\n${t('reset_verify_password_prompt', 'Masukkan password akun kamu untuk melanjutkan:')}`,
+    );
+    if (!pwd) return;
+
+    const typed = window.prompt(
+      `${t('reset_confirm_title', 'Konfirmasi Reset Progress')}\n\n` +
+      `${t('reset_confirm_warning', 'PERINGATAN: Seluruh progress tracker akan DIHAPUS!')}\n` +
+      `${t('reset_confirm_type_label', 'Ketik "RESET PROGRESS" untuk konfirmasi:')}`,
+    );
+    if (typed === null) return;
+    if (typed.trim().toUpperCase() !== 'RESET PROGRESS') {
+      showToast('info', t('reset_confirm_invalid', 'Konfirmasi tidak cocok. Reset dibatalkan.'), '');
+      return;
+    }
+    const ok = await resetAllData(pwd);
+    if (ok) {
+      toastResetSuccess();
+    }
+  };
+
+  const toastResetSuccess = () => {
+    showToast('success', t('reset_success_title', 'Berhasil'), t('reset_success_msg', 'Progress berhasil direset.'));
   };
 
   const runCloud = async (fn: () => Promise<any>, okMsg?: string) => {
@@ -184,23 +270,17 @@ export const SettingsView: React.FC = () => {
   const linked = Boolean(cloud?.linked && cloud?.configured);
   const pending = (cloud?.queue?.pending || 0) + (cloud?.queue?.retry || 0);
 
-  let statusText = t('cloud_status_not_configured', lang === 'id'
-    ? 'Supabase belum dikonfigurasi. Isi SUPABASE_URL dan SUPABASE_PUBLISHABLE_KEY pada file .env lokal.'
-    : 'Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in the local .env file.');
+  let statusText = t('cloud_status_not_configured', 'Supabase belum dikonfigurasi.');
   if (cloud && !cloud.configured) {
-    statusText = t('cloud_off_hint', lang === 'id'
-      ? 'Cloud mati: tidak ada .env (SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY) di samping aplikasi. Fitur lokal tetap jalan.'
-      : 'Cloud is off: no .env (SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY) beside the app. Local features still work.');
+    statusText = t('cloud_off_hint', 'Cloud mati: tidak ada .env di samping aplikasi.');
   } else if (cloud?.configured && linked) {
-    const last = cloud.link?.last_sync_at || t('cloud_never', lang === 'id' ? 'belum pernah' : 'never');
+    const last = cloud.link?.last_sync_at || t('cloud_never', 'belum pernah');
     statusText = t('cloud_status_linked', `Linked: ${cloud.email} · queue ${pending} · last sync ${last}`)
       .replace('{email}', cloud.email || '')
       .replace('{pending}', String(pending))
       .replace('{last}', String(last));
   } else if (cloud?.configured) {
-    statusText = t('cloud_status_ready_unlinked', lang === 'id'
-      ? 'Supabase siap. Hubungkan akun lokal ini dengan email cloud yang sudah diverifikasi.'
-      : 'Supabase is ready. Link this local account to a verified cloud email.');
+    statusText = t('cloud_status_ready_unlinked', 'Supabase siap. Hubungkan akun lokal ini dengan email cloud.');
   }
 
   return (
@@ -208,15 +288,11 @@ export const SettingsView: React.FC = () => {
       <div>
         <div className="flex items-center gap-2">
           <Settings className="w-6 h-6 text-slate-400" />
-          <h2 className="text-xl font-black text-slate-100">{lang === 'id' ? 'Pengaturan & Profil Hero' : 'Settings & Hero Profile'}</h2>
+          <h2 className="text-xl font-black text-slate-100">{t('settings_title', 'Pengaturan')}</h2>
         </div>
-        <p className="text-xs text-slate-400 mt-1">
-          {lang === 'id'
-            ? 'Kustomisasi identitas karakter, preferensi suara, bahasa aplikasi, dan cadangkan data kemajuanmu.'
-            : 'Customize your hero persona, class specializations, sound effects, language, and data backups.'}
-        </p>
       </div>
 
+      {/* ===== Akun lokal (custom web) ===== */}
       <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-3">
         <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
           <User className="w-4 h-4 text-emerald-400" />
@@ -231,18 +307,12 @@ export const SettingsView: React.FC = () => {
             onClick={switchLocalAccount}
             className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200"
           >
-            {t('web_switch_local', lang === 'id' ? 'Ganti akun lokal' : 'Switch local account')}
-          </button>
-          <button
-            type="button"
-            onClick={handleCheckUpdate}
-            className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200"
-          >
-            {t('web_check_update', lang === 'id' ? 'Cek pembaruan' : 'Check for updates')}
+            {t('web_switch_local', 'Ganti akun lokal')}
           </button>
         </div>
       </div>
 
+      {/* ===== Cloud & Sync (sudah ada, dipertahankan) ===== */}
       <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4">
         <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
           <Cloud className="w-4 h-4 text-sky-400" />
@@ -250,19 +320,17 @@ export const SettingsView: React.FC = () => {
         </h3>
         <p className="text-xs text-slate-400 whitespace-pre-wrap">{statusText}</p>
         {cloud?.configured && cloud.realtime_connected && (
-          <p className="text-[11px] text-emerald-400">{t('cloud_realtime_on', lang === 'id' ? 'Realtime aktif' : 'Realtime connected')}</p>
+          <p className="text-[11px] text-emerald-400">{t('cloud_realtime_on', 'Realtime aktif')}</p>
         )}
         {conflict && (
           <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
-            <p className="text-xs text-amber-200">{t('cloud_conflict_hint', lang === 'id'
-              ? 'Data tracker berubah di perangkat ini dan perangkat lain. Pilih sumber yang ingin dipertahankan.'
-              : 'Tracker data changed on this device and another device. Choose which source to keep.')}</p>
+            <p className="text-xs text-amber-200">{t('cloud_conflict_hint', 'Data tracker berubah di perangkat ini dan perangkat lain. Pilih sumber yang ingin dipertahankan.')}</p>
             <div className="flex flex-wrap gap-2">
               <button disabled={cloudBusy} onClick={() => { if (window.confirm(t('cloud_conflict_keep_local_confirm', 'Keep local?'))) runCloud(() => cloudConflict('local'), t('cloud_conflict_resolved', 'Conflict resolved')); }} className="px-3 py-2 rounded-xl bg-yellow-500 text-slate-950 text-xs font-black">
-                {t('cloud_conflict_keep_local', lang === 'id' ? 'Pertahankan Data Lokal' : 'Keep Local Data')}
+                {t('cloud_conflict_keep_local', 'Pertahankan Data Lokal')}
               </button>
               <button disabled={cloudBusy} onClick={() => { if (window.confirm(t('cloud_conflict_use_remote_confirm', 'Restore cloud?'))) runCloud(() => cloudConflict('cloud'), t('cloud_conflict_resolved', 'Conflict resolved')); }} className="px-3 py-2 rounded-xl bg-rose-500/80 text-white text-xs font-black">
-                {t('cloud_conflict_use_remote', lang === 'id' ? 'Pulihkan Data Cloud' : 'Restore Cloud Data')}
+                {t('cloud_conflict_use_remote', 'Pulihkan Data Cloud')}
               </button>
             </div>
           </div>
@@ -270,21 +338,21 @@ export const SettingsView: React.FC = () => {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('cloud_email', 'Cloud email')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('cloud_password', lang === 'id' ? 'Password cloud (min. 8)' : 'Cloud password (min. 8)')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('cloud_password', 'Password cloud (min. 8)')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button disabled={cloudBusy || linked} onClick={() => runCloud(() => cloudRegister(email, password), t('cloud_verification_sent', lang === 'id' ? 'Cek inbox untuk verifikasi email.' : 'Check your inbox to verify email.'))} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-40">
-            {t('cloud_create_account', lang === 'id' ? 'Buat Akun Cloud' : 'Create Cloud Account')}
+          <button disabled={cloudBusy || linked} onClick={() => runCloud(() => cloudRegister(email, password), t('cloud_verification_sent', 'Cek inbox untuk verifikasi email.'))} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-40">
+            {t('cloud_create_account', 'Buat Akun Cloud')}
           </button>
-          <button disabled={cloudBusy || linked} onClick={() => runCloud(() => cloudLogin(email, password), t('cloud_account_created', lang === 'id' ? 'Akun terhubung.' : 'Account linked.'))} className="px-3 py-2 rounded-xl bg-sky-500 text-slate-950 text-xs font-black disabled:opacity-40">
+          <button disabled={cloudBusy || linked} onClick={() => runCloud(() => cloudLogin(email, password), t('cloud_account_created', 'Akun terhubung.'))} className="px-3 py-2 rounded-xl bg-sky-500 text-slate-950 text-xs font-black disabled:opacity-40">
             {t('cloud_signin_link', 'Sign In & Link')}
           </button>
-          <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudSyncNow(), t('cloud_sync_success', lang === 'id' ? 'Cloud sync selesai.' : 'Cloud sync complete.'))} className="px-3 py-2 rounded-xl bg-yellow-500 disabled:opacity-40 text-slate-950 text-xs font-black inline-flex items-center gap-1">
-            <RefreshCw className="w-3 h-3" /> {t('cloud_sync_now', lang === 'id' ? 'Sync Sekarang' : 'Sync Now')}
+          <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudSyncNow(), t('cloud_sync_success', 'Cloud sync selesai.'))} className="px-3 py-2 rounded-xl bg-yellow-500 disabled:opacity-40 text-slate-950 text-xs font-black inline-flex items-center gap-1">
+            <RefreshCw className="w-3 h-3" /> {t('cloud_sync_now', 'Sync Sekarang')}
           </button>
-          <button disabled={cloudBusy || !linked} onClick={() => { if (window.confirm(t('cloud_migrate_local', lang === 'id' ? 'Antrikan data lokal ke cloud?' : 'Queue local data to cloud?'))) runCloud(() => cloudMigrateLocal()); }} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200">
-            {t('cloud_migrate_local', lang === 'id' ? 'Migrasikan Data Lokal' : 'Migrate Local Data')}
+          <button disabled={cloudBusy || !linked} onClick={() => { if (window.confirm(t('cloud_migrate_local', 'Antrikan data lokal ke cloud?'))) runCloud(() => cloudMigrateLocal()); }} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200">
+            {t('cloud_migrate_local', 'Migrasikan Data Lokal')}
           </button>
           <button disabled={cloudBusy || !linked} onClick={async () => {
             setShowDevices(true);
@@ -296,10 +364,10 @@ export const SettingsView: React.FC = () => {
               showToast('info', String(e?.message || e), '');
             }
           }} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200 inline-flex items-center gap-1">
-            <Smartphone className="w-3 h-3" /> {t('cloud_devices_title', lang === 'id' ? 'Kelola Perangkat' : 'Manage Devices')}
+            <Smartphone className="w-3 h-3" /> {t('cloud_devices_title', 'Kelola Perangkat')}
           </button>
           <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudQueueRetry())} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200">
-            {t('cloud_queue_retry', lang === 'id' ? 'Coba Lagi' : 'Retry')}
+            {t('cloud_queue_retry', 'Coba Lagi')}
           </button>
           <button disabled={cloudBusy || !cloud?.linked} onClick={() => runCloud(() => cloudLogout())} className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold inline-flex items-center gap-1">
             <LogOut className="w-3 h-3" /> {t('cloud_sign_out', 'Sign Out Cloud')}
@@ -308,7 +376,7 @@ export const SettingsView: React.FC = () => {
 
         {showDevices && (
           <div className="rounded-2xl bg-slate-950 border border-slate-800 p-3 space-y-2">
-            <p className="text-[11px] text-slate-500">{t('cloud_devices_info', lang === 'id' ? 'UUID perangkat bukan credential.' : 'A device UUID is not a credential.')}</p>
+            <p className="text-[11px] text-slate-500">{t('cloud_devices_info', 'UUID perangkat bukan credential.')}</p>
             {(devices.length ? devices : []).map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-2 text-xs text-slate-300">
                 <span>{d.current ? '★ ' : ''}{d.device_name || d.id} · {d.platform} · {d.revoked_at ? t('cloud_device_revoked', 'revoked') : t('cloud_device_active', 'active')}</span>
@@ -329,15 +397,16 @@ export const SettingsView: React.FC = () => {
         )}
       </div>
 
+      {/* ===== Kustomisasi Karakter (web: hero profile; kelas parity db.AVATAR_CLASSES) ===== */}
       <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-6">
         <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
           <User className="w-4 h-4 text-yellow-400" />
-          <span>{lang === 'id' ? 'Kustomisasi Karakter & Kelas' : 'Hero Customization & Class'}</span>
+          <span>{t('web_hero_custom', 'Kustomisasi Karakter & Kelas')}</span>
         </h3>
 
         <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
           <div>
-            <label className="block text-slate-300 font-semibold mb-2">{lang === 'id' ? 'Pilih Avatar Karakter' : 'Hero Avatar'}</label>
+            <label className="block text-slate-300 font-semibold mb-2">{t('web_hero_avatar', 'Avatar')}</label>
             <div className="flex items-center gap-2 flex-wrap">
               {AVATAR_OPTIONS.map((av) => (
                 <button
@@ -358,7 +427,7 @@ export const SettingsView: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Nama Pahlawan' : 'Hero Name'}</label>
+              <label className="block text-slate-300 font-semibold mb-1">{t('web_hero_name', 'Nama Pahlawan')}</label>
               <input
                 type="text"
                 required
@@ -369,15 +438,21 @@ export const SettingsView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Kelas Karakter' : 'Hero Class'}</label>
+              <label className="block text-slate-300 font-semibold mb-1">{t('web_hero_class', 'Kelas Karakter')}</label>
               <select
                 value={heroClass}
                 onChange={(e) => setHeroClass(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
               >
-                {CLASS_OPTIONS.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label} - {c.bonus}
+                {(classes.length ? classes : [
+                  { key: 'warrior', name: 'Warrior', icon: '⚔️', bonus: 'HP+20%, Skill: Shield Bash (10 MP)' },
+                  { key: 'mage', name: 'Mage', icon: '🧙', bonus: 'XP+15%, Skill: Arcane Surge (15 MP)' },
+                  { key: 'archer', name: 'Archer', icon: '🏹', bonus: 'Gold+10%, Skill: Gold Shot (10 MP)' },
+                  { key: 'healer', name: 'Healer', icon: '💊', bonus: 'Skill: Regenerate +30 HP (20 MP)' },
+                  { key: 'rogue', name: 'Rogue', icon: '🗡️', bonus: 'Streak bonus, Skill: Shadow Step (15 MP)' },
+                ]).map((c: any) => (
+                  <option key={c.key} value={c.key}>
+                    {c.icon ? `${c.icon} ` : ''}{c.name}{c.bonus ? ` — ${c.bonus}` : ''}
                   </option>
                 ))}
               </select>
@@ -385,7 +460,7 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Motto & Bio Pahlawan' : 'Hero Bio & Motto'}</label>
+            <label className="block text-slate-300 font-semibold mb-1">{t('web_hero_bio', 'Bio / Motto')}</label>
             <input
               type="text"
               value={bio}
@@ -398,57 +473,101 @@ export const SettingsView: React.FC = () => {
           <div className="flex items-center justify-between pt-2">
             {isSaved ? (
               <span className="text-emerald-400 font-bold text-xs flex items-center gap-1">
-                <Check className="w-4 h-4" /> {lang === 'id' ? 'Profil tersimpan!' : 'Profile updated!'}
+                <Check className="w-4 h-4" /> {t('web_profile_saved', 'Profil tersimpan!')}
               </span>
             ) : <div />}
 
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black text-xs shadow-lg shadow-yellow-500/20 active:scale-95 transition-all"
+              className="px-5 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black text-xs shadow-lg shadow-yellow-500/20 active:scale-95 transition-all inline-flex items-center gap-1"
             >
-              {lang === 'id' ? 'Simpan Perubahan' : 'Save Profile'}
+              <Save className="w-3.5 h-3.5" /> {t('web_profile_save', 'Simpan Perubahan')}
             </button>
           </div>
         </form>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
-              <Globe className="w-4 h-4 text-sky-400" /> {lang === 'id' ? 'Bahasa Aplikasi' : 'Language'}
-            </span>
-          </div>
+      {/* ===== Parity SettingsPage: THEME group — radio semua db.THEMES + glow preview dot ===== */}
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+        <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+          <Palette className="w-4 h-4 text-fuchsia-400" /> {t('settings_theme', 'Tema')}
+        </span>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {themes.map((th) => {
+            const active = currentTheme === th.key;
+            return (
+              <button
+                type="button"
+                key={th.key}
+                onClick={() => {
+                  if (active) return;
+                  apiPost('/api/settings', { theme: th.key })
+                    .then(() => {
+                      setCurrentTheme(th.key);
+                      showToast('success', t('settings_theme_changed', 'Tema diganti: {name}').replace('{name}', th.label), '');
+                      confirmRestart();
+                    })
+                    .catch(() => undefined);
+                }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                  active
+                    ? 'bg-fuchsia-500/15 border-fuchsia-400/60 text-fuchsia-200'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                <span
+                  className="w-4 h-4 rounded-full shrink-0"
+                  style={{
+                    background: th.glow || th.primary || '#a78bfa',
+                    boxShadow: `0 0 8px 2px ${th.glow || th.primary || '#a78bfa'}`,
+                  }}
+                />
+                <span className="truncate">{th.label}</span>
+              </button>
+            );
+          })}
+          {themes.length === 0 && (
+            <p className="text-[11px] text-slate-500 col-span-3">{lang === 'id' ? 'Memuat katalog tema…' : 'Loading theme catalog…'}</p>
+          )}
+        </div>
+      </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* ===== Parity SettingsPage: LANGUAGE group (id/en + restart prompt) ===== */}
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+          <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+            <Globe className="w-4 h-4 text-sky-400" /> {t('settings_language', 'Bahasa')}
+          </span>
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => { setLang('id'); apiPost('/api/settings', { language: 'id' }).catch(() => undefined); }}
+              onClick={() => changeLanguage('id')}
               className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                 lang === 'id'
                   ? 'bg-sky-500/20 text-sky-300 border-sky-500/50'
                   : 'bg-slate-800 text-slate-400 border-slate-700'
               }`}
             >
-              🇮🇩 Bahasa Indonesia
+              🇮🇩 {t('settings_language_id', 'Bahasa Indonesia')}
             </button>
             <button
-              onClick={() => { setLang('en'); apiPost('/api/settings', { language: 'en' }).catch(() => undefined); }}
+              onClick={() => changeLanguage('en')}
               className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                 lang === 'en'
                   ? 'bg-sky-500/20 text-sky-300 border-sky-500/50'
                   : 'bg-slate-800 text-slate-400 border-slate-700'
               }`}
             >
-              🇬🇧 English
+              🇬🇧 {t('settings_language_en', 'English')}
             </button>
           </div>
         </div>
 
+        {/* ===== Parity SettingsPage: SOUND group ===== */}
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
               {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-              {lang === 'id' ? 'Efek Suara Gamifikasi' : 'Sound Effects'}
+              {t('settings_sound', 'Suara')}
             </span>
             <button
               onClick={() => {
@@ -459,6 +578,7 @@ export const SettingsView: React.FC = () => {
               className={`w-11 h-6 rounded-full transition-colors relative ${
                 soundEnabled ? 'bg-emerald-500' : 'bg-slate-800'
               }`}
+              aria-label={t('settings_sound_enable', 'Aktifkan suara efek')}
             >
               <div
                 className={`w-4 h-4 rounded-full bg-white transition-transform absolute top-1 ${
@@ -467,65 +587,75 @@ export const SettingsView: React.FC = () => {
               />
             </button>
           </div>
+          <p className="text-[11px] text-slate-400">{t('settings_sound_hint', 'Efek suara kecil untuk aksi penting (klaim, level up, dsb.)')}</p>
+        </div>
+      </div>
 
-          <p className="text-[11px] text-slate-400">
-            {lang === 'id'
-              ? 'Memainkan audio synthesizer saat menuntaskan habit, level up, dan pertarungan boss.'
-              : 'Web Audio synth chimes on completing tasks, leveling up, and winning battles.'}
-          </p>
-          <label className="flex items-center justify-between text-xs text-slate-300 pt-2">
-            <span>{lang === 'id' ? 'Kontras tinggi' : 'High contrast'}</span>
+      {/* ===== Parity SettingsPage: CURRENCY combo IDR/USD/EUR ===== */}
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
+        <span className="text-xs font-bold text-slate-300">{t('settings_currency', 'Mata uang')}</span>
+        <select
+          value={currency}
+          onChange={(e) => {
+            const v = e.target.value;
+            apiPost('/api/settings', { currency: v }).then(() => {
+              setCurrency(v);
+              confirmRestart();
+            }).catch(() => undefined);
+          }}
+          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs"
+        >
+          {['IDR', 'USD', 'EUR'].map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* ===== Parity SettingsPage: A11Y group (font scale combo + high contrast + hint) ===== */}
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+        <span className="text-xs font-bold text-slate-300">{t('a11y_group', 'Aksesibilitas')}</span>
+        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
+          <label className="flex items-center gap-2">
+            {t('a11y_font_scale', 'Skala font')}
+            <select
+              value={fontScale}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                document.documentElement.style.fontSize = `${(v / 100) * 16}px`;
+                apiPost('/api/settings', { fontScale: v }).then(() => {
+                  setFontScale(v);
+                  confirmRestart();
+                }).catch(() => undefined);
+              }}
+              className="px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700"
+            >
+              {[80, 90, 100, 110, 120, 130, 140].map((v) => (
+                <option key={v} value={v}>{v}%</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            {t('a11y_high_contrast', 'Kontras tinggi')}
             <input
               type="checkbox"
-              defaultChecked={Boolean((user as any).highContrast)}
+              checked={highContrast}
               onChange={(e) => {
-                document.documentElement.classList.toggle('high-contrast', e.target.checked);
-                apiPost('/api/settings', { highContrast: e.target.checked }).catch(() => undefined);
+                const v = e.target.checked;
+                document.documentElement.classList.toggle('high-contrast', v);
+                apiPost('/api/settings', { highContrast: v }).then(() => setHighContrast(v)).catch(() => undefined);
               }}
             />
           </label>
         </div>
+        <p className="text-[11px] text-slate-500">{t('a11y_font_apply_hint', 'Perubahan skala font diterapkan setelah muat ulang.')}</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
-          <span className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Mata uang (EconomyPage)' : 'Currency (EconomyPage)'}</span>
-          <select
-            defaultValue={user.currency || 'IDR'}
-            onChange={(e) => {
-              apiPost('/api/settings', { currency: e.target.value }).catch(() => undefined);
-              showToast('success', e.target.value, '');
-            }}
-            className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs"
-          >
-            {['IDR', 'USD', 'EUR', 'SGD', 'JPY'].map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
-          <span className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Skala font' : 'Font scale'}</span>
-          <input
-            type="range"
-            min={80}
-            max={140}
-            defaultValue={user.fontScale || 100}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              document.documentElement.style.fontSize = `${(v / 100) * 16}px`;
-              apiPost('/api/settings', { fontScale: v }).catch(() => undefined);
-            }}
-            className="w-full"
-          />
-        </div>
-      </div>
+      {/* ===== Parity SettingsPage: ADMIN panel (is_admin gated) ===== */}
+      {isAdmin && <AdminDebugPanel />}
 
-      {(user as any).isAdmin && (
-        <AdminDebugPanel lang={lang} />
-      )}
-
+      {/* ===== Parity SettingsPage: DATA MANAGEMENT (export/import + backup) ===== */}
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
-        <h3 className="font-bold text-xs text-slate-300 uppercase tracking-wider">{lang === 'id' ? 'Penyimpanan & Cadangan Data' : 'Backup & Storage Management'}</h3>
+        <h3 className="font-bold text-xs text-slate-300 uppercase tracking-wider">{t('settings_data_management', 'Manajemen Data')}</h3>
 
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <button
@@ -533,25 +663,65 @@ export const SettingsView: React.FC = () => {
             className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2 transition-colors"
           >
             <Download className="w-4 h-4 text-sky-400" />
-            <span>{t('web_tracker_export', lang === 'id' ? 'Ekspor tracker SQLite' : 'Export SQLite tracker')}</span>
+            <span>{t('settings_export_tracker', 'Ekspor Tracker (JSON)')}</span>
           </button>
 
           <label className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors">
             <Upload className="w-4 h-4 text-emerald-400" />
-            <span>{t('web_tracker_import', lang === 'id' ? 'Impor tracker SQLite' : 'Import SQLite tracker')}</span>
+            <span>{t('settings_import_tracker', 'Impor Tracker (JSON)')}</span>
             <input type="file" accept=".json" onChange={handleImportData} className="hidden" />
           </label>
 
+          {/* Parity _manual_backup: tombol Backup Sekarang → db.backup_database() di server */}
           <button
-            onClick={() => {
-              if (window.confirm(lang === 'id' ? 'Apakah Anda yakin ingin mereset seluruh data game?' : 'Are you sure you want to reset all game data?')) {
-                resetAllData();
-              }
-            }}
+            onClick={handleBackupNow}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2 transition-colors"
+          >
+            <RefreshCcw className="w-4 h-4 text-amber-400" />
+            <span>{t('settings_backup_now', 'Backup Sekarang')}</span>
+          </button>
+
+          {/* Parity Reset Progress */}
+          <button
+            onClick={handleResetProgress}
             className="w-full sm:w-auto sm:ml-auto px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs border border-rose-500/30 flex items-center justify-center gap-2 transition-colors"
           >
             <Trash2 className="w-4 h-4" />
-            <span>{lang === 'id' ? 'Reset Semua Data' : 'Reset All Progress'}</span>
+            <span>{t('settings_reset_btn', 'Reset Progress')}</span>
+          </button>
+        </div>
+        <p className="text-[11px] text-rose-300/70">{t('settings_reset_warning', 'Reset menghapus SEMUA progress tracker (tidak bisa dibatalkan).')}</p>
+      </div>
+
+      {/* ===== Parity SettingsPage: UPDATE + DATABASE group ===== */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
+          <span className="text-xs font-bold text-slate-300">{t('update_group_title', 'Pembaruan Aplikasi')}</span>
+          <p className="text-[11px] text-slate-400">
+            {t('update_version', 'Versi: {version}').replace('{version}', appVersion || '…')}
+          </p>
+          <button
+            type="button"
+            onClick={handleCheckUpdate}
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200"
+          >
+            {t('update_check', 'Cek Pembaruan')}
+          </button>
+        </div>
+
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
+          <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
+            <Database className="w-4 h-4 text-amber-400" /> {t('settings_database', 'Database')}
+          </span>
+          <p className="text-[11px] text-slate-500 break-all font-mono">
+            {t('settings_db_path', 'Lokasi database lokal:')} {dbPath || '…'}
+          </p>
+          <button
+            type="button"
+            onClick={handleBackupNow}
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200"
+          >
+            {t('settings_backup_now', 'Backup Sekarang')}
           </button>
         </div>
       </div>

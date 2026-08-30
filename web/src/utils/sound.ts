@@ -2,7 +2,9 @@
 // Generates the four alarm types (beep / bell / magic / fanfare) on the fly
 // using OscillatorNode(s), so no audio assets or network access are required.
 
-export type ReminderSound = 'beep' | 'bell' | 'magic' | 'fanfare' | 'default';
+export type ReminderSound =
+  | 'default' | 'beep1' | 'beep2' | 'custom'           // ← PyQt (parity)
+  | 'beep' | 'bell' | 'magic' | 'fanfare';             // ← alias web lama (kompat beep1/default)
 
 function ctx(): AudioContext | null {
   try {
@@ -34,10 +36,17 @@ export function playReminderSound(sound: ReminderSound = 'bell') {
   const c = ctx();
   if (!c) return;
   switch (sound) {
+    case 'beep1':
     case 'beep':
-      tone(c, 600, 0, 0.18, 'square');
-      tone(c, 800, 0.22, 0.18, 'square');
-      tone(c, 600, 0.44, 0.18, 'square');
+      // PyQt _play_sound beep1: 600Hz/200ms → 800Hz/200ms
+      tone(c, 600, 0, 0.2, 'square');
+      tone(c, 800, 0.22, 0.2, 'square');
+      break;
+    case 'beep2':
+      // PyQt beep2: 400/300 → 600/300 → 800/300
+      tone(c, 400, 0, 0.3, 'square');
+      tone(c, 600, 0.32, 0.3, 'square');
+      tone(c, 800, 0.64, 0.3, 'square');
       break;
     case 'magic':
       tone(c, 523.25, 0, 0.25, 'sine');      // C5
@@ -59,4 +68,35 @@ export function playReminderSound(sound: ReminderSound = 'bell') {
   // Close the context after the sound finishes to free resources.
   const total = 900;
   setTimeout(() => { try { c.close(); } catch { /* ignore */ } }, total);
+}
+
+// ── Loop alarm (parity MainWindow._play_reminder_*_loop, interval 2 detik) ──
+let _loopStop: (() => void) | null = null;
+
+/** Hentikan loop alarm yang sedang berjalan (parity _stop_reminder_sounds). */
+export function stopReminderLoop() {
+  try { _loopStop?.(); } catch { /* ignore */ }
+  _loopStop = null;
+}
+
+/**
+ * Mulai loop alarm sampai stopReminderLoop() dipanggil.
+ * - custom: HTMLAudio MP3 loop (parity _play_reminder_mp3_loop)
+ * - beep1/beep2/default: beep diulang tiap 2 detik (parity beep timer 2000ms)
+ * Mengembalikan true jika loop custom (elemen audio) dimulai.
+ */
+export function startReminderLoop(sound: string, fileUrl?: string): void {
+  stopReminderLoop();
+  if (sound === 'custom' && fileUrl) {
+    try {
+      const el = new Audio(fileUrl);
+      el.loop = true;
+      void el.play().catch(() => { /* autoplay diblok → diabaikan */ });
+      _loopStop = () => { try { el.pause(); el.src = ''; } catch { /* ignore */ } };
+      return;
+    } catch { /* jatuh ke beep */ }
+  }
+  playReminderSound((sound as ReminderSound) || 'default');
+  const id = window.setInterval(() => playReminderSound((sound as ReminderSound) || 'default'), 2000);
+  _loopStop = () => window.clearInterval(id);
 }

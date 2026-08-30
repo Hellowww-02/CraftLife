@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { apiPost } from '../../api/client';
+import React, { useEffect, useState } from 'react';
+import { apiPost, apiGet } from '../../api/client';
 import { t } from '../../i18n';
 
 export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
@@ -7,7 +7,18 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [bio, setBio] = useState('');
+  const [avatarClass, setAvatarClass] = useState('warrior');
+  const [classes, setClasses] = useState<Record<string, { name: string; icon: string; bonus: string }>>({});
   const [backupCode, setBackupCode] = useState('');
+
+  // Parity _register_tab: combobox class dari db.AVATAR_CLASSES (name + bonus).
+  useEffect(() => {
+    if (mode !== 'register') return;
+    apiGet<any>('/api/catalog/avatar-classes')
+      .then((d) => { if (d?.classes) setClasses(d.classes); })
+      .catch(() => undefined);
+  }, [mode]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -27,7 +38,7 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
         return;
       }
       const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-      const res = await apiPost<any>(path, { username, password, displayName });
+      const res = await apiPost<any>(path, { username, password, displayName, ...(mode === 'register' ? { bio, avatarClass } : {}) });
       if (!res?.ok) {
         setError(res?.error || res?.result?.msg || 'Gagal');
         return;
@@ -69,12 +80,32 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
           autoComplete="username"
         />
         {mode === 'register' && (
-          <input
-            className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
-            placeholder={t('web_display_name', 'Nama tampilan')}
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
+          <>
+            <input
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+              placeholder={t('web_display_name', 'Nama tampilan')}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+            {/* Parity _register_tab: bio + combobox kelas (ikon — nama — bonus) */}
+            <input
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+              placeholder={t('register_bio', 'Bio')}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+            />
+            <select
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-100"
+              value={avatarClass}
+              onChange={(e) => setAvatarClass(e.target.value)}
+            >
+              {Object.entries(classes).length
+                ? Object.entries(classes).map(([cid, c]) => (
+                    <option key={cid} value={cid}>{c.icon}  {c.name}  —  {c.bonus}</option>
+                  ))
+                : <option value="warrior">⚔️  Warrior</option>}
+            </select>
+          </>
         )}
         {mode === 'reset' && (
           <input

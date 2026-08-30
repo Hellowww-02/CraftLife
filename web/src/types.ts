@@ -72,6 +72,8 @@ export interface UserProfile {
   freezeSlots: number;
   createdAt: string;
   currency?: string;
+  selectedTitle?: string;
+  hasProfilePhoto?: boolean;
   fontScale?: number;
   longestStreak?: number;
   highContrast?: boolean;
@@ -260,6 +262,9 @@ export interface Transaction {
   amount: number;
   date: string;
   notes?: string;
+  name?: string;
+  icon?: string;
+  folderId?: string | null;
 }
 
 export interface Debt {
@@ -391,6 +396,17 @@ export interface PodcastDialogue {
   line: string;
 }
 
+// Parity LearningPage: keluaran Studio AI tersimpan per-notebook di lokasi
+// learning_output/<judul>/ (file spec.json era PyQt; sekarang SQLite learning_generations).
+export interface LearningGeneration {
+  id: string;
+  gtype: 'quiz' | 'flashcards' | 'mindmap' | 'podcast' | 'summary' | 'faq' | 'timeline' | 'study-guide';
+  topic: string;
+  content: string;
+  fileName: string;
+  createdAt: string;
+}
+
 export interface LearningNotebook {
   id: string;
   title: string;
@@ -403,6 +419,7 @@ export interface LearningNotebook {
   podcast: PodcastDialogue[];
   notes: string;
   createdAt: string;
+  generations?: LearningGeneration[];
 }
 
 // ── Music & Audio Studio ───────────────────────────────────────────────────
@@ -443,6 +460,45 @@ export interface LoveBucketItem {
   targetYear?: number;
 }
 
+export interface LoveCheckin {
+  id: string;
+  date: string;
+  myMood: number;
+  partnerMood: number;
+  connectionScore: number;
+  note: string;
+}
+
+export interface LovePromptResponse {
+  id: string;
+  promptKey: string;
+  category: string;
+  prompt: string;
+  answer: string;
+  partnerAnswer: string;
+  createdAt: string;
+}
+
+export interface LoveAlbum {
+  id: string;
+  name: string;
+  scope: 'personal' | 'shared';
+  photoIds: string[];
+}
+
+export interface LoveCycleSettings {
+  trackedPerson: 'self' | 'partner';
+  lastPeriodStart: string;
+  cycleLength: number;
+  periodLength: number;
+}
+
+export interface LoveCyclePrediction {
+  predictedStart: string;
+  predictedEnd: string;
+  daysUntil: number;
+}
+
 export interface LoveSpaceData {
   isEnabled: boolean;
   partnerName: string;
@@ -455,8 +511,16 @@ export interface LoveSpaceData {
   bucketList: LoveBucketItem[];
   photos?: LovePhotoMeta[];
   events?: { id: string; title: string; date: string; category?: string; notes?: string }[];
-  weeklyReviews?: { id: string; weekStart: string; appreciation?: string; wins?: string }[];
+  weeklyReviews?: { id: string; weekStart: string; appreciation?: string; wins?: string; support?: string; intention?: string }[];
   cycles?: { id: string; startDate: string; endDate?: string; notes?: string }[];
+  // Parity LovePage (P5): check-in history, responses prompt, album, status couple.
+  checkins?: LoveCheckin[];
+  promptResponses?: LovePromptResponse[];
+  promptFavorites?: string[];
+  albums?: LoveAlbum[];
+  coupleActive?: boolean;
+  cycleSettings?: LoveCycleSettings;
+  cyclePrediction?: LoveCyclePrediction | null;
 }
 
 // ── Social, Friends, PvP & Guild ───────────────────────────────────────────
@@ -464,6 +528,7 @@ export interface FriendUser {
   id: string;
   name: string;
   displayName?: string;
+  username?: string;
   avatar: string;
   avatarEmoji?: string;
   heroClass?: string;
@@ -473,6 +538,10 @@ export interface FriendUser {
   streak: number;
   streakDays?: number;
   lastSeen?: string;
+  // Parity FriendsPage (P9): status couple + presence + unread chat.
+  coupleStatus?: 'friend' | 'pending' | 'accepted';
+  presence?: string;
+  unreadCount?: number;
 }
 
 export interface ChatMessage {
@@ -515,6 +584,13 @@ export interface GuildData {
   messages?: { id: string; senderName?: string; text: string; isSelf?: boolean; timestamp?: string }[];
   leaderId?: string;
   leaderTransfers?: { id: string; oldLeaderId: string }[];
+  // Parity GuildPage (P9): buff aktif + info boss battle + anggota detail.
+  buffXp?: number;
+  buffGold?: number;
+  buffDamage?: number;
+  critChance?: number;
+  bossAttack?: number;
+  bossParticipants?: string;
 }
 
 export interface FriendRequest {
@@ -553,6 +629,7 @@ export interface PvPChallenge {
   playerScore: number;
   opponentScore: number;
   daysLeft?: number;
+  winnerId?: string | null;
   rewardGold: number;
   rewardXp: number;
 }
@@ -566,11 +643,17 @@ export interface HolidayItem {
 }
 
 export interface ReminderItem {
+  // Parity PyQt RemindersPage/ReminderDialog — kolom penuh dari tabel reminders.
   id: string;
   title: string;
-  time: string; // HH:mm or YYYY-MM-DDTHH:mm
-  repeat: 'none' | 'daily' | 'weekdays' | 'weekly';
-  isActive: boolean;
-  sound: 'beep' | 'bell' | 'magic' | 'fanfare';
+  description: string;
+  datetime: string; // "YYYY-MM-DD HH:mm:ss"
+  time: string; // HH:mm (turunan datetime, kompat lama)
+  repeat: 'none' | 'daily' | 'weekly' | 'custom';
+  repeatDays: string; // "0,2,4" — index hari (0=Senin .. 6=Minggu), utk repeat custom
+  isActive: boolean; // kolom is_active (🔔/🔕) — BUKAN not-triggered
+  triggered: boolean; // sudah pernah berbunyi (✅ di list PyQt)
+  sound: 'default' | 'beep1' | 'beep2' | 'custom';
+  soundFile: string; // path relatif media (reminder_sounds/...) utk sound custom
 }
 

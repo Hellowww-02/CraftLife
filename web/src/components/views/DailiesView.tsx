@@ -5,8 +5,10 @@ import { CalendarCheck, Plus, Trash2, Edit3, Flame, Shield, Snowflake, Check, Re
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
 
-const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAYS_SHORT_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// Parity WeekdaySelector PyQt: urutan Senin→Minggu; indeks JS getDay (0=Minggu).
+const DAYS_SHORT_ID = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+const DAILY_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // posisi button → js getDay()
 
 export const DailiesView: React.FC = () => {
   const { dailies, addDaily, editDaily, duplicateDaily, deleteDaily, toggleDaily, failDaily, useDailyFreeze, reorderDailies, moveTaskAcrossFolders, lang, user, applyTaskTemplate } = useGame();
@@ -17,7 +19,7 @@ export const DailiesView: React.FC = () => {
   // Form
   const [title, setTitle] = useState('');
   const [difficulty, setDifficulty] = useState<TaskDifficulty>('medium');
-  const [repeatDays, setRepeatDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [repeatDays, setRepeatDays] = useState<number[]>([]);
   const [folderId, setFolderId] = useState<string>('');
   const [notes, setNotes] = useState('');
 
@@ -47,9 +49,8 @@ export const DailiesView: React.FC = () => {
 
   const toggleDaySelection = (dayIdx: number) => {
     if (repeatDays.includes(dayIdx)) {
-      if (repeatDays.length > 1) {
-        setRepeatDays(repeatDays.filter((d) => d !== dayIdx));
-      }
+      // PyQt: kosong = tiap hari; boleh menghapus sampai 0 hari terpilih.
+      setRepeatDays(repeatDays.filter((d) => d !== dayIdx));
     } else {
       setRepeatDays([...repeatDays, dayIdx].sort());
     }
@@ -281,8 +282,9 @@ export const DailiesView: React.FC = () => {
               <div className="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs">
                 {/* Active Days */}
                 <div className="flex items-center gap-1">
-                  {(lang === 'id' ? DAYS_SHORT_ID : DAYS_SHORT).map((day, idx) => {
-                    const isScheduled = daily.repeatDays.includes(idx);
+                  {(lang === 'id' ? DAYS_SHORT_ID : DAYS_SHORT).map((day, pos) => {
+                    const jsDay = DAILY_DAY_ORDER[pos];
+                    const isScheduled = daily.repeatDays.includes(jsDay);
                     return (
                       <span
                         key={day}
@@ -372,13 +374,14 @@ export const DailiesView: React.FC = () => {
               <div>
                 <label className="block text-slate-300 font-semibold mb-1.5">{lang === 'id' ? 'Jadwal Hari Pengulangan' : 'Repeat Days'}</label>
                 <div className="grid grid-cols-7 gap-1.5">
-                  {(lang === 'id' ? DAYS_SHORT_ID : DAYS_SHORT).map((day, idx) => {
-                    const isSelected = repeatDays.includes(idx);
+                  {(lang === 'id' ? DAYS_SHORT_ID : DAYS_SHORT).map((day, pos) => {
+                    const jsDay = DAILY_DAY_ORDER[pos];
+                    const isSelected = repeatDays.includes(jsDay);
                     return (
                       <button
                         key={day}
                         type="button"
-                        onClick={() => toggleDaySelection(idx)}
+                        onClick={() => toggleDaySelection(jsDay)}
                         className={`py-2 rounded-xl text-xs font-bold border transition-colors ${
                           isSelected
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'

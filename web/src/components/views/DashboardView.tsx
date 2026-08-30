@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { rpg } from '../../api/rpg';
+import { life } from '../../api/life';
+import {
+  DashboardRankCard,
+  DashboardStatCards,
+  DashboardRings,
+  DashboardWeeklyChart,
+  DashboardInsightsCard,
+  DashboardHealthChart,
+} from '../DashboardSummaryPanel';
 import { AVATAR_CLASSES, PETS_DATA } from '../../data/gameData';
 import {
   Zap,
@@ -37,6 +46,39 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
   const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest, dailyTaskCounts } = useGame();
   const [widgetsOpen, setWidgetsOpen] = useState(false);
   const [wrappedOpen, setWrappedOpen] = useState(false);
+
+  // ── P3: parity DashboardPage PyQt — summary (rank/stats/rings/insight/grafik) + widget cfg ──
+  const [summary, setSummary] = useState<any>(null);
+  const [widgetCfg, setWidgetCfg] = useState<{ key: string; visible: boolean; compact: boolean }[] | null>(null);
+  const [widgetsVersion, setWidgetsVersion] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    life.dashboardSummary()
+      .then((d) => { if (alive && d?.ok) setSummary(d); else if (alive) setSummary(null); })
+      .catch(() => { if (alive) setSummary(null); });
+    return () => { alive = false; };
+  }, [user.level, user.xp, user.gold, user.hp, user.mp, user.sportLevel, user.sportXp, user.id]);
+  useEffect(() => {
+    let alive = true;
+    rpg.getDashboardWidgets()
+      .then((d) => {
+        if (!alive) return;
+        const w = Array.isArray(d?.widgets) ? d.widgets.filter((x: any) => x && x.key) : [];
+        setWidgetCfg(w.map((x: any) => ({ key: x.key, visible: x.visible !== false, compact: !!x.compact })));
+      })
+      .catch(() => { if (alive) setWidgetCfg(null); });
+    return () => { alive = false; };
+  }, [widgetsVersion]);
+  // Urutan default sama seperti PyQt: heatmap → insights → health_chart.
+  const wcfg = (widgetCfg && widgetCfg.length
+    ? widgetCfg
+    : [
+        { key: 'heatmap', visible: true, compact: false },
+        { key: 'insights', visible: true, compact: false },
+        { key: 'health_chart', visible: true, compact: false },
+      ]
+  ).filter((w) => w.visible !== false);
+  const closeWidgets = () => { setWidgetsOpen(false); setWidgetsVersion((v) => v + 1); };
 
   const currentClass = AVATAR_CLASSES[user.avatarClass] || AVATAR_CLASSES.warrior;
   const lvlXpPct = Math.min(100, Math.round((user.xp / Math.max(1, user.xpToNextLevel)) * 100));
@@ -121,21 +163,43 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
         </div>
       </div>
 
-      <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
-        <h3 className="text-xs font-bold text-slate-300 mb-2">{lang === 'id' ? 'Heatmap 28 hari (dailies selesai)' : '28-day heatmap (dailies done)'}</h3>
-        <div className="grid grid-cols-7 gap-1">
-          {Array.from({ length: 28 }).map((_, i) => {
-            const d = new Date();
-            d.setDate(d.getDate() - (27 - i));
-            const key = d.toISOString().slice(0, 10);
-            // Sumber data heatmap: `task_history` per hari (authoritative).
-            // Fallback ke jumlah daily yang selesai hari itu bila belum tersedia.
-            const n = dailyTaskCounts[key] ?? dailies.filter((x) => x.lastCompletedDate === key || (x.isCompletedToday && i === 27)).length;
-            const bg = n === 0 ? 'bg-slate-800' : n < 2 ? 'bg-emerald-900' : n < 4 ? 'bg-emerald-600' : 'bg-emerald-400';
-            return <div key={key} title={`${key}: ${n}`} className={`h-4 rounded-sm ${bg}`} />;
-          })}
-        </div>
-      </div>
+      {/* P3 parity: rank card → stat cards (4×2) — Python `/api/dashboard/summary` */}
+      <DashboardRankCard summary={summary} />
+      <DashboardStatCards summary={summary} />
+
+      {/* Widget dashboard (parity _attach_widget_cards: heatmap/insights/health chart,
+          urutan & visibilitas & compact mengikuti "⚙️ Atur Widget") */}
+      {wcfg.map((w) => {
+        if (w.key === 'heatmap') {
+          return (
+            <div key="heatmap" className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
+              <div className="flex items-baseline justify-between mb-2">
+                <h3 className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Heatmap 28 hari (dailies selesai)' : '28-day heatmap (dailies done)'}</h3>
+                <span className="text-[9px] text-slate-500">{lang === 'id' ? 'less' : 'less'} ⬜🟩🟩🟩 {lang === 'id' ? 'more' : 'more'}</span>
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 28 }).map((_, i) => {
+                  const d = new Date();
+                  d.setDate(d.getDate() - (27 - i));
+                  const key = d.toISOString().slice(0, 10);
+                  const n = dailyTaskCounts[key] ?? dailies.filter((x) => x.lastCompletedDate === key || (x.isCompletedToday && i === 27)).length;
+                  const bg = n === 0 ? 'bg-slate-800' : n < 2 ? 'bg-emerald-900' : n < 4 ? 'bg-emerald-600' : 'bg-emerald-400';
+                  return <div key={key} title={`${key}: ${n}`} className={`${w.compact ? 'h-3' : 'h-4'} rounded-sm ${bg}`} />;
+                })}
+              </div>
+            </div>
+          );
+        }
+        if (w.key === 'insights') return <DashboardInsightsCard key="insights" summary={summary} compact={w.compact} />;
+        if (w.key === 'health_chart') return <DashboardHealthChart key="health_chart" summary={summary} compact={w.compact} />;
+        return null;
+      })}
+
+      {/* PROGRESS RINGS (parity rings_group: XP / HP / Sport / Kalori) */}
+      <DashboardRings summary={summary} />
+
+      {/* WEEKLY CHART 7 hari (parity dashboard_weekly_chart matplotlib) */}
+      <DashboardWeeklyChart summary={summary} />
 
       {/* Quick Adventure Hub */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -469,7 +533,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
         </div>
       </div>
 
-      {widgetsOpen && <DashboardWidgetsDialog onClose={() => setWidgetsOpen(false)} />}
+      {widgetsOpen && <DashboardWidgetsDialog onClose={closeWidgets} />}
       {wrappedOpen && <YearWrappedDialog onClose={() => setWrappedOpen(false)} displayName={user.displayName || user.username} />}
     </div>
   );

@@ -3,7 +3,7 @@ import { useGame } from '../context/GameContext';
 import { life } from '../api/life';
 import { TaskFolder } from '../types';
 
-type Mode = 'habit' | 'daily' | 'todo' | 'sport';
+type Mode = 'habit' | 'daily' | 'todo' | 'sport' | 'economy';
 
 export function useModeFolders(mode: Mode): TaskFolder[] {
   const { taskFolders } = useGame();

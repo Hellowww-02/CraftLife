@@ -1,22 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
-import { apiGet } from '../../api/client';
-import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart } from 'lucide-react';
+import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart, Package, Search, FolderOpen, Pencil } from 'lucide-react';
 import { DualLineChart, DonutChart } from '../charts';
 import { t } from '../../i18n';
+import { formatMoney as fmtMoney } from '../../utils/currency';
+import { TaskFolderBar } from '../TaskFolderBar';
+import { life } from '../../api/life';
 
-let RATES: Record<string, number> = { IDR: 1, USD: 17800, EUR: 20700 };
-
-function fmtMoney(amountIdr: number, currency: string) {
-  const rate = RATES[currency] || 1;
-  const v = currency === 'IDR' ? amountIdr : amountIdr / rate;
-  const n = currency === 'IDR' ? Math.round(v).toLocaleString() : v.toFixed(2);
-  return `${currency} ${n}`;
-}
-
-export const EconomyView: React.FC = () => {
+export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onNavigate }) => {
   const {
-    transactions, addTransaction, deleteTransaction, debts, addDebt, payDebtInstallment, deleteDebt,
+    transactions, addTransaction, deleteTransaction, moveTransaction, debts, addDebt, payDebtInstallment, deleteDebt,
     savings, addSaving, addToSaving, withdrawFromSaving, deleteSaving,
     investments, addInvestment, collectInvestmentReturn, withdrawInvestment,
     subscriptions, addSubscription, renewSubscription, deleteSubscription,
@@ -24,11 +17,6 @@ export const EconomyView: React.FC = () => {
     lang, user,
   } = useGame();
   const currency = user.currency || 'IDR';
-  useEffect(() => {
-    apiGet<any>('/api/catalog/currency').then((d) => {
-      if (d?.rates) RATES = d.rates;
-    }).catch(() => undefined);
-  }, []);
 
   const [activeTab, setActiveTab] = useState<'transactions' | 'debts' | 'savings' | 'invest' | 'subs' | 'notes'>('transactions');
   const [svName, setSvName] = useState('');
@@ -48,10 +36,15 @@ export const EconomyView: React.FC = () => {
   const [txCategory, setTxCategory] = useState('Food & Groceries');
   const [txAmount, setTxAmount] = useState<number>(50000);
   const [txNotes, setTxNotes] = useState('');
+  const [txFolderId, setTxFolderId] = useState<string | null>(null);
+  const [txName, setTxName] = useState('');
+  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editingTx, setEditingTx] = useState<any>(null);
+  const { applyLive, showToast } = useGame();
 
   // Debt Form
   const [debtTitle, setDebtTitle] = useState('');
-  const [debtType, setDebtType] = useState<'payable' | 'receivable'>('payable');
+  // debt tab = hutang saja (payable); piutang → tab Catatan Hutang (parity PyQt).
   const [debtTotal, setDebtTotal] = useState<number>(200000);
   const [debtDueDate, setDebtDueDate] = useState(new Date().toISOString().split('T')[0]);
   const [debtFormNotes, setDebtFormNotes] = useState('');
@@ -61,6 +54,21 @@ export const EconomyView: React.FC = () => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [trendDays, setTrendDays] = useState<7 | 30 | 90>(30);
+  const [selectedFolder, setSelectedFolder] = useState('all');
+
+  const filteredTx = transactions.filter((tx) => {
+    if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
+    if (selectedFolder !== 'all') {
+      if ((tx.folderId || null) !== selectedFolder) return false;
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const hay = `${tx.category || ''} ${tx.notes || ''} ${tx.name || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  // (folder id list dipakai oleh komponen TaskFolderBar & per-tx pill)
 
   const totalIncome = transactions.filter((t) => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter((t) => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0);
@@ -69,21 +77,64 @@ export const EconomyView: React.FC = () => {
   const totalPayableRemaining = debts.filter((d) => d.type === 'payable' && !d.isPaid).reduce((acc, d) => acc + d.remainingAmount, 0);
   const totalReceivableRemaining = debts.filter((d) => d.type === 'receivable' && !d.isPaid).reduce((acc, d) => acc + d.remainingAmount, 0);
 
-  const handleCreateTx = (e: React.FormEvent) => {
+  const handleCreateTx = async (e: React.FormEvent) => {
     e.preventDefault();
     if (txAmount <= 0) return;
-    addTransaction(txType, txCategory, txAmount, txNotes);
+    // Parity AddEconomyDialog._save: nama transaksi wajib diisi.
+    if (!txName.trim()) {
+      showToast('info', t('msg_name_empty', lang === 'id' ? 'Nama belum diisi.' : 'Name is empty.'), '');
+      return;
+    }
+    if (editingTx) {
+      // Parity AddEconomyDialog mode edit → db.update_economy_item.
+      const res = await life.updateEconomy(editingTx.id, {
+        name: txName.trim() || undefined, type: txType, category: txCategory,
+        amount: txAmount, notes: txNotes, date: txDate, folderId: txFolderId,
+      }).catch(() => null);
+      if (res) applyLive(res);
+      setEditingTx(null);
+    } else {
+      addTransaction(txType, txCategory, txAmount, txNotes, txFolderId, txName.trim() || undefined, txDate);
+    }
     setIsTxModalOpen(false);
-    setTxNotes('');
+    setTxNotes(''); setTxName(''); setTxDate(new Date().toISOString().split('T')[0]); setTxFolderId(null);
+  };
+  const openEditTx = (tx: any) => {
+    setEditingTx(tx);
+    setTxType(tx.type); setTxCategory(tx.category || '');
+    setTxAmount(Math.round(tx.amount)); setTxNotes(tx.notes || '');
+    setTxFolderId(tx.folderId || null); setTxName(tx.name || tx.category || '');
+    setTxDate(tx.date || new Date().toISOString().split('T')[0]);
+    setIsTxModalOpen(true);
   };
 
-  const handleCreateDebt = (e: React.FormEvent) => {
+  const [editingDebt, setEditingDebt] = useState<any>(null);
+  const [editingSub, setEditingSub] = useState<any>(null);
+  const handleCreateDebt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!debtTitle.trim() || debtTotal <= 0) return;
-    addDebt(debtTitle, debtType, debtTotal, debtDueDate, debtFormNotes);
+    if (editingDebt) {
+      // Parity EditDebtDialog: update debt.
+      const res = await life.updateDebt(editingDebt.id, {
+        title: debtTitle, totalAmount: debtTotal, dueDate: debtDueDate, notes: debtFormNotes,
+      }).catch(() => null);
+      if (res) applyLive(res);
+      setEditingDebt(null);
+    } else {
+      // Parity PyQt EconomyPage: tab ini hanya untuk hutang (payable);
+      // piutang dicatat di tab Catatan Hutang (debt_notes).
+      addDebt(debtTitle, 'payable', debtTotal, debtDueDate, debtFormNotes);
+    }
     setIsDebtModalOpen(false);
     setDebtTitle('');
     setDebtFormNotes('');
+  };
+  const openEditDebt = (debt: any) => {
+    setEditingDebt(debt);
+    setDebtTitle(debt.title || ''); setDebtTotal(debt.totalAmount || 0);
+    setDebtDueDate(debt.dueDate || new Date().toISOString().split('T')[0]);
+    setDebtFormNotes(debt.notes || '');
+    setIsDebtModalOpen(true);
   };
 
   return (
@@ -257,7 +308,7 @@ export const EconomyView: React.FC = () => {
               activeTab === 'debts' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {lang === 'id' ? 'Hutang/Piutang' : 'Debts'} ({debts.length})
+            {lang === 'id' ? 'Hutang' : 'Debts'} ({debts.length})
           </button>
           <button onClick={() => setActiveTab('savings')} className={`px-3.5 py-1.5 rounded-lg font-bold ${activeTab === 'savings' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{lang === 'id' ? 'Tabungan' : 'Savings'}</button>
           <button onClick={() => setActiveTab('invest')} className={`px-3.5 py-1.5 rounded-lg font-bold ${activeTab === 'invest' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{lang === 'id' ? 'Investasi' : 'Invest'}</button>
@@ -279,7 +330,7 @@ export const EconomyView: React.FC = () => {
             onClick={() => setIsDebtModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all shrink-0"
           >
-            <Plus className="w-4 h-4" /> {lang === 'id' ? 'Catat Hutang / Piutang' : 'New Debt / Receivable'}
+            <Plus className="w-4 h-4" /> {lang === 'id' ? 'Catat Hutang' : 'New Debt'}
           </button>
         ) : null}
       </div>
@@ -287,8 +338,37 @@ export const EconomyView: React.FC = () => {
       {/* TRANSACTIONS VIEW */}
       {activeTab === 'transactions' && (
         <div className="space-y-3">
+          {/* Parity EconomyPage: folder bar + search + filter */}
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('economy_search', lang === 'id' ? 'Cari transaksi…' : 'Search transactions…')}
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs"
+              />
+            </div>
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+              <option value="all">{t('economy_filter_all', lang === 'id' ? 'Semua' : 'All')}</option>
+              <option value="income">{t('economy_filter_income', lang === 'id' ? 'Pemasukan' : 'Income')}</option>
+              <option value="expense">{t('economy_filter_expense', lang === 'id' ? 'Pengeluaran' : 'Expense')}</option>
+            </select>
+            <button onClick={() => onNavigate?.('supplies')} className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5" /> {t('economy_open_supplies', lang === 'id' ? 'Buka Persediaan' : 'Open Supplies')}
+            </button>
+          </div>
+          <TaskFolderBar
+            mode="economy"
+            selected={selectedFolder}
+            onSelect={setSelectedFolder}
+            accent="emerald"
+            allLabel={lang === 'id' ? 'Semua' : 'All'}
+            allCount={transactions.length}
+            onDropInto={(fid) => undefined}
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {transactions.map((tx) => (
+            {filteredTx.map((tx) => (
               <div
                 key={tx.id}
                 className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-all"
@@ -310,10 +390,19 @@ export const EconomyView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   <div className={`font-black text-xs ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {tx.type === 'income' ? '+' : '-'}{fmtMoney(tx.amount, currency)}
                   </div>
+                  {/* Pindah folder (parity drag-drop EconomyPage) */}
+                  <TxFolderPill tx={tx} />
+                  <button
+                    onClick={() => openEditTx(tx)}
+                    className="p-1 rounded text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+                    title={lang === 'id' ? 'Edit transaksi' : 'Edit transaction'}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                   <button
                     onClick={() => deleteTransaction(tx.id)}
                     className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
@@ -325,7 +414,7 @@ export const EconomyView: React.FC = () => {
             ))}
           </div>
 
-          {transactions.length === 0 && (
+          {filteredTx.length === 0 && (
             <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
               <Wallet className="w-8 h-8 text-emerald-500/40 mx-auto mb-2" />
               <p className="text-sm font-semibold">{lang === 'id' ? 'Belum ada transaksi tercatat.' : 'No transactions recorded.'}</p>
@@ -381,7 +470,7 @@ export const EconomyView: React.FC = () => {
                     </div>
                     <div className="text-xs text-slate-400 flex items-center gap-3">
                       <span>Jatuh Tempo: {debt.dueDate}</span>
-                      <span>Total: Rp {debt.totalAmount.toLocaleString()}</span>
+                      <span>Total: {fmtMoney(debt.totalAmount, currency)}</span>
                     </div>
                     {debt.notes && <p className="text-xs text-slate-400">{debt.notes}</p>}
                   </div>
@@ -391,7 +480,7 @@ export const EconomyView: React.FC = () => {
                     <div className="text-right">
                       <div className="text-xs text-slate-400 font-medium">{lang === 'id' ? 'Sisa Tagihan' : 'Remaining'}</div>
                       <div className="text-sm font-extrabold text-amber-400">
-                        Rp {debt.remainingAmount.toLocaleString()}
+                        {fmtMoney(debt.remainingAmount, currency)}
                       </div>
                     </div>
 
@@ -415,6 +504,13 @@ export const EconomyView: React.FC = () => {
                       </div>
                     )}
 
+                    <button
+                      onClick={() => openEditDebt(debt)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                      title={lang === 'id' ? 'Edit hutang' : 'Edit debt'}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => deleteDebt(debt.id)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10"
@@ -440,7 +536,7 @@ export const EconomyView: React.FC = () => {
             <div key={s.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <div className="font-bold text-sm">{s.icon} {s.name}</div>
-                <div className="text-xs text-slate-400">Rp {s.currentAmount.toLocaleString()} / {s.targetAmount.toLocaleString()}</div>
+                <div className="text-xs text-slate-400">{fmtMoney(s.currentAmount, currency)} / {fmtMoney(s.targetAmount, currency)}</div>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => addToSaving(s.id, 50000)} className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold">+50k</button>
@@ -460,7 +556,7 @@ export const EconomyView: React.FC = () => {
           </div>
           {investments.map((i) => (
             <div key={i.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-              <div className="font-bold text-sm">{i.icon} {i.name} · Rp {i.amount.toLocaleString()}</div>
+              <div className="font-bold text-sm">{i.icon} {i.name} · {fmtMoney(i.amount, currency)}</div>
               <div className="flex gap-2">
                 <button onClick={() => collectInvestmentReturn(i.id)} className="px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-bold">+5%</button>
                 <button onClick={() => withdrawInvestment(i.id)} className="px-2 py-1 rounded-lg bg-blue-500/20 text-blue-300 text-xs font-bold">{lang === 'id' ? 'Tarik' : 'Withdraw'}</button>
@@ -471,17 +567,31 @@ export const EconomyView: React.FC = () => {
       )}
       {activeTab === 'subs' && (
         <div className="space-y-3">
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
             <input value={subName} onChange={(e) => setSubName(e.target.value)} placeholder={lang === 'id' ? 'Langganan' : 'Subscription'} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1 min-w-[8rem]" />
             <input type="number" value={subAmt} onChange={(e) => setSubAmt(Number(e.target.value))} className="w-28 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
             <input type="date" value={subDue} onChange={(e) => setSubDue(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
-            <button onClick={() => { if (subName.trim()) { addSubscription(subName.trim(), subAmt, subDue); setSubName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
+            {editingSub ? (
+              <>
+                <button onClick={async () => {
+                  if (!subName.trim()) return;
+                  // Parity EditSubscription dialog PyQt.
+                  const res = await life.updateSubscription(editingSub.id, { name: subName.trim(), amount: subAmt, dueDate: subDue }).catch(() => null);
+                  if (res) applyLive(res);
+                  setEditingSub(null); setSubName('');
+                }} className="px-3 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">{lang === 'id' ? 'Simpan' : 'Save'}</button>
+                <button onClick={() => { setEditingSub(null); setSubName(''); }} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              </>
+            ) : (
+              <button onClick={() => { if (subName.trim()) { addSubscription(subName.trim(), subAmt, subDue); setSubName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
+            )}
           </div>
           {subscriptions.map((s) => (
             <div key={s.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-              <div className="text-sm font-bold">{s.icon} {s.name} · Rp {s.amount.toLocaleString()} · {s.dueDate}</div>
+              <div className="text-sm font-bold">{s.icon} {s.name} · {fmtMoney(s.amount, currency)} · {s.dueDate}</div>
               <div className="flex gap-2">
                 <button onClick={() => renewSubscription(s.id)} className="px-2 py-1 rounded-lg bg-sky-500/20 text-sky-300 text-xs font-bold">{lang === 'id' ? 'Perpanjang' : 'Renew'}</button>
+                <button onClick={() => { setEditingSub(s); setSubName(s.name); setSubAmt(Math.round(s.amount)); setSubDue(s.dueDate || ''); }} className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold" title={lang === 'id' ? 'Edit' : 'Edit'}><Pencil className="w-3.5 h-3.5" /></button>
                 <button onClick={() => deleteSubscription(s.id)} className="text-rose-400"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
@@ -497,7 +607,7 @@ export const EconomyView: React.FC = () => {
           </div>
           {debtNotes.map((n) => (
             <div key={n.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-              <div className="text-sm font-bold">{n.personName} · Rp {n.amount.toLocaleString()} · {n.status}</div>
+              <div className="text-sm font-bold">{n.personName} · {fmtMoney(n.amount, currency)} · {n.status}</div>
               <div className="flex gap-2">
                 {n.status !== 'paid' && <button onClick={() => settleDebtNote(n.id)} className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold">{lang === 'id' ? 'Lunas' : 'Settle'}</button>}
                 <button onClick={() => deleteDebtNote(n.id)} className="text-rose-400"><Trash2 className="w-4 h-4" /></button>
@@ -511,9 +621,28 @@ export const EconomyView: React.FC = () => {
       {isTxModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Catat Transaksi Keuangan' : 'Log Transaction'}</h3>
+            <h3 className="text-lg font-black text-slate-100">{editingTx ? (lang === 'id' ? 'Edit Transaksi' : 'Edit Transaction') : (lang === 'id' ? 'Catat Transaksi Keuangan' : 'Log Transaction')}</h3>
 
             <form onSubmit={handleCreateTx} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Nama transaksi' : 'Transaction name'}</label>
+                <input
+                  type="text"
+                  value={txName}
+                  onChange={(e) => setTxName(e.target.value)}
+                  placeholder={lang === 'id' ? 'mis. Makan siang' : 'e.g. Lunch'}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Tanggal' : 'Date'}</label>
+                <input
+                  type="date"
+                  value={txDate}
+                  onChange={(e) => setTxDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -541,24 +670,27 @@ export const EconomyView: React.FC = () => {
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Kategori Transaksi' : 'Category'}</label>
-                <select
+                <input
+                  type="text"
                   value={txCategory}
                   onChange={(e) => setTxCategory(e.target.value)}
+                  list="economy-cat-suggest"
+                  placeholder={t('economy_category_ph', lang === 'id' ? 'Contoh: Makanan, Gaji, Transport, Hiburan...' : 'Example: Food, Salary, Transport, Entertainment...')}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="Food & Groceries">Food & Groceries</option>
-                  <option value="Transport & Gas">Transport & Gas</option>
-                  <option value="Salary / Project">Salary / Project</option>
-                  <option value="Entertainment & Hobbies">Entertainment & Hobbies</option>
-                  <option value="Health & Fitness">Health & Fitness</option>
-                  <option value="Investments & Savings">Investments & Savings</option>
-                  <option value="Bills & Utilities">Bills & Utilities</option>
-                  <option value="Other">Other</option>
-                </select>
+                />
+                <datalist id="economy-cat-suggest">
+                  {[...new Set(transactions.map((t) => t.category).filter(Boolean))].map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+                <p className="text-[10px] text-slate-500 mt-1">{t('economy_category_hint', lang === 'id' ? '💡 Bebas isi apapun. Nanti akan muncul sebagai tab filter.' : '💡 Enter anything. It appears as a filter tab.')}</p>
               </div>
 
+              {/* Folder target (parity economy_folder_label) */}
+              <TxFolderSelect folderId={txFolderId} setFolderId={setTxFolderId} />
+
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Nominal (Rupiah)' : 'Amount (IDR)'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? `Nominal (${currency})` : `Amount (${currency})`}</label>
                 <input
                   type="number"
                   min="1000"
@@ -583,7 +715,7 @@ export const EconomyView: React.FC = () => {
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsTxModalOpen(false)}
+                  onClick={() => { setIsTxModalOpen(false); setEditingTx(null); }}
                   className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
                 >
                   {lang === 'id' ? 'Batal' : 'Cancel'}
@@ -604,7 +736,7 @@ export const EconomyView: React.FC = () => {
       {isDebtModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Tambah Hutang / Piutang' : 'New Debt / Credit Entry'}</h3>
+            <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Tambah Hutang' : 'Add Debt'}</h3>
 
             <form onSubmit={handleCreateDebt} className="space-y-3 text-xs">
               <div>
@@ -630,7 +762,7 @@ export const EconomyView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Total Jumlah (Rp)' : 'Total (IDR)'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? `Total Jumlah (${currency})` : `Total (${currency})`}</label>
                   <input
                     type="number"
                     min="1000"
@@ -671,5 +803,43 @@ export const EconomyView: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+/** Select folder target di dialog tambah transaksi (parity Folder keuangan). */
+const TxFolderSelect: React.FC<{ folderId: string | null; setFolderId: (v: string | null) => void }> = ({ folderId, setFolderId }) => {
+  const { taskFolders } = useGame();
+  const folders = taskFolders.filter((f: any) => f.mode === 'economy');
+  if (folders.length === 0) return null;
+  return (
+    <div>
+      <label className="block text-slate-300 font-semibold mb-1 text-xs"><FolderOpen className="w-3.5 h-3.5 inline mr-1" />Folder</label>
+      <select
+        value={folderId || ''}
+        onChange={(e) => setFolderId(e.target.value || null)}
+        className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500 text-xs"
+      >
+        <option value="">📂 Root</option>
+        {folders.map((f: any) => (<option key={f.id} value={f.id}>{f.icon || '📁'} {f.name}</option>))}
+      </select>
+    </div>
+  );
+};
+
+/** Pill kecil memindahkan transaksi antar-folder (parity drag-drop PyQt). */
+const TxFolderPill: React.FC<{ tx: any }> = ({ tx }) => {
+  const { taskFolders, moveTransaction } = useGame();
+  const folders = taskFolders.filter((f: any) => f.mode === 'economy');
+  if (folders.length === 0) return null;
+  return (
+    <select
+      value={tx.folderId || ''}
+      onChange={(e) => moveTransaction(tx.id, e.target.value || null)}
+      className="px-1.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] text-slate-300"
+      title={tx.folderId ? undefined : 'Root'}
+    >
+      <option value="">📂 Root</option>
+      {folders.map((f: any) => (<option key={f.id} value={f.id}>{f.icon || '📁'} {f.name}</option>))}
+    </select>
   );
 };

@@ -1,9 +1,25 @@
-import { apiGet, apiPost, authToken, apiBase } from './client';
+import { apiGet, apiPost, authToken, apiBase, apiUploadFile } from './client';
 
 export const studio = {
   addNotebook: (title: string, description?: string, icon?: string) =>
     apiPost<any>('/api/learning/notebooks', { title, description, icon }),
   deleteNotebook: (id: string) => apiPost<any>(`/api/learning/notebooks/${id}/delete`, {}),
+  listNotebooks: () => apiGet<any>('/api/learning/notebooks'),
+  renameNotebook: (id: string, title: string) =>
+    apiPost<any>(`/api/learning/notebooks/${id}/rename`, { title }),
+  generateNotebook: (notebookId: string, type: string, topic = '') =>
+    apiPost<any>('/api/learning/generate', { notebookId, type, topic }),
+  deleteGeneration: (notebookId: string, generationId: string) =>
+    apiPost<any>('/api/learning/generations/delete', { notebookId, generationId }),
+  uploadLearningSource: async (notebookId: string, file: File) => {
+    // Parity LearningPage._add_source_files: upload mentah lalu server ekstrak.
+    const up = await apiUploadFile<any>('learning_source', file);
+    const inner = up && typeof up.result === 'object' && up.result ? up.result : up;
+    if (!inner || inner.ok === false || !inner.path) return inner;
+    return apiPost<any>(`/api/learning/notebooks/${notebookId}/upload-source`, { path: inner.path });
+  },
+  learningSourceContent: (notebookId: string, sourceId: string) =>
+    apiPost<any>('/api/learning/source-content', { notebookId, sourceId }),
   addSource: (notebookId: string, title: string, content: string, type?: string) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/sources`, { title, content, type }),
   deleteSource: (notebookId: string, sourceId: string) =>
@@ -21,7 +37,14 @@ export const studio = {
   sendChat: (text: string, otherId?: string) =>
     apiPost<any>('/api/social/messages', { text, otherId }),
   sendGuild: (text: string) => apiPost<any>('/api/guild/messages', { text }),
-  attackGuildBoss: (damage?: number) => apiPost<any>('/api/guild/boss/attack', { damage }),
+  attackGuildBoss: (action: 'light' | 'heavy' | 'block' | 'ultimate' = 'light') =>
+    apiPost<any>('/api/guild/boss/attack', { action }),
+  startGuildBoss: (bossId: string, teamIds?: string[]) =>
+    apiPost<any>('/api/guild/boss/start', { bossId, teamIds }),
+  guildSkill: () => apiPost<any>('/api/guild/skill', {}),
+  guildQuickHeal: () => apiPost<any>('/api/guild/quick-heal', {}),
+  guildRewards: () => apiGet<any>('/api/guild/rewards'),
+  claimGuildReward: (id: string) => apiPost<any>(`/api/guild/rewards/${id}/claim`, {}),
   createGuild: (name: string, description?: string) =>
     apiPost<any>('/api/guild/create', { name, description }),
   joinGuild: (guildId: string) => apiPost<any>('/api/guild/join', { guildId }),
@@ -35,6 +58,19 @@ export const studio = {
   acceptGuildTransfer: (transferId: string) => apiPost<any>('/api/guild/accept-transfer', { transferId }),
   guildDescription: (description: string) => apiPost<any>('/api/guild/description', { description }),
   clearGuildChat: () => apiPost<any>('/api/guild/clear-chat', {}),
+  // ── Friends chat lokal (parity ChatDialog) ──────────────────────────────
+  friendChat: (friendId: number | string, limit = 100) =>
+    apiGet<any>(`/api/friends/${friendId}/chat` + (limit ? `?limit=${limit}` : '')),
+  sendFriendChat: (friendId: number | string, text: string, replyToId?: string | number | null) =>
+    apiPost<any>(`/api/friends/${friendId}/chat`, { text, replyToId: replyToId || null }),
+  clearFriendChat: (friendId: number | string) =>
+    apiPost<any>(`/api/friends/${friendId}/clear`, {}),
+  editFriendMessage: (mid: string | number, text: string) =>
+    apiPost<any>(`/api/friends/messages/${mid}/edit`, { text }),
+  deleteFriendMessage: (mid: string | number) =>
+    apiPost<any>(`/api/friends/messages/${mid}/delete`, {}),
+  reactFriendMessage: (mid: string | number, reaction: string | null) =>
+    apiPost<any>(`/api/friends/messages/${mid}/reaction`, { reaction }),
   customBoss: (body: Record<string, unknown>) => apiPost<any>('/api/guild/custom-boss', body),
   endCouple: () => apiPost<any>('/api/couple/end', {}),
   coupleRequest: (friendId: string) => apiPost<any>('/api/couple/request', { friendId }),
@@ -50,6 +86,24 @@ export const studio = {
   rejectGuildRequest: (id: string) => apiPost<any>(`/api/guild/requests/${id}/reject`, {}),
   lovePhotoMeta: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/love/photos/${id}/meta`, body),
+  // --- LovePage parity: delete handlers, favorit prompt, album galeri ---
+  deleteLovePhoto: (id: string) => apiPost<any>(`/api/love/photos/${id}/delete`, {}),
+  deleteLoveMemory: (id: string) => apiPost<any>(`/api/love/memories/${id}/delete`, {}),
+  deleteLovePrompt: (id: string) => apiPost<any>(`/api/love/prompts/${id}/delete`, {}),
+  deleteLoveWeekly: (id: string) => apiPost<any>(`/api/love/weekly/${id}/delete`, {}),
+  deleteLoveCycle: (id: string) => apiPost<any>(`/api/love/cycles/${id}/delete`, {}),
+  deleteLoveEvent: (id: string) => apiPost<any>(`/api/love/events/${id}/delete`, {}),
+  deleteLoveBucket: (id: string) => apiPost<any>(`/api/love/bucket/${id}/delete`, {}),
+  lovePromptFavorite: (promptKey: string) => apiPost<any>('/api/love/prompt-favorite', { promptKey }),
+  createLoveAlbum: (body: { name: string; scope?: string }) => apiPost<any>('/api/love/albums', body),
+  renameLoveAlbum: (id: string, name: string) => apiPost<any>(`/api/love/albums/${id}/rename`, { name }),
+  deleteLoveAlbum: (id: string) => apiPost<any>(`/api/love/albums/${id}/delete`, {}),
+  loveAlbumAddPhoto: (albumId: string, photoId: string) =>
+    apiPost<any>(`/api/love/albums/${albumId}/photo`, { photoId }),
+  loveAlbumMovePhoto: (albumId: string, photoId: string, sourceAlbumId?: string | null) =>
+    apiPost<any>(`/api/love/albums/${albumId}/photo-move`, { photoId, sourceAlbumId }),
+  loveAlbumRemovePhoto: (albumId: string, photoId: string) =>
+    apiPost<any>(`/api/love/albums/${albumId}/photo-remove`, { photoId }),
   // Fetch a Love Space photo as a Blob (with auth) and return an object URL so
   // <img> can render it without exposing the session token in a plain URL.
   lovePhotoImage: (id: string): Promise<string> => {
@@ -88,6 +142,12 @@ export const studio = {
   // Lyrics (3-provider: LRCLIB get/search + lyrics.ovh) — parity dengan _LyricsFetcher PyQt
   musicLyrics: (artist: string, title: string) =>
     apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}`),
+  uploadMusicFile: async (file: File) => {
+    // Parity MusicPage._add_files/_select_folder: file masuk folder library
+    // musik server lalu direferensikan playlist berdasar path absolut.
+    const up = await apiUploadFile<any>('music', file);
+    return up && typeof up.result === 'object' && up.result ? up.result : up;
+  },
   // Playlist management (rename/delete/remove/move/copy)
   renamePlaylist: (playlistId: string | number, name: string) =>
     apiPost<any>('/api/music/playlist-rename', { playlistId, name }),

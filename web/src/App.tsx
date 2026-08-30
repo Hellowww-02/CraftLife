@@ -10,13 +10,14 @@ import { LevelUpModal } from './components/LevelUpModal';
 import { CommandPalette } from './components/CommandPalette';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { LoginView } from './components/views/LoginView';
+import { t } from './i18n';
 
 import { DashboardView } from './components/views/DashboardView';
 import { HabitsView } from './components/views/HabitsView';
 import { DailiesView } from './components/views/DailiesView';
 import { QuestsView } from './components/views/QuestsView';
 import { SportView } from './components/views/SportView';
-import { NutritionView } from './components/views/NutritionView';
+import { HealthFoodView } from './components/views/HealthFoodView';
 import { ShopView } from './components/views/ShopView';
 import { CraftView } from './components/views/CraftView';
 import { PetsView } from './components/views/PetsView';
@@ -78,7 +79,7 @@ const MainLayout: React.FC = () => {
       case 'sport':
         return <SportView />;
       case 'nutrition':
-        return <NutritionView />;
+        return <HealthFoodView />;
       case 'shop':
         return <ShopView />;
       case 'craft':
@@ -88,13 +89,13 @@ const MainLayout: React.FC = () => {
       case 'boss':
         return <GuildView />;
       case 'economy':
-        return <EconomyView />;
+        return <EconomyView onNavigate={(view) => setActiveView(view)} />;
       case 'supplies':
-        return <SuppliesView />;
+        return <SuppliesView onNavigate={(view) => setActiveView(view)} />;
       case 'notes':
         return <NotesView />;
       case 'health':
-        return <NutritionView />;
+        return <HealthFoodView />;
       case 'pomodoro':
         return <PomodoroView />;
       case 'learning':
@@ -170,6 +171,43 @@ const OnboardingGate: React.FC = () => {
   return <MainLayout />;
 };
 
+/**
+ * P2 Gate: UI hanya dirender SETELAH bootstrap server berhasil.
+ * Gagal → layar error + tombol retry. Tidak ada lagi data demo/fake fallback.
+ */
+const HydrationGate: React.FC = () => {
+  const { hydrated, apiError, retryBootstrap } = useGame();
+
+  if (apiError) {
+    return (
+      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="text-5xl">⛏️</div>
+        <h1 className="text-xl font-black text-rose-400">{t('web_api_offline', 'API lokal tidak merespons. Jalankan api_server di port 8765.')}</h1>
+        <p className="text-sm text-slate-400 max-w-md">{t('web_offline_gate_hint', 'Koneksi ke server lokal terputus. Pastikan CraftLife API berjalan lalu coba lagi.')}</p>
+        <code className="text-xs bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-500">{apiError}</code>
+        <button
+          type="button"
+          onClick={retryBootstrap}
+          className="mt-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors"
+        >
+          {t('web_retry', 'Coba lagi')}
+        </button>
+      </div>
+    );
+  }
+
+  if (!hydrated) {
+    return (
+      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-3">
+        <div className="text-4xl animate-bounce">⛏️</div>
+        <p className="text-sm text-slate-400 font-semibold">{t('web_loading', 'Memuat...')}</p>
+      </div>
+    );
+  }
+
+  return <OnboardingGate />;
+};
+
 const Gate: React.FC = () => {
   const [showLogin, setShowLogin] = useState(wantLoginScreen);
   if (showLogin) {
@@ -193,7 +231,7 @@ const Gate: React.FC = () => {
 export default function App() {
   return (
     <GameProvider>
-      <OnboardingGate />
+      <HydrationGate />
     </GameProvider>
   );
 }

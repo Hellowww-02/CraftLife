@@ -2,102 +2,112 @@ import React from 'react';
 import { useGame } from '../../context/GameContext';
 import { liveShopItems, liveRecipes } from '../../data/liveCatalog';
 import { t } from '../../i18n';
-import { Hammer, Coins } from 'lucide-react';
+
+const tr = (key: string, vars?: Record<string, string | number>) => {
+  let s = t(key, key);
+  if (!vars) return s;
+  // Dukung placeholder bentuk {name} dan spec python {name:.0f}/{name:0.1f}
+  s = s.replace(/\{(\w+)(:[^}]*)?\}/g, (m, name, spec) => {
+    if (!(name in vars)) return m;
+    const v: any = (vars as any)[name];
+    return String(typeof v === 'number' && spec ? (Math.round(v * 10) / 10) : v);
+  });
+  return s;
+};
 
 export const CraftView: React.FC = () => {
   const { user, inventory, craftItem, lang } = useGame();
-  const SHOP_ITEMS = liveShopItems();
-  const CRAFT_RECIPES = liveRecipes();
+  const SHOP_ITEMS = liveShopItems() as Record<string, any>;
+  const CRAFT_RECIPES = liveRecipes() as any[];
+
+  // Parity CraftingPage.load: owned = item_id output ada di inventory (max 1 per resep)
+  const ownedIds = new Set(inventory.map((i) => i.itemId));
+  const ownedQty = new Map(inventory.map((i) => [i.itemId, i.quantity || 0]));
 
   return (
-    <div className="space-y-4">
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/30 to-slate-900 border border-amber-500/30">
-        <h2 className="text-xl font-black text-amber-300 flex items-center gap-2">
-          <Hammer className="w-5 h-5" /> {t('web_craft_title', lang === 'id' ? 'Tempa & Resep' : 'Craft & Recipes')}
-        </h2>
-        <p className="text-xs text-slate-400 mt-1">
-          {lang === 'id'
-            ? 'Tempa di Python/SQLite (cloud jika ter-link). Tidak ada kalkulasi RPG di browser.'
-            : 'Forging runs in Python/SQLite (cloud when linked). No RPG math in the browser.'}
+    <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
+      {/* Header halaman (parity PageHeader('crafting')) */}
+      <header>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
+          {tr('page_crafting_subtitle')}
         </p>
-        {user.cloudLinked && (
-          <p className="text-[11px] text-sky-300 mt-1">
-            {t('cloud_shop_wallet', lang === 'id'
-              ? `Craft memakai wallet cloud: ${(user.goldCloud ?? user.gold).toLocaleString()} Gold.`
-              : `Craft uses cloud wallet: ${(user.goldCloud ?? user.gold).toLocaleString()} Gold.`)}
-          </p>
-        )}
-      </div>
+        <h2 className="text-2xl font-black text-slate-100">{tr('page_crafting_title')}</h2>
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {CRAFT_RECIPES.map((recipe) => {
-          const resultItem = SHOP_ITEMS[recipe.resultItemId];
-          if (!resultItem) return null;
-          const hasMaterials = recipe.requiredItems.every((req) => {
-            const inv = inventory.find((i) => i.itemId === req.itemId && i.quantity >= req.quantity);
-            return !!inv;
-          });
-          const canAffordForge = hasMaterials && user.gold >= recipe.goldCost;
+      <div className="space-y-3">
+        {CRAFT_RECIPES.map((r: any) => {
+          const out = SHOP_ITEMS[r.resultItemId] || {};
+          // desc per bahasa (parity r["desc"][0/1])
+          const desc = (lang === 'id'
+            ? (r.descId || out.desc || '')
+            : (r.descEn || r.descId || out.desc || '')) as string;
+
+          // can_craft parity: input minimal 1; gold_ok terpisah
+          const invIds = new Set(inventory.filter((i) => (i.quantity || 0) >= 1).map((i) => i.itemId));
+          const goldNeed = r.goldCost || r.gold || 0;
+          const goldOk = (user.gold || 0) >= goldNeed;
+          const missing = (r.requiredItems || []).filter((req: any) => !invIds.has(req.itemId));
+          const ok = missing.length === 0 && goldOk;
+          const ownedAlready = ownedIds.has(r.resultItemId);
 
           return (
-            <div
-              key={recipe.resultItemId}
-              className="p-4.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-4"
-            >
-              <div>
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-xl bg-slate-800 border border-amber-500/40 flex items-center justify-center text-3xl shrink-0">
-                    {resultItem.icon}
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-sm text-amber-300">{resultItem.name}</h4>
-                    <p className="text-xs text-slate-400 mt-0.5">{resultItem.desc}</p>
-                    {resultItem.buffDesc && (
-                      <div className="text-[11px] font-bold text-emerald-400 mt-1">✨ {resultItem.buffDesc}</div>
-                    )}
-                  </div>
+            <div key={String(r.id || r.resultItemId)}
+              className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+              {/* Header: icon + nama output + buff + desc */}
+              <div className="flex items-start gap-3">
+                <div className="w-12 h-12 rounded-xl bg-slate-800 border border-amber-500/40 flex items-center justify-center text-3xl shrink-0">
+                  {out.icon || '🔨'}
                 </div>
-                <div className="space-y-1.5 pt-2 border-t border-slate-800">
-                  <div className="text-[11px] font-bold text-slate-400 uppercase">
-                    {lang === 'id' ? 'Bahan:' : 'Materials:'}
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-100">
+                    {out.name || r.resultItemId}
+                  </h4>
+                  <div className="text-[11px] font-bold text-emerald-400 mt-0.5">
+                    {out.buffDesc || ''}
                   </div>
-                  {recipe.requiredItems.map((req) => {
-                    const neededItem = SHOP_ITEMS[req.itemId];
-                    const inv = inventory.find((i) => i.itemId === req.itemId);
-                    const currentQty = inv ? inv.quantity : 0;
-                    const isMet = currentQty >= req.quantity;
-                    return (
-                      <div
-                        key={req.itemId}
-                        className={`flex items-center justify-between text-xs p-1.5 rounded-lg ${
-                          isMet ? 'bg-emerald-950/30 text-emerald-300' : 'bg-slate-800/60 text-slate-400'
-                        }`}
-                      >
-                        <span>{neededItem?.icon} {neededItem?.name || req.itemId}</span>
-                        <span className="font-bold">{currentQty} / {req.quantity}</span>
-                      </div>
-                    );
-                  })}
+                  <p className="text-[11px] text-slate-400 mt-0.5">{desc}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-between pt-3 border-t border-slate-800">
-                <div className="flex items-center gap-1 font-bold text-xs text-amber-300">
-                  <Coins className="w-4 h-4 text-amber-400" />
-                  <span>{recipe.goldCost} Gold</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => craftItem(recipe.resultItemId)}
-                  disabled={!canAffordForge}
-                  className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 ${
-                    canAffordForge
-                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                      : 'bg-slate-800 text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  <Hammer className="w-3.5 h-3.5" />
-                  {t('web_forge_item', lang === 'id' ? 'Tempa Senjata' : 'Forge Item')}
-                </button>
+
+              {/* Materials (parity: [have]/[missing] tag + icon + nama; light/e05050) */}
+              <div className="flex flex-wrap items-center gap-2.5 text-[11px]">
+                <span className="text-slate-500">{tr('crafting_needs')}</span>
+                {(r.requiredItems || []).map((req: any) => {
+                  const it = SHOP_ITEMS[req.itemId] || {};
+                  const have = (ownedQty.get(req.itemId) || 0) >= 1;
+                  return (
+                    <span key={req.itemId}
+                      className={have ? 'text-amber-100' : 'text-rose-500'}>
+                      {have ? tr('crafting_have_tag') : tr('crafting_missing_tag')}{' '}
+                      {it.icon || '❔'} {it.name || req.itemId}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Gold + aksi (parity foot) */}
+              <div className="flex items-center gap-3 pt-1">
+                <span className={`text-[11px] font-bold ${goldOk ? 'text-amber-300' : 'text-rose-500'}`}>
+                  {tr('crafting_gold_cost', { gold: goldNeed })}
+                </span>
+                {!goldOk && (
+                  <span className="text-[10px] text-slate-500">
+                    {tr('crafting_gold_short', { have: Math.floor(user.gold || 0), need: goldNeed })}
+                  </span>
+                )}
+                <span className="flex-1" />
+                {ownedAlready ? (
+                  <span className="text-[11px] font-bold text-amber-100">{tr('crafting_owned')}</span>
+                ) : (
+                  <button type="button" disabled={!ok}
+                    onClick={() => craftItem(r.resultItemId)}
+                    className={`min-w-[130px] px-4 py-2 rounded-lg font-black text-[11px] ${
+                      ok ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                         : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    }`}>
+                    {tr('crafting_btn')}
+                  </button>
+                )}
               </div>
             </div>
           );

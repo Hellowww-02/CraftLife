@@ -1,469 +1,205 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
-import { HOLIDAYS_2026 } from '../../data/holidaysData';
-import { HolidayItem } from '../../types';
-import { apiGet } from '../../api/client';
-import {
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Plus,
-  Trash2,
-  Bell,
-  BellOff,
-  Volume2,
-  Sparkles,
-  CheckCircle2,
-} from 'lucide-react';
+import { t } from '../../i18n';
+import { authToken } from '../../api/client';
+function auth(): Record<string, string> {
+  return authToken() ? { Authorization: `Bearer ${authToken()}` } : {};
+}
+
+
+const tr = (key: string, vars?: Record<string, string>) => {
+  let s = t(key, key);
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(v);
+  return s;
+};
+
+interface HolidayMap { [date: string]: { nameId: string; nameEn: string } }
+
+function pad(n: number) { return String(n).padStart(2, '0'); }
 
 export const CalendarView: React.FC = () => {
-  const {
-    reminders,
-    addReminder,
-    toggleReminder,
-    deleteReminder,
-    calendarNotes,
-    saveCalendarNote,
-    dailies,
-    quests,
-    lang,
-    showToast,
-  } = useGame();
+  const { calendarNotes, saveCalendarNote, deleteCalendarNote, lang } = useGame();
+  const now = new Date();
+  // Parity CalendarPage.__init__: tampilkan SATU TAHUN penuh (12 bulan, grid 3 kolom).
+  const [year, setYear] = useState(now.getFullYear());
+  const [holidays, setHolidays] = useState<HolidayMap>({});
+  const [noteDialog, setNoteDialog] = useState<string | null>(null); // date_str
+  const [draft, setDraft] = useState('');
 
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDate());
-  const [dayNoteDraft, setDayNoteDraft] = useState('');
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
-  // New reminder modal
-  const [showAddReminderModal, setShowAddReminderModal] = useState(false);
-  const [remTitle, setRemTitle] = useState('');
-  const [remTime, setRemTime] = useState('09:00');
-  const [remRepeat, setRemRepeat] = useState<'none' | 'daily' | 'weekdays' | 'weekly'>('daily');
-  const [remSound, setRemSound] = useState<'beep' | 'bell' | 'magic' | 'fanfare'>('bell');
+  // Map snapshot calendarNotes (parity _fetch_notes untuk 3 tahun; snapshot sudah lengkap)
+  const notes = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const n of calendarNotes) if (n.note?.trim()) m[n.date] = n.note;
+    return m;
+  }, [calendarNotes]);
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth(); // 0-indexed
-  const [holidays, setHolidays] = useState<HolidayItem[]>(HOLIDAYS_2026);
-
+  // Parity _fetch_holidays: 3 tahun (server mengembalikan y-1..y+1)
   useEffect(() => {
-    apiGet<any>(`/api/holidays?year=${year}`)
-      .then((res) => {
-        if (Array.isArray(res?.holidays) && res.holidays.length) setHolidays(res.holidays);
+    let alive = true;
+    fetch(`/api/holidays?year=${year}`, { headers: auth() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!alive || !data) return;
+        const m: HolidayMap = {};
+        for (const h of data.holidays || []) m[h.date] = { nameId: h.nameId, nameEn: h.nameEn };
+        setHolidays(m);
       })
-      .catch(() => undefined);
+      .catch(() => { /* offline: biarkan kosong */ });
+    return () => { alive = false; };
   }, [year]);
 
-  // Month names
-  const monthNamesId = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-  ];
-  const monthNamesEn = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
+  // ── Parity header actions: ◀ tahun | label | tahun ▶ | Hari Ini ──
+  const prevYear = () => setYear((y) => y - 1);
+  const nextYear = () => setYear((y) => y + 1);
+  const gotoToday = () => setYear(now.getFullYear());
 
-  const currentMonthName = lang === 'id' ? monthNamesId[month] : monthNamesEn[month];
-
-  // Days in month
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = Sun, 1 = Mon ...
-
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
+  const holidayName = (ds: string) => {
+    const h = holidays[ds];
+    if (!h) return '';
+    return lang === 'id' ? h.nameId : h.nameEn;
   };
 
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
+  // ── Parity _open_note_dialog ──
+  const openNote = (ds: string) => {
+    setDraft(notes[ds] || '');
+    setNoteDialog(ds);
+  };
+  // Parity _save_note: strip; kosong → hapus
+  const saveNote = () => {
+    if (!noteDialog) return;
+    saveCalendarNote(noteDialog, draft);
+    setNoteDialog(null);
+  };
+  const removeNote = () => {
+    if (!noteDialog) return;
+    deleteCalendarNote(noteDialog);
+    setNoteDialog(null);
   };
 
-  // Find holidays for current year & month
-  const monthHolidays = holidays.filter((h: HolidayItem) => {
-    const [hYear, hMonth] = h.date.split('-').map(Number);
-    return hYear === year && hMonth === month + 1;
-  });
+  const dayHeaders = [0, 1, 2, 3, 4, 5, 6].map((i) => tr(`day_${i}`));
 
-  const selectedDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
-  const selectedDayHoliday = HOLIDAYS_2026.find((h: HolidayItem) => h.date === selectedDateStr);
-  const selectedCalNote = calendarNotes.find((n) => n.date === selectedDateStr)?.note || '';
+  const renderMonth = (month: number) => {
+    const first = new Date(year, month - 1, 1);
+    // Python calmod.monthrange: Senin=0..Minggu=6 — JS getDay(): Minggu=0 → shift
+    const firstDay = (first.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const cells: (string | null)[] = [];
+    for (let i = 0; i < firstDay; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(`${year}-${pad(month)}-${pad(d)}`);
 
-  useEffect(() => {
-    setDayNoteDraft(selectedCalNote);
-  }, [selectedDateStr, selectedCalNote]);
+    return (
+      <div key={month} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 flex flex-col">
+        <h3 className="text-center text-sm font-black text-amber-200 pb-2">{tr(`month_${pad(month)}`)}</h3>
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {dayHeaders.map((d, i) => (
+            <div key={i} className="text-[10px] font-bold text-slate-500 pb-1">{d}</div>
+          ))}
+          {cells.map((ds, idx) => {
+            if (!ds) return <div key={`x${idx}`} />;
+            const day = parseInt(ds.slice(8), 10);
+            const isToday = ds === todayStr;
+            const isHoliday = ds in holidays;
+            const hasNote = ds in notes;
+            // Parity gaya: hover primary; today primary+accent border;
+            // holiday teks merah + tooltip nama; note 📝 + border accent.
+            return (
+              <button
+                key={ds}
+                type="button"
+                title={isHoliday ? `🏷️ ${holidayName(ds) || 'Libur'}` : undefined}
+                onClick={() => openNote(ds)}
+                className={`min-h-[34px] rounded-md text-xs font-bold border transition-colors leading-tight ${
+                  isToday
+                    ? 'bg-amber-500 text-slate-950 border-amber-300 border-2'
+                    : 'bg-slate-950 border-slate-800 hover:bg-amber-500/80 hover:text-slate-950'
+                } ${isHoliday && !isToday ? 'text-rose-400' : ''} ${
+                  hasNote ? 'border-amber-400/80' : ''
+                }`}
+              >
+                {day}
+                {hasNote && <span className="block text-[9px] leading-none">📝</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div id="calendar-reminders-view" className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-2xl">
-            📅
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <span>{lang === 'id' ? 'Kalender & Pengingat Alarm' : 'Calendar & Reminder Alarms'}</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-medium">
-                Indonesian Holidays Included
-              </span>
-            </h1>
-            <p className="text-xs text-slate-400">
-              {lang === 'id'
-                ? 'Pantau hari libur nasional Indonesia (holidays.py), agenda quest, serta jadwal pengingat berulang.'
-                : 'Track Indonesian public holidays, agenda tasks, and set recurring sound alarm reminders.'}
-            </p>
-          </div>
+    <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
+      {/* Header halaman (parity PageHeader('calendar') + aksi tahun) */}
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
+            {tr('page_calendar_subtitle')}
+          </p>
+          <h2 className="text-2xl font-black text-slate-100">{tr('page_calendar_title')}</h2>
         </div>
-        <button
-          onClick={() => setShowAddReminderModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-cyan-600/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{lang === 'id' ? 'Set Pengingat' : 'Add Reminder'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={prevYear} aria-label="prev-year"
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-black text-slate-100 w-14 text-center">{year}</span>
+          <button type="button" onClick={nextYear} aria-label="next-year"
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          <button type="button" onClick={gotoToday}
+            className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
+            {tr('food_today')}
+          </button>
+        </div>
+      </header>
+
+      {/* Grid 12 bulan (parity months_grid 3 kolom; responsif 1/2/3) */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(renderMonth)}
       </div>
 
-      {/* Main Grid: Calendar Matrix + Daily Agenda & Reminders */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Calendar Matrix */}
-        <div className="lg:col-span-2 p-6 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-6">
-          {/* Month Header Navigation */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-slate-100">
-                {currentMonthName} {year}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrevMonth}
-                className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentDate(new Date(year - 1, month, 1))}
-                className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg"
-              >
-                « {year - 1}
-              </button>
-              <button
-                onClick={() => setCurrentDate(new Date())}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg transition-colors"
-              >
-                {lang === 'id' ? 'Hari Ini' : 'Today'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentDate(new Date(year + 1, month, 1))}
-                className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg"
-              >
-                {year + 1} »
-              </button>
-              <button
-                onClick={handleNextMonth}
-                className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Weekday Headers */}
-          <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">
-            {['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'].map((day, idx) => (
-              <div key={idx} className={idx === 0 ? 'text-rose-400' : ''}>
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Days Grid */}
-          <div className="grid grid-cols-7 gap-2">
-            {/* Empty slots for first week offset */}
-            {Array.from({ length: firstDayOfWeek }).map((_, i) => (
-              <div key={`empty_${i}`} className="h-16 rounded-xl bg-slate-950/20 border border-transparent" />
-            ))}
-
-            {/* Month Days */}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const dayNum = i + 1;
-              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-              const holiday = holidays.find((h: HolidayItem) => h.date === dateStr);
-              const hasNote = calendarNotes.some((n) => n.date === dateStr && n.note);
-              const isToday =
-                year === new Date().getFullYear() &&
-                month === new Date().getMonth() &&
-                dayNum === new Date().getDate();
-              const isSelected = dayNum === selectedDay;
-              const isSunday = (firstDayOfWeek + i) % 7 === 0;
-
-              return (
-                <div
-                  key={dayNum}
-                  onClick={() => setSelectedDay(dayNum)}
-                  className={`min-h-[72px] p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-cyan-950/60 border-cyan-500/60 text-cyan-200 shadow-md ring-1 ring-cyan-500/50'
-                      : holiday
-                      ? 'bg-rose-950/30 border-rose-500/30 text-rose-300 hover:border-rose-400'
-                      : 'bg-slate-950/50 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-xs font-bold ${
-                        isSunday || holiday ? 'text-rose-400' : 'text-slate-200'
-                      }`}
-                    >
-                      {dayNum}
-                    </span>
-                    {holiday && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
-                    {hasNote && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
-                    {isToday && <span className="text-[9px] text-emerald-400">•</span>}
-                  </div>
-
-                  {holiday && (
-                    <span className="text-[10px] text-rose-300/90 truncate block font-medium" title={lang === 'id' ? holiday.nameId : holiday.nameEn}>
-                      {lang === 'id' ? holiday.nameId : holiday.nameEn}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Month Holidays Footnote */}
-          {monthHolidays.length > 0 && (
-            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
-                {lang === 'id' ? 'Hari Libur Bulan Ini' : 'Holidays This Month'} ({monthHolidays.length})
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                {monthHolidays.map((h: HolidayItem, i: number) => (
-                  <div key={i} className="flex items-center gap-2 text-slate-300">
-                    <span className="font-mono text-rose-400 font-bold">{h.date}:</span>
-                    <span className="truncate">{lang === 'id' ? h.nameId : h.nameEn}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right 1 Column: Selected Day Agenda & Reminders */}
-        <div className="space-y-6">
-          {/* Selected Date Summary Card */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="font-bold text-base text-slate-100">
-                  {selectedDay} {currentMonthName} {year}
-                </h3>
-                <span className="text-xs text-slate-400">Daily Schedule & Tasks</span>
-              </div>
-              {selectedDayHoliday && (
-                <span className="text-xs px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 font-semibold">
-                  Holiday 🏖️
-                </span>
-              )}
-            </div>
-
-            {selectedDayHoliday && (
-              <div className="p-3 bg-rose-950/30 border border-rose-500/30 rounded-xl text-xs text-rose-200">
-                <span className="font-bold">{lang === 'id' ? selectedDayHoliday.nameId : selectedDayHoliday.nameEn}</span>
-                {selectedDayHoliday.type === 'national' && (
-                  <span className="block text-[11px] text-rose-400">Libur Nasional Resmi</span>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
-                {lang === 'id' ? 'Catatan hari ini' : 'Day note'}
+      {/* ── Dialog catatan (parity _open_note_dialog) ── */}
+      {noteDialog && (
+        <div className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md space-y-3">
+            <h3 className="text-sm font-black text-slate-100">
+              {tr('calendar_note_title', { date: noteDialog })}
+            </h3>
+            {holidayName(noteDialog) ? (
+              <p className="text-xs font-bold text-amber-300">
+                {tr('calendar_holiday_info', { name: holidayName(noteDialog) })}
+              </p>
+            ) : null}
+            <label className="block space-y-1">
+              <span className="text-[11px] uppercase tracking-wider text-slate-500">
+                {tr('calendar_note_label')}
               </span>
               <textarea
-                key={selectedDateStr}
-                defaultValue={selectedCalNote}
-                onChange={(e) => setDayNoteDraft(e.target.value)}
-                rows={3}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200"
-                placeholder={lang === 'id' ? 'Agenda / catatan…' : 'Agenda / note…'}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={tr('calendar_note_placeholder')}
+                rows={5}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 resize-none"
               />
-              <button
-                type="button"
-                onClick={() => saveCalendarNote(selectedDateStr, dayNoteDraft || selectedCalNote)}
-                className="w-full py-1.5 rounded-lg bg-cyan-600 text-white text-xs font-bold"
-              >
-                {lang === 'id' ? 'Simpan catatan' : 'Save note'}
+            </label>
+            <div className="flex justify-between gap-2 pt-1">
+              <button type="button" onClick={removeNote}
+                className="px-4 py-2 rounded-xl bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 text-xs font-bold">
+                {tr('calendar_delete')}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  saveCalendarNote(selectedDateStr, '');
-                  setDayNoteDraft('');
-                }}
-                className="w-full py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold"
-              >
-                {lang === 'id' ? 'Hapus catatan hari ini' : 'Delete day note'}
-              </button>
-            </div>
-
-            {/* Active Dailies Snapshot */}
-            <div className="space-y-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
-                {lang === 'id' ? 'Tugas Harian Aktif' : 'Active Dailies'} ({dailies.length})
-              </span>
-              <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-                {dailies.map((d) => (
-                  <div
-                    key={d.id}
-                    className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-lg text-xs flex items-center justify-between text-slate-300"
-                  >
-                    <span>{d.title}</span>
-                    <span className="font-mono text-[11px] text-amber-400 font-bold">+{d.streak}d streak</span>
-                  </div>
-                ))}
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setNoteDialog(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">
+                  {tr('btn_cancel')}
+                </button>
+                <button type="button" onClick={saveNote}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
+                  {tr('dialog_save')}
+                </button>
               </div>
-            </div>
-          </div>
-
-          {/* Alarm Reminders List */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-cyan-400" />
-                <span>{lang === 'id' ? 'Daftar Pengingat Alarm' : 'Alarms & Reminders'}</span>
-              </h3>
-              <button
-                onClick={() => setShowAddReminderModal(true)}
-                className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add</span>
-              </button>
-            </div>
-
-            <div className="space-y-2.5">
-              {reminders.map((rem) => (
-                <div
-                  key={rem.id}
-                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-all ${
-                    rem.isActive
-                      ? 'bg-slate-950/80 border-slate-800 text-slate-200'
-                      : 'bg-slate-950/30 border-slate-900 text-slate-500'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleReminder(rem.id)}
-                      className={`p-1.5 rounded-lg ${
-                        rem.isActive ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800 text-slate-500'
-                      }`}
-                    >
-                      {rem.isActive ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-                    </button>
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-200">{rem.title}</h4>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                        <span className="font-mono font-bold text-cyan-400">{rem.time}</span>
-                        <span>· {rem.repeat}</span>
-                        <span>· 🔊 {rem.sound}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => deleteReminder(rem.id)}
-                    className="text-slate-600 hover:text-rose-400 p-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Modal: Add Reminder */}
-      {showAddReminderModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <h3 className="font-bold text-lg text-slate-100">{lang === 'id' ? 'Set Pengingat Baru' : 'Set New Reminder'}</h3>
-            <div className="space-y-3 text-sm">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Judul / Catatan' : 'Title'}</label>
-                <input
-                  type="text"
-                  value={remTitle}
-                  onChange={(e) => setRemTitle(e.target.value)}
-                  placeholder="e.g. Minum Air & Istirahatkan Mata"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Waktu Alarm' : 'Time'}</label>
-                <input
-                  type="time"
-                  value={remTime}
-                  onChange={(e) => setRemTime(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 font-mono"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Pengulangan' : 'Repeat'}</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['none', 'daily', 'weekdays', 'weekly'] as const).map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => setRemRepeat(r)}
-                      className={`py-1.5 capitalize text-xs font-bold rounded-lg border ${
-                        remRepeat === r ? 'bg-cyan-600/30 border-cyan-500 text-cyan-300' : 'bg-slate-950 border-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Suara Alarm' : 'Alarm Sound'}</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['beep', 'bell', 'magic', 'fanfare'] as const).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setRemSound(s)}
-                      className={`py-1.5 capitalize text-xs font-bold rounded-lg border ${
-                        remSound === s ? 'bg-cyan-600/30 border-cyan-500 text-cyan-300' : 'bg-slate-950 border-slate-800 text-slate-400'
-                      }`}
-                    >
-                      🔊 {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowAddReminderModal(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (!remTitle.trim()) return;
-                  addReminder(remTitle.trim(), remTime, remRepeat, remSound);
-                  setShowAddReminderModal(false);
-                  setRemTitle('');
-                }}
-                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white rounded-xl"
-              >
-                {lang === 'id' ? 'Simpan Pengingat' : 'Save Reminder'}
-              </button>
             </div>
           </div>
         </div>
@@ -471,3 +207,4 @@ export const CalendarView: React.FC = () => {
     </div>
   );
 };
+

@@ -51,3 +51,38 @@ export async function apiPost<T = any>(path: string, body: unknown): Promise<T> 
   if (!res.ok) throw new Error((data && (data.error || data.msg)) || `HTTP ${res.status}`);
   return data;
 }
+
+/** Target upload yang didukung server (parity QFileDialog PyQt). */
+export type UploadTarget = 'love_photo' | 'profile_photo' | 'reminder_sound' | 'music' | 'learning_source';
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read_failed'));
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Upload file browser (QWebEngineView membuka native file dialog untuk <input type=file>).
+ * Server menyimpan bytes ke lokasi yang sama seperti PyQt (BLOB SQLite / folder musik lokal).
+ */
+export async function apiUploadFile<T = any>(
+  target: UploadTarget,
+  file: File,
+  extra?: Record<string, unknown>,
+): Promise<T> {
+  const dataBase64 = await fileToBase64(file);
+  return apiPost<T>('/api/upload/file', {
+    target,
+    name: file.name,
+    mime: file.type || '',
+    dataBase64,
+    ...(extra || {}),
+  });
+}

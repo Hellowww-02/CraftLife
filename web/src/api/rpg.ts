@@ -22,7 +22,8 @@ export const rpg = {
   deleteQuest: (id: string) => apiPost<any>(`/api/todos/${id}/delete`, {}),
   buyItem: (itemId: string, idempotencyKey?: string) =>
     apiPost<any>('/api/shop/buy', { itemId, idempotencyKey: idempotencyKey || crypto.randomUUID() }),
-  sellItem: (itemId: string) => apiPost<any>('/api/shop/sell', { itemId }),
+  sellItem: (itemId: string, quantity: number = 1) =>
+    apiPost<any>('/api/shop/sell', { itemId, quantity }),
   useItem: (itemId: string) => apiPost<any>('/api/shop/use', { itemId }),
   equipItem: (itemId: string, equipped: boolean) =>
     apiPost<any>('/api/shop/equip', { itemId, equipped }),

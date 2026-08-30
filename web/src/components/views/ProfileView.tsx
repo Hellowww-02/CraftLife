@@ -1,7 +1,151 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
-import { apiGet, apiPost } from '../../api/client';
-import { User } from 'lucide-react';
+import { apiGet, apiPost, apiUploadFile, apiBase } from '../../api/client';
+import { life } from '../../api/life';
+import { t } from '../../i18n';
+import { User, Camera, Trash2 } from 'lucide-react';
+
+/** Panel foto profil (parity _ImagePickerDialog PyQt: PNG/JPEG → server
+ * normalisasi via Pillow; hapus = kembali ke avatar emoji). */
+const ProfilePhotoCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: string) => void }> = ({ lang, showToast }) => {
+  const { user, updateUserProfile } = useGame();
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const pick = () => fileRef.current?.click();
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setBusy(true);
+    try {
+      const r: any = await apiUploadFile('profile_photo', f);
+      if (r?.ok === false) {
+        showToast('info', r?.result?.msg || r?.error || 'upload_failed', '');
+        return;
+      }
+      updateUserProfile({ hasProfilePhoto: true });
+      setPhotoVersion((v) => v + 1);
+      showToast('success', t('profile_photo_change', 'Ganti Foto'), '');
+    } catch (err: any) {
+      showToast('info', String(err?.message || err), '');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!window.confirm(t('profile_photo_remove_confirm', 'Kembalikan foto profil ke avatar default?'))) return;
+    setBusy(true);
+    try {
+      await life.removeProfilePhoto();
+      updateUserProfile({ hasProfilePhoto: false });
+      setPhotoVersion((v) => v + 1);
+      showToast('success', t('profile_photo_remove', 'Hapus Foto'), '');
+    } catch (err: any) {
+      showToast('info', String(err?.message || err), '');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+      <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Foto profil' : 'Profile photo'}</div>
+      <div className="flex items-center gap-4">
+        <div className="w-20 h-20 rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-4xl shrink-0">
+          {user.hasProfilePhoto ? (
+            <img
+              src={`${apiBase()}/api/profile/photo?v=${photoVersion}`}
+              alt="profile"
+              className="w-full h-full object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          ) : (
+            <span>{user.avatarEmoji || '⚔️'}</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <button type="button" disabled={busy} onClick={pick}
+            className="px-3 py-2 rounded-xl bg-yellow-500 text-slate-950 text-xs font-black flex items-center gap-1.5 disabled:opacity-50">
+            <Camera className="w-3.5 h-3.5" /> {t('profile_photo_change', 'Ganti Foto')}
+          </button>
+          <button type="button" disabled={busy || !user.hasProfilePhoto} onClick={remove}
+            className="px-3 py-2 rounded-xl bg-rose-900/60 border border-rose-700/50 text-rose-200 text-xs font-black flex items-center gap-1.5 disabled:opacity-40">
+            <Trash2 className="w-3.5 h-3.5" /> {t('profile_photo_remove', 'Hapus Foto')}
+          </button>
+        </div>
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={onFile} />
+      </div>
+    </div>
+  );
+};
+
+/** Panel 🎖️ Title (parity _fill_title_cb PyQt): yang terbuka bisa dipilih,
+ * yang terkunci tampil sebagai hint (maks 4). */
+const ProfileTitleCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: string) => void }> = ({ lang, showToast }) => {
+  const { user, updateUserProfile } = useGame();
+  const [state, setState] = useState<any>(null);
+  const [sel, setSel] = useState(user.selectedTitle || '');
+
+  useEffect(() => {
+    life.profileTitles()
+      .then((d) => {
+        if (d?.ok === false) return;
+        setState(d);
+        setSel(d?.selectedTitle ?? user.selectedTitle ?? '');
+      })
+      .catch(() => setState(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const titles: any[] = Array.isArray(state?.titles) ? state.titles : [];
+  const unlocked = titles.filter((t0) => t0.unlocked);
+  const lockedHints = titles
+    .filter((t0) => !t0.unlocked)
+    .map((t0) =>
+      t('title_locked_hint', '🔒 {name} — butuh {target} (kamu: {current})')
+        .replace('{name}', String(t0.name))
+        .replace('{target}', String(t0.target))
+        .replace('{current}', String(t0.current))
+    )
+    .slice(0, 4);
+
+  const apply = async (key: string) => {
+    setSel(key);
+    try {
+      const r: any = await life.selectTitle(key);
+      if (r?.ok === false) {
+        showToast('info', r?.error || 'title_locked', '');
+        setSel(user.selectedTitle || '');
+        return;
+      }
+      updateUserProfile({ selectedTitle: key });
+      showToast('success', key || t('title_none', '(Tanpa gelar)'), '');
+    } catch (err: any) {
+      showToast('info', String(err?.message || err), '');
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+      <label className="block text-xs font-bold text-slate-300">
+        {t('title_selector_label', '🎖️ Gelar Profil (tampil di leaderboard):')}
+      </label>
+      <select value={sel} onChange={(e) => apply(e.target.value)}
+        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm">
+        <option value="">{t('title_none', '(Tanpa gelar)')}</option>
+        {unlocked.map((t0) => (
+          <option key={t0.key} value={t0.key}>{t0.name}</option>
+        ))}
+      </select>
+      {lockedHints.map((h, i) => (
+        <p key={i} className="text-[10px] text-slate-500 leading-snug"
+          dangerouslySetInnerHTML={{ __html: h.replace(/</g, '&lt;') }} />
+      ))}
+    </div>
+  );
+};
 
 const TalentPanel: React.FC<{ lang: string; showToast: (k: any, a: string, b: string) => void }> = ({ lang, showToast }) => {
   const [state, setState] = useState<any>(null);
@@ -88,6 +232,12 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           {lang === 'id' ? 'Simpan profil' : 'Save profile'}
         </button>
       </div>
+
+      {/* P3 parity ProfilePage: foto profil (ubah/hapus, normalisasi server) */}
+      <ProfilePhotoCard lang={lang} showToast={showToast} />
+
+      {/* P3 parity ProfilePage: 🎖️ pemilihan gelar profil */}
+      <ProfileTitleCard lang={lang} showToast={showToast} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
         {[
