@@ -5,7 +5,20 @@ import json
 import os
 import re
 import threading
+import time as _time
 import uuid
+
+# Parity TimeSync._zone = "Asia/Jakarta": paksa zona proses berjalan di waktu WIB
+# SEBELUM database.py diimpor, sehingga date.today()/datetime.now()/local_now()
+# serta reset_daily_tasks semua memakai hari yang sama dengan jam yang ditampilkan.
+# Tanpa ini, date.today() mengikuti zona server (mis. UTC) dan reset harian task
+# terjadi di jam lokal yang salah → habit/daily tidak terulang dengan benar.
+if "TZ" not in os.environ:
+    os.environ["TZ"] = "Asia/Jakarta"
+try:
+    _time.tzset()
+except Exception:
+    pass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -118,6 +131,26 @@ WEB_I18N_KEYS = [
     "sport_type_running", "sport_type_gym", "sport_type_cycling", "sport_type_swimming", "sport_type_yoga", "sport_type_football",
     "sport_type_calisthenics", "sport_type_martial_arts", "sport_type_badminton", "sport_type_other",
     "task_difficulty_easy", "task_difficulty_medium", "task_difficulty_hard", "task_difficulty_epic",
+    # ── P14: Task template dialog (parity HabitTemplateDialog) ──
+    "template_btn", "template_title", "template_subtitle", "template_no_templates",
+    "template_count", "template_apply", "template_applied",
+    # ── P15: Profile parity (rebirth modal, security, backup, lock) ──
+    "profile_rebirth_title", "profile_rebirth_info", "profile_rebirth_btn",
+    "profile_rebirth_confirm_title", "profile_rebirth_confirm_warning",
+    "profile_rebirth_confirm_detail", "profile_rebirth_confirm_benefit",
+    "profile_rebirth_confirm_placeholder", "profile_rebirth_confirm_btn",
+    "profile_rebirth_cond_achievements", "profile_rebirth_cond_level",
+    "profile_rebirth_cond_pets", "profile_rebirth_cond_items",
+    "profile_rebirth_success_title", "profile_rebirth_loading",
+    "profile_security", "profile_security_answer", "profile_save_security_btn",
+    "security_questions_not_empty", "security_questions_saved",
+    "backup_codes_intro", "backup_codes_warning", "backup_codes_title",
+    "backup_code_generate_fail", "backup_codes_copy",
+    "profile_redeem", "profile_redeem_placeholder", "profile_redeem_btn",
+    "profile_redeem_desc", "redeem_code_empty", "redeem_admin_password_title",
+    "redeem_admin_password_prompt", "redeem_admin_password_wrong",
+    "profile_lock_account", "profile_account_locked", "profile_lock_confirm",
+    "profile_unlock_account", "profile_unlock_confirm",
     "food_today", "food_cal_stat", "food_protein_stat", "food_carbs_stat", "food_fat_stat", "food_set_goals_btn",
     "food_calories_label", "food_protein_label", "food_carbs_label", "food_fat_label", "food_save_goals", "health_daily_targets",
     "food_tab_water", "food_water_goal_default", "food_water_set_goal", "water_progress_format", "food_water_add_250", "food_water_add_500",
@@ -1094,6 +1127,42 @@ def _row_user(u: dict) -> dict:
         "bossDamageBonus": int(u.get("boss_damage_bonus") or 0),
         "hpDamageReduction": int(u.get("hp_damage_reduction") or 0),
         "mpBonus": int(u.get("mp_bonus") or 0),
+        "locked": bool(db.is_account_locked(u.get("id"))),
+    }
+
+
+def _rebirth_status(uid: int) -> dict:
+    """Parity ProfilePage._rebirth / load(): kembalikan 4 syarat rebirth + info bonus.
+
+    React memakai data ini untuk menampilkan daftar kondisi ✅/❌ sebelum konfirmasi
+    (sama seperti PyQt rebirth_conditions_label).
+    """
+    u = db.get_user(uid) or {}
+    conn = db.get_conn()
+    try:
+        ach_count = conn.execute(
+            "SELECT COUNT(*) FROM user_achievements WHERE user_id=? AND unlocked_at IS NOT NULL",
+            (uid,),
+        ).fetchone()[0]
+        pet_count = conn.execute("SELECT COUNT(*) FROM user_pets WHERE user_id=?", (uid,)).fetchone()[0]
+        item_count = conn.execute("SELECT COUNT(*) FROM inventory WHERE user_id=?", (uid,)).fetchone()[0]
+    finally:
+        conn.close()
+    level = int(u.get("level") or 1)
+    rebirth = int(u.get("rebirth_count") or 0)
+    return {
+        "ok": True,
+        "rebirthCount": rebirth,
+        "xpBonus": rebirth * 10,
+        "goldBonus": rebirth * 5,
+        "level": level,
+        "conditions": {
+            "achievements": {"count": ach_count, "need": 10, "met": ach_count >= 10},
+            "level": {"count": level, "need": 25, "met": level >= 25},
+            "pets": {"count": pet_count, "need": 2, "met": pet_count >= 2},
+            "items": {"count": item_count, "need": 6, "met": item_count >= 6},
+        },
+        "canRebirth": ach_count >= 10 and level >= 25 and pet_count >= 2 and item_count >= 6,
     }
 
 
@@ -1376,8 +1445,55 @@ def _recipe_catalog() -> list:
     return out
 
 
+def _server_now() -> dict:
+    """Waktu server saat ini (zona app = Asia/Jakarta). Parity TimeSync: frontend
+    memakai ini sebagai sumber 'today' + jam tunggal agar konsisten dengan reset
+    harian backend (bukan new Date() browser yang bisa beda zona/clock).
+    epoch (unix s) + tzOffsetMin dipakai frontend merender HH:MM:SS yang benar."""
+    import datetime as _dt
+    try:
+        now = _dt.datetime.now()
+    except Exception:
+        now = _dt.datetime.now()
+    try:
+        tz = _dt.datetime.now().astimezone().tzinfo
+        off = _dt.datetime.now().astimezone().utcoffset() or _dt.timedelta()
+        tz_min = int(off.total_seconds() // 60)
+    except Exception:
+        tz_min = 0
+    return {
+        "iso": now.isoformat(),
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "epoch": int(now.timestamp()),
+        "tzOffsetMin": tz_min,
+        "weekday": now.weekday(),
+    }
+
+
+def _api_daily_reset(kind: str, uid: int):
+    """Reset done_today lalu kembalikan list task (habits/dailies/todos)."""
+    try:
+        db.reset_daily_tasks(uid)
+    except Exception:
+        pass
+    if kind == "habits":
+        return {"ok": True, "habits": [_map_habit(h) for h in db.get_habits(uid)]}
+    if kind == "dailies":
+        return {"ok": True, "dailies": [_map_daily(d) for d in db.get_dailies(uid)]}
+    return {"ok": True, "quests": [_map_todo(t) for t in db.get_todos(uid)]}
+
+
 def _snapshot(uid: int) -> dict:
     u = db.get_user(uid) or {}
+    # Parity MainWindow/PostLogin + TaskPage.load/SportTrackPage.load: reset
+    # done_today di habits/dailies/sport setiap hari (idempotent — hanya baris
+    # yang last_done != hari ini yang dikembalikan ke 0). Tanpa ini web tidak
+    # pernah mereset dan habit/daily tidak berulang tiap hari.
+    try:
+        db.reset_daily_tasks(uid)
+    except Exception:
+        pass
     try:
         ach = [_map_ach(a) for a in db.get_user_achievements(uid)]
     except Exception:
@@ -1445,26 +1561,28 @@ def _snapshot(uid: int) -> dict:
         payload["goldLocal"] = payload["user"]["gold"]
         payload["goldCloud"] = gold_cloud
         payload["cloudLinked"] = True
-        if gold_cloud is not None:
-            payload["user"]["gold"] = gold_cloud
-            if wallet and wallet.get("gems") is not None:
-                payload["user"]["gems"] = int(wallet.get("gems") or 0)
+        # OFFLINE-FIRST: gold & gems LOKAL adalah source of truth yang ditampilkan.
+        # Nilai cloud hanya referensi (goldCloud) untuk indikator/sync — JANGAN timpa
+        # nilai lokal dengan wallet cloud yang bisa stale/0.
+        # (Catatan: sesuai README, wallet/inventory stay local-authoritative sampai
+        #  migration 5a/5b diterapkan & terbukti sinkron.)
+        # OFFLINE-FIRST: inventory LOKAL = source of truth yang ditampilkan.
+        # Cache cloud hanya referensi (inventoryCloud); jangan timpa inventory lokal
+        # dengan snapshot cloud yang bisa stale (konsisten dengan gold/gems di atas).
         try:
             cloud_inv = db.get_cloud_inventory_cache(uid)
         except Exception:
             cloud_inv = []
-        if cloud_inv:
-            payload["inventory"] = [
-                _map_inv({
-                    "item_id": row.get("item_key"),
-                    "quantity": row.get("qty") or 0,
-                    "equipped": row.get("equipped"),
-                    "id": row.get("item_key"),
-                    "enchant_level": row.get("enchant_level") or 0,
-                })
-                for row in cloud_inv
-                if int(row.get("qty") or 0) > 0
-            ]
+        payload["inventoryCloud"] = [
+            {
+                "item_id": row.get("item_key"),
+                "quantity": row.get("qty") or 0,
+                "equipped": row.get("equipped"),
+                "enchant_level": row.get("enchant_level") or 0,
+            }
+            for row in cloud_inv
+            if int(row.get("qty") or 0) > 0
+        ] if cloud_inv else []
     else:
         payload["goldLocal"] = payload["user"]["gold"]
         payload["goldCloud"] = None
@@ -1488,6 +1606,20 @@ def _ok_payload(uid: int, result=None, extra=None) -> dict:
             "goldGain": result.get("gold_gained") or 0,
         }
     return payload
+
+
+def _best_effort_cloud(fn):
+    """Jalankan fn di thread daemon dan abaikan error (best-effort cloud sync).
+
+    Dipakai agar sinkronisasi cloud TIDAK PERNAH memblokir sukses operasi lokal.
+    Prinsip offline-first: local DB = source of truth seketika; cloud = sync best-effort.
+    """
+    def _run():
+        try:
+            fn()
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _equip_item(uid: int, item_id: str, equipped: bool) -> dict:
@@ -1771,9 +1903,9 @@ class Handler(BaseHTTPRequestHandler):
 
         routes = {
             "/api/me": lambda: {"ok": True, "user": _row_user(db.get_user(uid))},
-            "/api/habits": lambda: {"ok": True, "habits": [_map_habit(h) for h in db.get_habits(uid)]},
-            "/api/dailies": lambda: {"ok": True, "dailies": [_map_daily(d) for d in db.get_dailies(uid)]},
-            "/api/todos": lambda: {"ok": True, "quests": [_map_todo(t) for t in db.get_todos(uid)]},
+            "/api/habits": lambda: _api_daily_reset("habits", uid),
+            "/api/dailies": lambda: _api_daily_reset("dailies", uid),
+            "/api/todos": lambda: _api_daily_reset("todos", uid),
             "/api/inventory": lambda: {"ok": True, "inventory": [_map_inv(r) for r in db.get_inventory(uid)]},
             "/api/pets": lambda: {"ok": True, "userPets": [_map_pet(r) for r in db.get_user_pets(uid)]},
             "/api/achievements": lambda: {"ok": True, "achievements": [_map_ach(a) for a in db.get_user_achievements(uid)]},
@@ -1791,6 +1923,7 @@ class Handler(BaseHTTPRequestHandler):
                 "classes": getattr(db, "AVATAR_CLASSES", {})},
             "/api/buffs": lambda: {"ok": True, "buffs": db.get_all_active_buffs(uid)},
             "/api/profile/talents": lambda: {"ok": True, "talents": db.get_talent_state(uid)},
+            "/api/profile/rebirth/status": lambda: _rebirth_status(uid),
             "/api/dashboard/widgets": lambda: {"ok": True, "widgets": db.get_dashboard_widgets(uid)},
             "/api/dashboard/summary": lambda: _dashboard_summary(uid),
             "/api/profile/titles": lambda: {
@@ -1811,10 +1944,16 @@ class Handler(BaseHTTPRequestHandler):
             },
             "/api/catalog/themes": lambda: {
                 "ok": True,
-                # Parity SettingsPage theme radios: (key, label, primary/glow utk preview dot)
+                # Parity SettingsPage theme radios: palet penuh per tema + preview dot.
+                # Palet diekspos utk React (CSS vars) — parity db.THEMES (source of truth).
                 "themes": [
                     {"key": k, "label": v.get("label") or k,
-                     "primary": v.get("primary") or "", "glow": v.get("glow") or ""}
+                     "primary": v.get("primary") or "", "light": v.get("light") or "",
+                     "bg": v.get("bg") or "", "bg2": v.get("bg2") or "", "bg3": v.get("bg3") or "",
+                     "panel": v.get("panel") or "", "border": v.get("border") or "",
+                     "accent": v.get("accent") or "", "accent2": v.get("accent2") or "",
+                     "accent3": v.get("accent3") or "", "glow": v.get("glow") or "",
+                     "text": v.get("text") or "", "muted": v.get("muted") or ""}
                     for k, v in (db.THEMES or {}).items()
                 ],
             },
@@ -1988,6 +2127,8 @@ class Handler(BaseHTTPRequestHandler):
             snap["petCatalog"] = _pet_catalog()
             snap["bossCatalog"] = _boss_catalog()
             snap["recipes"] = _recipe_catalog()
+            snap["serverNow"] = _server_now()
+            snap["serverDate"] = _server_now()["date"]
             self._send(200, snap)
             return
 
@@ -2598,17 +2739,10 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/shop/buy":
                 item_id = body.get("itemId") or body.get("item_id")
-                idem = str(body.get("idempotencyKey") or body.get("idempotency_key") or uuid.uuid4())
                 qty = int(body.get("quantity") or 1)
-                import cloud_api
-                if cloud_api.is_shop_cloud(uid):
-                    try:
-                        result = cloud_api.shop_cloud_buy(uid, item_id, qty, idem)
-                    except Exception as e:
-                        self._send(400, {"ok": False, "error": str(e), **_snapshot(uid)})
-                        return
-                    self._send(200, _ok_payload(uid, result))
-                    return
+                # Offline-first: jalankan lokal SELALU dulu. db.buy_item meng-debit gold,
+                # menambah inventory, dan sudah `_queue_cloud_econ` (sync best-effort via
+                # background sync_now). Kegagalan cloud (JWT/PGRST303) TIDAK memblokir sukses lokal.
                 result = db.buy_item(uid, item_id)
                 if not result.get("ok"):
                     self._send(400, {"ok": False, "error": result.get("msg") or "buy_failed", **_snapshot(uid)})
@@ -2633,33 +2767,23 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/shop/equip":
                 item_id = body.get("itemId") or body.get("item_id")
                 equipped = bool(body.get("equipped", True))
-                import cloud_api
-                if cloud_api.is_shop_cloud(uid):
-                    try:
-                        result = cloud_api.shop_cloud_equip(uid, item_id, equipped)
-                    except Exception as e:
-                        self._send(400, {"ok": False, "error": str(e), **_snapshot(uid)})
-                        return
-                    self._send(200, _ok_payload(uid, result))
-                    return
+                # Offline-first: equip lokal SELALU dulu (local DB = source of truth).
                 result = _equip_item(uid, item_id, equipped)
                 if not result.get("ok"):
                     self._send(400, {"ok": False, "error": result.get("msg") or "equip_failed", **_snapshot(uid)})
                     return
+                # Best-effort cloud sync (background) — TIDAK memblokir respons sukses lokal.
+                try:
+                    import cloud_api
+                    if cloud_api.is_shop_cloud(uid):
+                        _best_effort_cloud(lambda: cloud_api.shop_cloud_equip(uid, item_id, equipped))
+                except Exception:
+                    pass
                 self._send(200, _ok_payload(uid, result))
                 return
             if path == "/api/shop/craft":
                 rid = body.get("recipeId") or body.get("resultItemId")
-                idem = str(body.get("idempotencyKey") or body.get("idempotency_key") or uuid.uuid4())
-                import cloud_api
-                if cloud_api.is_shop_cloud(uid):
-                    try:
-                        result = cloud_api.shop_cloud_craft(uid, rid, idem)
-                    except Exception as e:
-                        self._send(400, {"ok": False, "error": str(e), **_snapshot(uid)})
-                        return
-                    self._send(200, _ok_payload(uid, result))
-                    return
+                # Offline-first: craft lokal SELALU dulu. db.craft_item sudah _queue_cloud_econ.
                 result = db.craft_item(uid, rid)
                 if not result.get("ok"):
                     self._send(400, {"ok": False, "error": result.get("msg") or "craft_failed", **_snapshot(uid)})
@@ -2668,16 +2792,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/shop/enchant":
                 item_id = body.get("itemId") or body.get("item_id")
-                idem = str(body.get("idempotencyKey") or body.get("idempotency_key") or uuid.uuid4())
-                import cloud_api
-                if cloud_api.is_shop_cloud(uid):
-                    try:
-                        result = cloud_api.shop_cloud_enchant(uid, item_id, idem)
-                    except Exception as e:
-                        self._send(400, {"ok": False, "error": str(e), **_snapshot(uid)})
-                        return
-                    self._send(200, _ok_payload(uid, result))
-                    return
+                # Offline-first: enchant lokal SELALU dulu. db.enchant_item sudah _queue_cloud_econ.
                 result = db.enchant_item(uid, item_id)
                 if not result.get("ok"):
                     self._send(400, {"ok": False, "error": result.get("msg") or "enchant_failed", **_snapshot(uid)})

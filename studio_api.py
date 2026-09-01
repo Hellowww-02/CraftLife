@@ -574,6 +574,13 @@ def handle_get(path: str, uid: int, qs=None):
     if path == "/api/learning/notebooks":
         return {"ok": True, "notebooks": snapshot(uid)["notebooks"]}
     if path == "/api/music/playlists":
+        # Parity MusicPage._ensure_favorite_playlist: jamin playlist "Favorite"
+        # (is_favorite=1) selalu ada, supaya tombol "Tambah ke favorit" valid.
+        try:
+            if not any(row.get("is_favorite") for row in db.get_all_playlists(uid)):
+                db.create_playlist(uid, "Favorite", 1)
+        except Exception:
+            pass
         s = snapshot(uid)
         return {"ok": True, "playlists": s["playlists"], "history": s["musicHistory"]}
     if path == "/api/love":
@@ -834,6 +841,16 @@ def _chat_ai(uid: int, notebook_id: int, question: str) -> str:
     return answer
 
 
+def _bad(msg: str) -> dict:
+    """Respons error standar untuk studio_api.handle_post.
+
+    Parity pola error yang sudah ada di handler ini (mis. ``{"result": {"ok": False,
+    "msg": "no_friend"}}``). api_server membungkus hasil handle_post melalui
+    ``_ok_payload(uid, studio.get("result"))``, jadi hasil harus dibungkus ``result``.
+    """
+    return {"result": {"ok": False, "msg": msg}}
+
+
 def _cloud_mod():
     try:
         import cloud_api
@@ -1055,7 +1072,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
     if path == "/api/music/play":
         return {"result": db.log_music_play(uid, body.get("path") or "", body.get("title") or "", body.get("artist") or "")}
     if path == "/api/music/playlists":
-        return {"result": db.create_playlist(uid, body.get("name") or "Playlist")}
+        fav = 1 if (body.get("isFavorite") or body.get("is_favorite")) else 0
+        return {"result": db.create_playlist(uid, body.get("name") or "Playlist", fav)}
     if path == "/api/music/search":
         try:
             import music_downloader as md

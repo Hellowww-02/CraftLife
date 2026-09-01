@@ -612,6 +612,65 @@ def _nutrition_export(uid: int, fmt: str, days: int = 30):
             name = "craftlife_nutrition.docx"
         except Exception:
             payload = None
+    elif fmt == "pdf":
+        # Parity HealthFoodPage._export_food_pdf: laporan satu halaman berisi
+        # ringkasan 30 hari + tabel per-tanggal (reportlab, guarded import).
+        try:
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib import colors
+            from reportlab.lib.units import inch
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+            bio = io.BytesIO()
+            doc = SimpleDocTemplate(bio, pagesize=landscape(A4))
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(name="Title", parent=styles["Title"], alignment=1, fontSize=16)
+            cap_style = ParagraphStyle(name="Cap", parent=styles["Normal"], fontSize=11)
+            story = [Paragraph("CraftLife — Nutrition & Water Export", title_style), Spacer(1, 0.15 * inch)]
+            total_cal = sum(float(r[1] or 0) for r in rows)
+            avg_cal = total_cal / len(rows) if rows else 0
+            total_water = sum(float(r[5] or 0) for r in rows)
+            avg_water = total_water / len(rows) if rows else 0
+            summary = Table(
+                [[T("export_summary_total_cal"), f"{total_cal:.0f} kcal"],
+                 [T("export_summary_avg_cal"), f"{avg_cal:.0f} kcal"],
+                 [T("export_summary_total_water"), f"{total_water:.0f} ml"],
+                 [T("export_summary_avg_water"), f"{avg_water:.0f} ml"]],
+                colWidths=[2.8 * inch, 2.0 * inch],
+            )
+            summary.setStyle(TableStyle([
+                ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 11),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]))
+            story.append(Paragraph(T("export_summary_label"), cap_style))
+            story.append(summary)
+            story.append(Spacer(1, 0.2 * inch))
+            if rows:
+                table = Table([[Paragraph(f"<b>{h}</b>", cap_style) for h in headers]] +
+                              [[str(c) for c in r] for r in rows], repeatRows=1)
+                table.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]))
+                story.append(table)
+            else:
+                story.append(Paragraph(T("export_no_data"), cap_style))
+            doc.build(story)
+            payload = bio.getvalue()
+            mime = "application/pdf"
+            name = "craftlife_nutrition.pdf"
+        except Exception:
+            payload = None
     if payload is None:
         # CSV fallback (selalu tersedia, parity _export_food_csv)
         import csv
@@ -875,8 +934,14 @@ def handle_get(path: str, uid: int, qs=None):
         mode = path.split("/api/templates/", 1)[-1] or "habit"
         if mode in ("apply",):
             return None
+        # Parity HabitTemplateDialog: get_templates_by_mode(mode, lang) → nama/desc
+        # mengikuti bahasa user, bukan selalu "id".
         try:
-            items = db.get_templates_by_mode(mode) or []
+            lang = (db.get_user(uid) or {}).get("language", "id")
+        except Exception:
+            lang = "id"
+        try:
+            items = db.get_templates_by_mode(mode, lang) or []
         except Exception:
             items = []
         return {"ok": True, "templates": items}
