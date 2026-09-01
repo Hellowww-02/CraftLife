@@ -437,6 +437,7 @@ def init_db():
         item_type TEXT NOT NULL,
         quantity INTEGER DEFAULT 1,
         equipped INTEGER DEFAULT 0,
+        equip_slot INTEGER DEFAULT 0,
         obtained_at TEXT DEFAULT(datetime('now')),
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
@@ -1561,6 +1562,9 @@ def init_db():
     _safe_alter(c, "dailies", "repeat_days", "TEXT DEFAULT ''")
     # ── Gamifikasi v1.3.0 Tahap 3 ──
     _safe_alter(c, "inventory", "enchant_level", "INTEGER DEFAULT 0")
+    # ── P26: sistem 10 slot equipment (ala Minecraft). equip_slot=1..10 = aktif di
+    # slot itu; 0 = tidak di-slot. Item boleh dobel per tipe (2 senjata sekaligus). ──
+    _safe_alter(c, "inventory", "equip_slot", "INTEGER DEFAULT 0")
     _safe_alter(c, "users", "last_login_reward", "TEXT")
     _safe_alter(c, "users", "login_streak", "INTEGER DEFAULT 0")
     _safe_alter(c, "users", "selected_title", "TEXT DEFAULT ''")
@@ -2690,8 +2694,13 @@ def recalculate_all_buffs(user_id):
             return
         u = dict(u)
 
-        # Inventory (sertakan enchant level untuk scaling buff)
-        inv_rows = conn.execute("SELECT item_id, COALESCE(enchant_level,0) AS el FROM inventory WHERE user_id=?", (user_id,)).fetchall()
+        # Inventory (hanya item yang DIEQUIP — equipped=1). Bug P25: sebelumnya
+        # menghitung semua item milik; unequip tidak menghapus buff. Sekarang hanya
+        # item aktif (equipped) yang sumbang buff, sesuai PyQt _apply_item_buffs.
+        inv_rows = conn.execute(
+            "SELECT item_id, COALESCE(enchant_level,0) AS el FROM inventory WHERE user_id=? AND equipped=1",
+            (user_id,),
+        ).fetchall()
         owned = {row["item_id"] for row in inv_rows}
         enchant_lvl = {}
         for row in inv_rows:
@@ -4519,6 +4528,65 @@ def buy_item(user_id, item_id):
     _queue_cloud_econ(user_id, "shop_buy", "buy", {"item_key": item_id, "qty": 1})
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_item_bought", icon=item['icon'], name=item['name'], buff=item['buff_desc'])}
 
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Sistem 10 SLOT EQUIPMENT (P26) — ala Minecraft hotbar.
+# Item NON-consumable (equipment buff) boleh aktif lebih dari satu sekaligus,
+# dibatasi 10 slot. Satu item boleh menempati 1 slot; dobel per tipe diizinkan
+# (mis. 2 senjata sekaligus). Slot dianggap berisi bila equip_slot >= 1.
+# Consumable TIDAK masuk slot (dipakai lewat use_item).
+# ───────────────────────────────────────────────────────────────────────────────
+MAX_EQUIP_SLOTS = 10
+
+def _is_equippable_item(item_meta) -> bool:
+    """Equipment slot hanya untuk item dengan buff permanen (bukan consumable)."""
+    if not item_meta:
+        return False
+    return item_meta.get("type") not in ("consumable",)
+
+def equip_item_slot(user_id, item_id):
+    """Aktifkan item ke slot terendah yang kosong (1..MAX_EQUIP_SLOTS).
+    Mengembalikan slot yang dipakai; error bila penuh / bukan equipment."""
+    item = SHOP_ITEMS.get(item_id)
+    if not _is_equippable_item(item):
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_equip_not_equippable")}
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM inventory WHERE user_id=? AND item_id=?", (user_id, item_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_equip_not_owned")}
+    if int(row["equip_slot"] or 0) >= 1:
+        conn.close()
+        # Sudah aktif — idempoten, return slot yang sudah dipakai.
+        return {"ok": True, "slot": int(row["equip_slot"])}
+    # Cari slot kosong terendah.
+    used = {r[0] for r in conn.execute(
+        "SELECT equip_slot FROM inventory WHERE user_id=? AND equip_slot>=1", (user_id,)
+    ).fetchall()}
+    slot = next((s for s in range(1, MAX_EQUIP_SLOTS + 1) if s not in used), None)
+    if slot is None:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_equip_slots_full")}
+    conn.execute(
+        "UPDATE inventory SET equip_slot=?, equipped=1 WHERE user_id=? AND item_id=?",
+        (slot, user_id, item_id))
+    conn.commit()
+    conn.close()
+    recalculate_all_buffs(user_id)
+    return {"ok": True, "slot": slot}
+
+def unequip_item_slot(user_id, item_id):
+    """Nonaktifkan item (hapus dari slot mana pun)."""
+    conn = get_conn()
+    conn.execute(
+        "UPDATE inventory SET equip_slot=0, equipped=0 WHERE user_id=? AND item_id=?",
+        (user_id, item_id))
+    conn.commit()
+    conn.close()
+    recalculate_all_buffs(user_id)
+    return {"ok": True}
 
 def use_item(user_id, item_id):
     item = SHOP_ITEMS.get(item_id)
@@ -6948,6 +7016,69 @@ def reject_invite(user_id, invite_id):
     conn.commit()
     conn.close()
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_invite_rejected")}
+
+def send_guild_invite(leader_id, friend_id):
+    """P26: pemimpin guild mengundang seorang TEMAN untuk bergabung.
+    Seller-enforced di sisi server:
+      - hanya leader guild yang boleh mengundang;
+      - target harus teman (status='accepted'), bukan diri sendiri;
+      - target belum menjadi member/pemilik guild;
+      - target bukan admin;
+      - duplikat invite pending dihindari (update created_at).
+    """
+    if int(leader_id) == int(friend_id):
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_self")}
+    conn = get_conn()
+    leader = conn.execute("SELECT id,guild_id,is_admin FROM users WHERE id=?", (leader_id,)).fetchone()
+    if not leader or leader["is_admin"]:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_admin_no_guild") if leader and leader["is_admin"] else tr_db(user_id=leader_id, key="db_guild_invite_not_leader")}
+    gid = leader["guild_id"]
+    if not gid:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_no_guild")}
+    # Hanya leader guild.
+    guild = conn.execute("SELECT leader_id,name FROM guilds WHERE id=?", (gid,)).fetchone()
+    if not guild or guild["leader_id"] != leader_id:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_not_leader")}
+    # Teman (accepted, salah satu arah).
+    fr = conn.execute(
+        "SELECT 1 FROM friends WHERE status='accepted' "
+        "AND ((user_id=? AND friend_id=?) OR (user_id=? AND friend_id=?)) LIMIT 1",
+        (leader_id, friend_id, friend_id, leader_id)).fetchone()
+    if not fr:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_not_friend")}
+    target = conn.execute("SELECT id,guild_id,is_admin FROM users WHERE id=?", (friend_id,)).fetchone()
+    if not target:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_no_target")}
+    if target["is_admin"]:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_admin_target")}
+    if target["guild_id"]:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_invite_already_guild")}
+    # Cek kapasitas guild.
+    count = conn.execute("SELECT COUNT(*) FROM guild_members WHERE guild_id=?", (gid,)).fetchone()[0]
+    if count >= 20:
+        conn.close()
+        return {"ok": False, "msg": tr_db(user_id=leader_id, key="db_guild_full")}
+    # Duplikat pending → perbarui created_at, jangan duplikat baris.
+    existing = conn.execute(
+        "SELECT id FROM guild_invites WHERE guild_id=? AND user_id=? AND status='pending'",
+        (gid, friend_id)).fetchone()
+    if existing:
+        conn.execute("UPDATE guild_invites SET created_at=datetime('now') WHERE id=?", (existing["id"],))
+    else:
+        conn.execute(
+            "INSERT INTO guild_invites(guild_id,user_id,status) VALUES(?,?,'pending')",
+            (gid, friend_id))
+    conn.commit()
+    conn.close()
+    add_notification(friend_id, tr_db(user_id=friend_id, key="db_guild_invite_notif", name=guild["name"]), "info")
+    return {"ok": True, "msg": tr_db(user_id=leader_id, key="db_guild_invite_sent", name=guild["name"])}
 
 
 # ─────────────────────────────────────────────────────────────────────────────── #

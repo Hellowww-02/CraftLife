@@ -41,6 +41,8 @@ WEB_I18N_KEYS = [
     "dashboard_level", "dashboard_gold", "dashboard_hp", "dashboard_mp",
     "dashboard_streak", "web_shell_title", "web_engine_missing", "web_loading",
     "web_api_offline", "web_live_badge", "nav_adventure_menu", "nav_prestige_level",
+    "nav_toggle_menu", "nav_hero_profile", "nav_level_progress", "nav_toggle_language",
+    "nav_hp_abbr", "nav_mp_abbr",
     "web_offline_first", "web_connecting", "web_use_game_error",
     "web_legacy_ui", "web_open_web_ui",
     "web_shop_title", "web_shop_subtitle", "web_shop_tab", "web_inv_tab",
@@ -1036,7 +1038,32 @@ WEB_I18N_KEYS = [
     "web_hero_custom", "web_hero_avatar", "web_hero_name", "web_hero_class", "web_hero_bio", "web_profile_saved", "web_profile_save", "reload_now_confirm",
 
     "btn_close", "food_meal_type", "health_mood_low", "learning_no_notebook", "nav_notes", "nav_pomodoro", "notes_color", "notes_default_title", "notes_denominator", "notes_empty", "notes_fraction", "notes_fraction_title", "notes_highlight", "notes_numerator", "notes_select_hint", "notes_symbols", "notes_to_learning_done", "notes_unarchive", "notes_unsaved", "notes_updated", "pomodoro", "sport_activity_ph", "sport_calories_label", "sport_rank_max", "sport_rank_progress", "sport_type_label", "supplies_add", "web_backup_code", "web_display_name", "web_forgot_password", "web_have_account", "web_login_btn", "web_login_subtitle", "web_need_account", "web_palette_placeholder", "web_password", "web_register_btn", "web_register_subtitle", "web_username",
-]
+    "habit_habit_tracker", "habit_templates", "habit_new_habit", "habit_search_habits", "habit_all_difficulty", "habit_all_habits", "habit_duplicate", "habit_no_habits_in_this_category", "habit_create_first_habit", "habit_edit_habit", "habit_habit_title", "habit_difficulty", "habit_folder", "habit_no_folder", "habit_habit_nature", "habit_notes", "habit_cancel", "habit_save", "daily_daily_routine_dailies", "daily_new_daily", "daily_search_dailies", "daily_all_dailies", "daily_fail_hp", "daily_days", "daily_no_daily_tasks_in_this_category", "daily_edit_daily", "daily_daily_task_title", "daily_folder", "daily_repeat_days", "daily_notes", "quest_quest_to_do_list", "quest_new_quest", "quest_search_quests", "quest_all_priorities", "quest_all_quests", "quest_completed", "quest_all", "quest_no_quests_in_this_category", "quest_edit_quest", "quest_quest_title", "quest_due_date",
+    "habit_subtitle", "daily_subtitle", "quest_subtitle",
+    "shop_tab_inventory",
+    "shop_equipped", "shop_type_item",
+    "friend_guild", "friend_sport_level", "friend_rebirth", "friend_joined", "friend_xp_progress", "friend_total_xp", "friend_achievements_progress", "friend_latest_achievements", "friend_stats_title", "friend_tasks_done", "friend_pomodoro", "friend_profile_title", "stats_habit_today", "stats_daily_today", "stats_quest_done", "stats_max_streak", "stats_boss_killed", "stats_pets",
+    "class_warrior_name", "class_healer_name", "class_mage_name", "class_archer_name", "class_rogue_name",
+    "db_guild_invite_self", "db_guild_invite_not_leader", "db_guild_invite_no_guild", "db_guild_invite_not_friend", "db_guild_invite_no_target", "db_guild_invite_admin_target", "db_guild_invite_already_guild", "db_guild_invite_sent", "db_guild_invite_notif",
+    "guild_invite_friend_btn", "guild_invite_friend_title", "guild_invite_friend_empty", "guild_invite_friend_send",
+    "talent_tree", "account_security", "old_password", "new_password",
+    "profile_color", "profile_emoji",
+    "db_equip_not_equippable", "db_equip_not_owned", "db_equip_slots_full", "shop_equip_slots_label", "shop_equip_slot_empty",
+    "shop_equip_slot_hint",
+    "love_gallery_zoom_out_tip", "love_gallery_zoom_in_tip", "love_gallery_zoom_reset_tip",
+    "page_sport_title", "page_sport_subtitle", "page_health_title", "page_health_subtitle", "page_leaderboard_title", "page_leaderboard_subtitle", "page_achievements_title", "page_achievements_subtitle", "page_love_title", "page_love_subtitle", "page_notes_title", "page_notes_subtitle",
+    "dash_wrapped_btn", "dash_widgets_btn", "dash_water", "dash_ai_study", "dash_focus_audio",
+    "dash_love_space", "dash_guild_pvp", "dash_calendar", "dash_daily_routine", "dash_manage_dailies",
+    "dash_manage_habits", "dash_view_all", "dash_heatmap_title", "dash_dungeon_boss",
+    "dash_no_active_boss", "dash_enter_boss_arena", "dash_open", "dash_all_quests_done",
+    "dash_sport_level", "dash_calories_eaten", "dash_water_hydration", "dash_sporttrack",
+    "dash_habit_tracker", "sport_activities_title", "sport_pyqt_templates", "sport_complete_xp",
+    "sport_no_logs_yet", "sport_log_session_title", "sport_difficulty_label", "sport_weight_label",
+    "sport_auto_calc", "sport_manual", "sport_notes_label", "sport_formula", "sport_cancel",
+    "sport_total_reps_label", "sport_reps_empty", "sport_reps_session_title", "sport_reps_note_ph",
+    "health_no_recipes", "health_ingredients", "health_servings", "health_total_calories",
+    "food_recipe_new_title", "food_recipe_name", "food_recipe_icon", "food_recipe_servings",
+    "food_recipe_ingredients", "sport_empty_activity", "sport_total_sessions", "sport_total_duration", "sport_calories_burned", "sport_mastery", "sport_log_workout", "sport_reps_chart", "health_food_db", "health_search_food_ph", "health_portion", "health_log_notes_ph", "health_manage_btn"]
 
 
 
@@ -1334,6 +1361,8 @@ def _map_inv(row: dict) -> dict:
         "equipped": bool(row.get("equipped")),
         "rowId": row.get("id"),
         "enchantLevel": int(row.get("enchant_level") or 0),
+        # P26: slot equipment (1..10); 0 = tidak di-slot.
+        "equipSlot": int(row.get("equip_slot") or 0),
     }
 
 
@@ -1343,7 +1372,9 @@ def _map_pet(row: dict) -> dict:
         "nickname": row.get("nickname") or row.get("pet_id"),
         "level": int(row.get("level") or 1),
         "xp": int(row.get("exp") or row.get("xp") or 0),
-        "hunger": int(row.get("hunger") or 100),
+        # P25-fix: jangan pakai `or 100` pada hunger — ketika hunger = 0,
+        # `0 or 100` menjadi 100 (bug 0->100). Hanya default ke 100 bila NULL/absent.
+        "hunger": int(row.get("hunger")) if row.get("hunger") is not None else 100,
         "isEquipped": bool(row.get("is_active")),
         "adoptedAt": row.get("adopted_at") or "",
     }
@@ -1623,41 +1654,11 @@ def _best_effort_cloud(fn):
 
 
 def _equip_item(uid: int, item_id: str, equipped: bool) -> dict:
-    conn = db.get_conn()
-    try:
-        row = conn.execute(
-            "SELECT * FROM inventory WHERE user_id=? AND item_id=?",
-            (uid, item_id),
-        ).fetchone()
-        if not row:
-            return {"ok": False, "msg": "not_found"}
-        item = db.SHOP_ITEMS.get(item_id) or {}
-        itype = item.get("type")
-        if equipped and itype:
-            conn.execute(
-                """UPDATE inventory SET equipped=0 WHERE user_id=? AND item_id IN
-                   (SELECT item_id FROM inventory WHERE user_id=?)""",
-                (uid, uid),
-            )
-            # only unequip same type
-            rows = conn.execute("SELECT item_id FROM inventory WHERE user_id=?", (uid,)).fetchall()
-            for r in rows:
-                meta = db.SHOP_ITEMS.get(r["item_id"]) or {}
-                if meta.get("type") == itype:
-                    conn.execute(
-                        "UPDATE inventory SET equipped=0 WHERE user_id=? AND item_id=?",
-                        (uid, r["item_id"]),
-                    )
-        conn.execute(
-            "UPDATE inventory SET equipped=? WHERE user_id=? AND item_id=?",
-            (1 if equipped else 0, uid, item_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    if hasattr(db, "recalculate_all_buffs"):
-        db.recalculate_all_buffs(uid)
-    return {"ok": True}
+    # P26: sistem 10 SLOT equipment. Tidak lagi melepas semua item sama-tipe;
+    # beberapa item boleh aktif sekaligus (maks 10 slot) di backend.
+    if equipped:
+        return db.equip_item_slot(uid, item_id)
+    return db.unequip_item_slot(uid, item_id)
 
 
 def _ensure_user() -> int | None:
@@ -2146,8 +2147,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/auth/reset":
             username = (body.get("username") or "").strip()
-            code = (body.get("code") or "").strip()
             new_pw = body.get("password") or body.get("newPassword") or ""
+            # P24: metode recovery parity PyQt — "security" (pertanyaan keamanan)
+            # atau "backup" (kode cadangan).
+            method = (body.get("method") or "backup").lower()
             try:
                 conn = db.get_conn()
                 row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
@@ -2156,10 +2159,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(400, {"ok": False, "error": "user_not_found"})
                     return
                 uid = int(row["id"])
-                if not db.verify_backup_code(uid, code):
-                    self._send(400, {"ok": False, "error": "invalid_code"})
-                    return
-                result = db.reset_password_with_backup_code(uid, new_pw)
+                if method == "security":
+                    answer = (body.get("answer") or "").strip()
+                    if not db.verify_security_answer(uid, answer):
+                        self._send(400, {"ok": False, "error": "invalid_answer"})
+                        return
+                    result = db.reset_password_by_security(uid, new_pw)
+                else:
+                    code = (body.get("code") or "").strip()
+                    if not db.verify_backup_code(uid, code):
+                        self._send(400, {"ok": False, "error": "invalid_code"})
+                        return
+                    result = db.reset_password_with_backup_code(uid, new_pw)
                 self._send(200, {"ok": True, "result": result if isinstance(result, dict) else {"ok": True}})
             except Exception as e:
                 self._send(400, {"ok": False, "error": str(e)})
@@ -2234,8 +2245,29 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(401, {"ok": False, "error": "unauthorized"})
                 return
             uid = _state.get("user_id")
+            code = (body.get("code") or "").strip()
+            # P24: kode admin (reward_type == "admin") wajib memverifikasi password akun,
+            # parity dengan PyQt (MainPyQt6._redeem: prompt password sebelum granting admin).
+            # Tanpa ini, siapa pun yang tahu kode admin bisa jadi admin (bypass).
             try:
-                result = db.redeem_code(uid, (body.get("code") or "").strip())
+                conn = db.get_conn()
+                row = conn.execute("SELECT reward_type FROM redeem_codes WHERE code=?", (code.upper().strip(),)).fetchone()
+                conn.close()
+                is_admin_code = bool(row and row["reward_type"] == "admin")
+            except Exception:
+                is_admin_code = (code == "ADMINADMINADMIN")
+            if is_admin_code:
+                pwd = body.get("password") or ""
+                u = db.get_user(uid) or {}
+                try:
+                    valid = db._verify_password(pwd, u.get("password_hash", ""))
+                except Exception:
+                    valid = False
+                if not valid:
+                    self._send(400, {"ok": False, "error": "admin_redeem_password_wrong"})
+                    return
+            try:
+                result = db.redeem_code(uid, code)
             except Exception as e:
                 self._send(400, {"ok": False, "error": str(e)})
                 return
@@ -2419,6 +2451,26 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, {"ok": True, "result": result})
             return
+        if path == "/api/profile/class":
+            # P24: ganti class harus lewat db.change_class (enforce cooldown +
+            # recalc passive buffs). Jangan lewat /api/settings yang tak menegakkan cooldown.
+            if not _auth_ok(self):
+                self._send(401, {"ok": False, "error": "unauthorized"})
+                return
+            uid = _state.get("user_id")
+            cls = str(body.get("class") or body.get("heroClass") or body.get("avatarClass") or "").lower()
+            try:
+                result = db.change_class(uid, cls)
+            except Exception as e:
+                self._send(400, {"ok": False, "error": str(e)})
+                return
+            # Terapkan di state/game snapshot juga agar navbar & buff ikut berubah.
+            try:
+                _state["force_refresh"] = True
+            except Exception:
+                pass
+            self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True}))
+            return
         if path == "/api/settings":
             if not _auth_ok(self):
                 self._send(401, {"ok": False, "error": "unauthorized"})
@@ -2444,8 +2496,15 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("avatar") or body.get("avatarEmoji"):
                 kw["avatar_emoji"] = body.get("avatar") or body.get("avatarEmoji")
             cls = body.get("heroClass") or body.get("avatarClass")
-            if cls:
-                kw["avatar_class"] = str(cls).lower()
+            if cls and cls.strip():
+                # P24: class harus lewat change_class agar cooldown ter-enforce.
+                # Jangan tulis avatar_class langsung via update_user (bypass cooldown).
+                try:
+                    rc = db.change_class(uid, str(cls).lower())
+                    if isinstance(rc, dict) and not rc.get("ok", True):
+                        pass  # cooldown/unknown → tetap lanjut simpan field lain, class tidak berubah
+                except Exception:
+                    pass
             if kw:
                 try:
                     db.update_user(uid, **kw)

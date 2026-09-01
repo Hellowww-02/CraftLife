@@ -73,7 +73,10 @@ def public_status(uid: int) -> dict:
         "sdk_available": bool(raw.get("sdk_available")),
         "keyring_available": bool(raw.get("keyring_available")),
         "authenticated": bool(raw.get("authenticated")),
-        "linked": bool(link),
+        # P26: `linked` hanya true bila sesi benar2 aktif (authenticated). Setelah
+        # sign_out, baris cloud_user_links lama tetap ada di DB, jadi tanpa gate ini
+        # `linked` tetap true dan tombol Sign-In/Buat Akun ter-disable permanen.
+        "linked": bool(link) and bool(raw.get("authenticated")),
         "email": (link or {}).get("email") or raw.get("email") or "",
         "link": link,
         "queue": {

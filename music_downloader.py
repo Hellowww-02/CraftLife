@@ -32,6 +32,53 @@ def has_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+# ── Opsi yt-dlp yang tangguh terhadap 403 (anti-bot YouTube) ──────────────────
+# YouTube rajin memblokir client `web`/`web_embed` (HTTP 403: Forbidden pada
+# extract_info/unduhan). Strategi yang umum dipakai & didukung yt-dlp:
+#   * set header browser-like (User-Agent, Accept, Accept-Language),
+#   * coba beberapa player_client selain web (android, ios, tv, web_safari, mweb)
+#     sebagai fallback — cukup dipakai di sini tanpa menipu "sukses" bila tetap gagal,
+#   * aktifkan retries agar transient error (403 sementara) dicoba ulang.
+# Error asli tetap dibiarkan sampai ke caller (tidak di-swallow).
+_MOBILE_YOUTUBE = frozenset(("android", "ios", "tv", "web_safari", "mweb", "web_embedded"))
+_DEFAULT_HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-Fetch-Mode": "navigate",
+}
+
+
+def _build_opts(download: bool, target_dir: str = None, progress_hook=None) -> dict:
+    """Buat opsi yt-dlp yang dipakai bersama oleh worker & job API."""
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "http_headers": dict(_DEFAULT_HTTP_HEADERS),
+        "retries": 3,
+        "fragment_retries": 3,
+        "extractor_retries": 3,
+        # Fallback client selain default 'web' guna menghindari 403.
+        "extractor_args": {"youtube": {"player_client": list(_MOBILE_YOUTUBE)}},
+    }
+    if download:
+        opts.update({
+            "outtmpl": os.path.join(target_dir or get_download_dir(), "%(title)s.%(ext)s"),
+            "format": "bestaudio/best",
+        })
+        if has_ffmpeg():
+            opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}]
+        else:
+            opts["format"] = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best"
+    else:
+        opts["extract_flat"] = "in_playlist"
+    if progress_hook:
+        opts["progress_hooks"] = [progress_hook]
+    return opts
+
+
 if QThread is not None:
     class MusicSearchWorker(QThread):
         """Cari musik via yt-dlp (ytsearch) tanpa memblokir UI."""
@@ -45,7 +92,7 @@ if QThread is not None:
             results = []
             if YT_AVAILABLE and self.query.strip():
                 try:
-                    opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "noplaylist": True}
+                    opts = _build_opts(download=False)
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         info = ydl.extract_info(f"ytsearch10:{self.query.strip()}", download=False)
                     for e in (info or {}).get("entries") or []:
@@ -76,29 +123,19 @@ if QThread is not None:
         def run(self):
             if not YT_AVAILABLE:
                 return self.done.emit("", "yt-dlp")
-            use_ff = has_ffmpeg()
-            opts = {
-                "quiet": True, "no_warnings": True, "noplaylist": True,
-                "outtmpl": os.path.join(self.dir, "%(title)s.%(ext)s"),
-                "format": "bestaudio/best",
-            }
-            if use_ff:
-                opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}]
-            else:
-                opts["format"] = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best"
 
             def hook(d):
                 if d.get("status") == "downloading":
                     self.progress.emit(str(d.get("_percent_str") or "").strip())
 
-            opts["progress_hooks"] = [hook]
+            opts = _build_opts(download=True, target_dir=self.dir, progress_hook=hook)
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(self.url, download=True)
                     if not info:
                         return self.done.emit("", "empty")
                     path = ydl.prepare_filename(info)
-                    if use_ff:
+                    if has_ffmpeg():
                         path = re.sub(r"\.[A-Za-z0-9]+$", "", path) + ".mp3"
                     if not os.path.exists(path):
                         return self.done.emit("", "missing_file")
@@ -119,7 +156,7 @@ def search_music(query: str) -> list:
     if not (YT_AVAILABLE and (query or "").strip()):
         return results
     try:
-        opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "noplaylist": True}
+        opts = _build_opts(download=False)
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"ytsearch8:{query.strip()}", download=False)
         for e in (info or {}).get("entries") or []:
@@ -208,23 +245,13 @@ def _run_download(job_id: str, url: str) -> None:
     if not YT_AVAILABLE:
         set_job(done=True, error="yt-dlp_missing")
         return
-    use_ff = has_ffmpeg()
     target = get_download_dir()
-    opts = {
-        "quiet": True, "no_warnings": True, "noplaylist": True,
-        "outtmpl": os.path.join(target, "%(title)s.%(ext)s"),
-        "format": "bestaudio/best",
-    }
-    if use_ff:
-        opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}]
-    else:
-        opts["format"] = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best"
 
     def hook(d):
         if d.get("status") == "downloading":
             set_job(percent=str(d.get("_percent_str") or "").strip())
 
-    opts["progress_hooks"] = [hook]
+    opts = _build_opts(download=True, target_dir=target, progress_hook=hook)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -232,7 +259,7 @@ def _run_download(job_id: str, url: str) -> None:
                 set_job(done=True, error="empty")
                 return
             path = ydl.prepare_filename(info)
-            if use_ff:
+            if has_ffmpeg():
                 path = re.sub(r"\.[A-Za-z0-9]+$", "", path) + ".mp3"
             if not os.path.exists(path):
                 set_job(done=True, error="missing_file")

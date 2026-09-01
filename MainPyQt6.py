@@ -12779,7 +12779,7 @@ class FriendProfileDialog(QDialog):
                                f"border-radius:10px; padding:3px 10px;")
         chips.addWidget(lvl_chip)
         if d["avatar_class"]:
-            cls_txt = tr(f"class_{d['avatar_class']}")
+            cls_txt = tr(f"class_{d['avatar_class']}_name")
             cls_chip = QLabel(f"🎭 {cls_txt}")
             cls_chip.setStyleSheet(f"color:{_T('text')}; font-size:12px; background:{_T('panel')}; "
                                    f"border:1px solid {_T('border')}; border-radius:10px; padding:3px 10px;")

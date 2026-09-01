@@ -655,6 +655,10 @@ def handle_get(path: str, uid: int, qs=None):
                 "latestAchievements": d.get("latest_achievements") or [],
                 "tasksDone": d.get("tasks_done"),
                 "pomodoroMinutes": d.get("pomodoro_minutes"),
+                # P26: sertakan statistik detail utk FriendProfileDialog 1:1 PyQt.
+                "stats": d.get("stats") or {},
+                # P26: relasi couple antara user & teman (friend/couple/pending).
+                "relation": (db.get_couple_status_between(uid, fid) or {}).get("status", "friend"),
             },
         }
     if path == "/api/notifications":
@@ -1439,33 +1443,23 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
     if path == "/api/guild/leave":
         return {"result": db.leave_guild_with_transfer(uid)}
     if path == "/api/guild/invite":
-        g = (db.get_user(uid) or {}).get("guild_id")
-        if not g:
-            return {"result": {"ok": False, "msg": "no_guild"}}
-        guild = db.get_guild(g) or {}
-        ginfo = guild.get("guild") or guild
-        if str(ginfo.get("leader_id")) != str(uid):
-            return {"result": {"ok": False, "msg": "not_leader"}}
-        username = (body.get("username") or "").strip()
-        target = None
-        try:
-            conn = db.get_conn()
-            row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
-            if row:
-                target = int(row["id"])
-            conn.close()
-        except Exception:
-            target = None
-        if not target:
-            return {"result": {"ok": False, "msg": "user_not_found"}}
-        conn = db.get_conn()
-        conn.execute(
-            "INSERT INTO guild_invites(guild_id, user_id, status) VALUES(?,?,'pending')",
-            (g, target),
-        )
-        conn.commit()
-        conn.close()
-        return {"result": {"ok": True}}
+        # P26: pemimpin guild mengundang TEMAN. Server-enforced via db.send_guild_invite
+        # (leader sah + target harus teman accepted + belum di guild + kapasitas).
+        # Bisa lewat friendId (dari UI daftar teman) atau username (parity lama).
+        fid = int(body.get("friendId") or body.get("userId") or 0)
+        if not fid:
+            username = (body.get("username") or "").strip()
+            if username:
+                try:
+                    conn = db.get_conn()
+                    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+                    conn.close()
+                    fid = int(row["id"]) if row else 0
+                except Exception:
+                    fid = 0
+            if not fid:
+                return {"result": {"ok": False, "msg": "user_not_found"}}
+        return {"result": db.send_guild_invite(uid, fid)}
     if len(parts) >= 4 and parts[1] == "guild" and parts[2] == "invites" and parts[3].isdigit():
         iid = int(parts[3])
         if len(parts) >= 5 and parts[4] == "accept":
