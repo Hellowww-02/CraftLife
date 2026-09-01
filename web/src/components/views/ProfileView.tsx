@@ -186,9 +186,114 @@ const TalentPanel: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
   );
 };
 
+/** Rebirth info + conditions + type-to-confirm (parity ProfilePage._rebirth). */
+const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: string) => void }> = ({ lang, showToast }) => {
+  const { user, rebirthCharacter, updateUserProfile } = useGame();
+  const [status, setStatus] = useState<any>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+
+  const load = () => {
+    apiGet<any>('/api/profile/rebirth/status').then((r) => setStatus(r?.ok ? r : null)).catch(() => setStatus(null));
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // freskan setelah rebirth (user.rebirthCount berubah)
+    if (user && status && user.rebirthCount !== status.rebirthCount) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.rebirthCount]);
+
+  const conds = status?.conditions || {};
+  const rows: { key: string; lbl: string }[] = [
+    { key: 'achievements', lbl: t('profile_rebirth_cond_achievements', '🏆 Achievement: {count} / {need}') },
+    { key: 'level', lbl: t('profile_rebirth_cond_level', '⭐ Level: {level} / {need}') },
+    { key: 'pets', lbl: t('profile_rebirth_cond_pets', '🐾 Pet: {count} / {need}') },
+    { key: 'items', lbl: t('profile_rebirth_cond_items', '🎒 Item: {count} / {need}') },
+  ];
+  const fill = (lbl: string, c: any) =>
+    lbl
+      .replace('{count}', String(c?.count ?? 0))
+      .replace('{need}', String(c?.need ?? 0))
+      .replace('{level}', String(c?.count ?? 0));
+
+  const doRebirth = () => {
+    if (confirmText.trim().toUpperCase() !== 'REBIRTH') {
+      showToast('info', t('reset_confirm_invalid', 'Teks konfirmasi tidak sesuai.'), '');
+      return;
+    }
+    rebirthCharacter();
+    setModalOpen(false);
+    setConfirmText('');
+  };
+
+  return (
+    <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 p-4 space-y-2">
+      <div className="flex items-center gap-2 text-sm font-black text-violet-200">
+        <User className="w-4 h-4" /> {t('profile_rebirth_title', '🔄 Rebirth')}
+      </div>
+      <p className="text-xs text-violet-300/90">
+        {t('profile_rebirth_info', 'Rebirth: {count} kali  |  Bonus XP: +{xp_bonus}%  |  Bonus Gold: +{gold_bonus}%')
+          .replace('{count}', String(status?.rebirthCount ?? user.rebirthCount ?? 0))
+          .replace('{xp_bonus}', String(status?.xpBonus ?? 0))
+          .replace('{gold_bonus}', String(status?.goldBonus ?? 0))}
+      </p>
+
+      <div className="space-y-1 text-[11px]">
+        {rows.map((r) => {
+          const c = conds[r.key];
+          const met = c?.met;
+          return (
+            <div key={r.key} className={`flex items-center gap-1.5 ${met ? 'text-emerald-400' : 'text-rose-400'}`}>
+              <span>{met ? '✅' : '❌'}</span>
+              <span>{fill(r.lbl, c)}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => { load(); setModalOpen(true); }}
+        className="px-4 py-2 rounded-xl bg-violet-500 text-slate-950 text-xs font-black disabled:opacity-50"
+        disabled={status ? !status.canRebirth : false}
+      >
+        {t('profile_rebirth_btn', '🌀 Lakukan Rebirth')}
+      </button>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-black text-slate-100">{t('profile_rebirth_confirm_title', '🌀 Konfirmasi Rebirth')}</h3>
+            <p className="text-sm font-bold text-rose-300">{t('profile_rebirth_confirm_warning', 'Anda yakin ingin melakukan Rebirth?')}</p>
+            <p className="text-xs text-slate-400 leading-relaxed">{t('profile_rebirth_confirm_detail', 'Progres akan direset, tetapi inventory, pet, task, dan folder dipertahankan.')}</p>
+            <p className="text-xs text-emerald-300">{t('profile_rebirth_confirm_benefit', '✅ +{xp}% XP  ·  +{gold}% Gold  (permanen)').replace('{xp}', '10').replace('{gold}', '5')}</p>
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1">{t('reset_confirm_type_label', 'Ketik untuk mengonfirmasi')}</label>
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={t('profile_rebirth_confirm_placeholder', 'REBIRTH')}
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-slate-100 text-sm"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button type="button" onClick={() => { setModalOpen(false); setConfirmText(''); }} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold">
+                {lang === 'id' ? 'Batal' : 'Cancel'}
+              </button>
+              <button type="button" onClick={doRebirth} className="px-4 py-2 rounded-xl bg-violet-500 text-slate-950 font-bold">
+                {t('profile_rebirth_confirm_btn', '🌀 Rebirth')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /** Mirror ProfilePage: identitas, class, rebirth, redeem — bukan Settings. */
 export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenSettings }) => {
-  const { user, lang, inventory, userPets, habits, dailies, quests, rebirthCharacter, updateUserProfile, showToast } = useGame();
+  const { user, lang, inventory, userPets, habits, dailies, quests, updateUserProfile, showToast } = useGame();
   const [name, setName] = useState(user.displayName || user.name || '');
   const [bio, setBio] = useState(user.bio || '');
   const [emoji, setEmoji] = useState(user.avatarEmoji || user.avatar || '⚔️');
@@ -197,6 +302,14 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [lockPw, setLockPw] = useState('');
+  const [secQ, setSecQ] = useState('1');
+  const [secA, setSecA] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  const [locked, setLocked] = useState(Boolean(user.locked));
+
+  // Sinkronkan status lock saat user object dari snapshot berubah (mis. setelah
+  // lock/unlock di tempat lain, atau pindah akun).
+  useEffect(() => { setLocked(Boolean(user.locked)); }, [user.locked]);
 
   const save = () => {
     updateUserProfile({ displayName: name, name, bio, avatarEmoji: emoji, avatar: emoji, heroClass, avatarClass: heroClass as any });
@@ -261,25 +374,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
         ))}
       </div>
 
-      <div className="rounded-2xl border border-violet-500/30 bg-violet-950/20 p-4 space-y-2">
-        <div className="flex items-center gap-2 text-sm font-black text-violet-200">
-          <User className="w-4 h-4" /> {lang === 'id' ? 'Rebirth' : 'Rebirth'}
-        </div>
-        <p className="text-xs text-slate-400">
-          {lang === 'id'
-            ? 'Reset level seperti ProfilePage PyQt. Buff rebirth dihitung di Python.'
-            : 'Reset level like PyQt ProfilePage. Rebirth buffs are computed in Python.'}
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm(lang === 'id' ? 'Rebirth sekarang?' : 'Rebirth now?')) rebirthCharacter();
-          }}
-          className="px-4 py-2 rounded-xl bg-violet-500 text-slate-950 text-xs font-black"
-        >
-          {lang === 'id' ? 'Rebirth' : 'Rebirth'}
-        </button>
-      </div>
+      <RebirthCard lang={lang} showToast={showToast} />
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
         <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Warna avatar' : 'Avatar color'}</div>
@@ -319,39 +414,68 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
       <TalentPanel lang={lang} showToast={showToast} />
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
-        <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Pertanyaan keamanan' : 'Security question'}</div>
+        <div className="text-xs font-bold text-slate-300">{t('profile_security', '🔐 Pertanyaan Keamanan (untuk reset password)')}</div>
         <select
-          defaultValue="1"
-          id="sec-q"
+          value={secQ}
+          onChange={(e) => setSecQ(e.target.value)}
           className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs"
         >
-          {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-            <option key={i} value={String(i)}>Q{i}</option>
+          {Array.from({ length: 7 }, (_, i) => i + 1).map((i) => (
+            <option key={i} value={String(i)}>{t(`security_q${i}`, `Q${i}`)}</option>
           ))}
         </select>
-        <input id="sec-a" placeholder={lang === 'id' ? 'Jawaban' : 'Answer'} className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+        <input value={secA} onChange={(e) => setSecA(e.target.value)} placeholder={t('profile_security_answer', 'Jawaban (simpan baik-baik)')} className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
         <button
           type="button"
           onClick={() => {
-            const q = (document.getElementById('sec-q') as HTMLSelectElement)?.value;
-            const a = (document.getElementById('sec-a') as HTMLInputElement)?.value;
-            apiPost('/api/profile/security', { question: q, answer: a }).then((r: any) => showToast('success', r.result?.msg || 'ok', '')).catch((e) => showToast('info', String(e?.message || e), ''));
+            if (!secA.trim()) {
+              showToast('info', t('security_questions_not_empty', 'Jawaban tidak boleh kosong'), '');
+              return;
+            }
+            apiPost('/api/profile/security', { question: secQ, answer: secA }).then((r: any) => {
+              showToast('success', t('security_questions_saved', 'Pertanyaan keamanan berhasil disimpan!'), '');
+              setSecA('');
+            }).catch((e) => showToast('info', String(e?.message || e), ''));
           }}
           className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold"
         >
-          {lang === 'id' ? 'Simpan keamanan' : 'Save security'}
+          {t('profile_save_security_btn', 'Simpan Pertanyaan Keamanan')}
         </button>
+
+        <div className="pt-1 border-t border-slate-800" />
+        <div className="text-xs font-bold text-slate-300">{t('backup_codes_title', 'Kode Cadangan')}</div>
+        <p className="text-[11px] text-slate-400 leading-relaxed">{t('backup_codes_intro', 'Kode Cadangan Anda (simpan baik-baik, jangan sampai hilang):')}</p>
+        {backupCodes && (
+          <div className="rounded-xl bg-slate-950 border border-amber-500/40 p-3 space-y-1">
+            {Array.isArray(backupCodes) && backupCodes.map((c, i) => (
+              <div key={i} className="text-xs font-mono text-amber-200">{i + 1}. {c}</div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  navigator.clipboard?.writeText(backupCodes.join('\n'));
+                  showToast('success', t('backup_codes_copy', 'Salin kode'), '');
+                } catch { /* clipboard unavailable */ }
+              }}
+              className="mt-1 px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 text-[11px] font-bold"
+            >
+              {t('backup_codes_copy', 'Salin kode')}
+            </button>
+          </div>
+        )}
+        <p className="text-[10px] text-rose-400/90 leading-relaxed">{t('backup_codes_warning', 'Setiap kode hanya bisa dipakai SEKALI untuk reset password. Simpan di tempat aman!')}</p>
         <button
           type="button"
           onClick={() => {
             apiPost<any>('/api/profile/backup-codes', {}).then((r) => {
               const codes = r.result || r.codes || [];
-              showToast('success', Array.isArray(codes) ? codes.join('  ') : String(codes), '');
+              setBackupCodes(Array.isArray(codes) ? codes : String(codes).split(/\s+/).filter(Boolean));
             }).catch((e) => showToast('info', String(e?.message || e), ''));
           }}
           className="px-3 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black"
         >
-          {lang === 'id' ? 'Generate backup codes' : 'Generate backup codes'}
+          {lang === 'id' ? 'Generate kode cadangan' : 'Generate backup codes'}
         </button>
       </div>
 
@@ -374,13 +498,44 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
         >
           {lang === 'id' ? 'Ganti kata sandi' : 'Change password'}
         </button>
-        <div className="flex gap-2 pt-1">
-          <input type="password" value={lockPw} onChange={(e) => setLockPw(e.target.value)} placeholder={lang === 'id' ? 'Kata sandi kunci' : 'Lock password'} className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
-          <button type="button" onClick={() => { apiPost<any>('/api/profile/lock', { password: lockPw }).then(() => showToast('success', 'locked', '')); setLockPw(''); }}
-            className="px-3 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold">{lang === 'id' ? 'Kunci' : 'Lock'}</button>
-          <button type="button" onClick={() => { apiPost<any>('/api/profile/lock', { unlock: true, password: lockPw }).then(() => showToast('success', 'unlocked', '')); setLockPw(''); }}
-            className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">{lang === 'id' ? 'Buka' : 'Unlock'}</button>
-        </div>
+        <div className="pt-2 border-t border-slate-800" />
+        <div className="text-xs font-bold text-slate-300">{t('profile_lock_account', '🔒 Lock Akun (Freeze Tracking)')}</div>
+        {locked ? (
+          <>
+            <p className="text-[11px] font-bold text-rose-300">{t('profile_account_locked', '🔒 Akun sedang di-LOCK. Tracking dinonaktifkan.')}</p>
+            <div className="flex gap-2">
+              <input type="password" value={lockPw} onChange={(e) => setLockPw(e.target.value)} placeholder={t('profile_unlock_confirm', 'Masukkan password untuk membuka lock:')} className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+              <button
+                type="button"
+                onClick={() => {
+                  apiPost<any>('/api/profile/lock', { unlock: true, password: lockPw }).then((r: any) => {
+                    if (r?.ok) { showToast('success', 'unlocked', ''); setLockPw(''); setLocked(false); }
+                    else { showToast('info', r?.result?.msg || r?.error || 'unlock_failed', ''); }
+                  }).catch((e) => showToast('info', String(e?.message || e), ''));
+                }}
+                className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
+              >
+                {t('profile_unlock_account', '🔓 Buka Lock Akun')}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="flex gap-2">
+            <input type="password" value={lockPw} onChange={(e) => setLockPw(e.target.value)} placeholder={t('profile_lock_confirm', 'Masukkan password untuk mengunci akun:')} className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+            <button
+              type="button"
+              onClick={() => {
+                apiPost<any>('/api/profile/lock', { password: lockPw }).then((r: any) => {
+                  if (r?.ok) { showToast('success', 'locked', ''); setLockPw(''); setLocked(true); }
+                  else { showToast('info', r?.result?.msg || r?.error || 'lock_failed', ''); }
+                }).catch((e) => showToast('info', String(e?.message || e), ''));
+              }}
+              className="px-3 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold"
+            >
+              {t('profile_lock_account', '🔒 Lock Akun')}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">

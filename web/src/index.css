@@ -1,10 +1,42 @@
 @import "tailwindcss";
 
+/* ── Tema (parity db.THEMES) ─────────────────────────────────────────────
+   Default = modern_dark ("Aurora Dark"). applyTheme() di utils/theme.ts
+   menimpa --ct-* dari palet /api/catalog/themes. UI memakai warna tema via
+   kelas .ct-* di bawah; depth & accent non-tetap tetap Tailwind. */
+:root {
+  --ct-primary: #8b5cf6; --ct-light: #a78bfa;
+  --ct-bg: #0b0b16; --ct-bg2: #14122c; --ct-bg3: #0c1a26;
+  --ct-panel: rgba(26, 28, 50, 0.90); --ct-border: rgba(150, 140, 255, 0.22);
+  --ct-accent: #22d3ee; --ct-accent2: #8b5cf6; --ct-accent3: #22d3ee;
+  --ct-glow: #a78bfa; --ct-text: #eef0ff; --ct-muted: #9b9fc4;
+  --ct-theme: modern_dark;
+}
+
 @layer base {
   * {
     border-color: rgba(255, 255, 255, 0.08);
   }
 }
+
+/* Permukaan inti yang mengikuti tema (shell / sidebar / navbar / panel) */
+.ct-app { background: var(--ct-bg); color: var(--ct-text); }
+.ct-surface { background: var(--ct-panel); border-color: var(--ct-border); }
+.ct-surface-solid { background: var(--ct-bg2); border-color: var(--ct-border); }
+.ct-text { color: var(--ct-text); }
+.ct-muted { color: var(--ct-muted); }
+.ct-accent { color: var(--ct-accent); }
+.ct-accent-bg { background: var(--ct-accent); }
+.ct-border { border-color: var(--ct-border); }
+.ct-glow { box-shadow: 0 0 24px -6px var(--ct-glow); }
+.ct-primary-bg { background: var(--ct-primary); }
+.ct-radius { border-radius: 1rem; }
+
+/* High-contrast override (parity SettingsPage high contrast toggle) */
+html.high-contrast {
+  --ct-panel: var(--ct-bg2); --ct-border: rgba(255, 255, 255, 0.28);
+}
+html.high-contrast .ct-muted { color: var(--ct-text); }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {

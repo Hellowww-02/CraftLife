@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { rpg } from '../../api/rpg';
 import { life } from '../../api/life';
+import { fmtYmd } from '../../utils/serverTime';
 import {
   DashboardRankCard,
   DashboardStatCards,
@@ -43,7 +44,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
     if (onNavigate) onNavigate(tab);
     if (setActiveTab) setActiveTab(tab);
   };
-  const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest, dailyTaskCounts } = useGame();
+  const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest, dailyTaskCounts, nowDate } = useGame();
   const [widgetsOpen, setWidgetsOpen] = useState(false);
   const [wrappedOpen, setWrappedOpen] = useState(false);
 
@@ -179,9 +180,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
               </div>
               <div className="grid grid-cols-7 gap-1">
                 {Array.from({ length: 28 }).map((_, i) => {
-                  const d = new Date();
-                  d.setDate(d.getDate() - (27 - i));
-                  const key = d.toISOString().slice(0, 10);
+                  const base = nowDate() ?? new Date();
+                  base.setDate(base.getDate() - (27 - i));
+                  const key = fmtYmd(base);
                   const n = dailyTaskCounts[key] ?? dailies.filter((x) => x.lastCompletedDate === key || (x.isCompletedToday && i === 27)).length;
                   const bg = n === 0 ? 'bg-slate-800' : n < 2 ? 'bg-emerald-900' : n < 4 ? 'bg-emerald-600' : 'bg-emerald-400';
                   return <div key={key} title={`${key}: ${n}`} className={`${w.compact ? 'h-3' : 'h-4'} rounded-sm ${bg}`} />;

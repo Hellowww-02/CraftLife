@@ -4,6 +4,7 @@ import { TaskDifficulty } from '../../types';
 import { CalendarCheck, Plus, Trash2, Edit3, Flame, Shield, Snowflake, Check, RefreshCw } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
+import { TaskTemplateDialog } from '../TaskTemplateDialog';
 
 const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // Parity WeekdaySelector PyQt: urutan Senin→Minggu; indeks JS getDay (0=Minggu).
@@ -11,9 +12,10 @@ const DAYS_SHORT_ID = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 const DAILY_DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // posisi button → js getDay()
 
 export const DailiesView: React.FC = () => {
-  const { dailies, addDaily, editDaily, duplicateDaily, deleteDaily, toggleDaily, failDaily, useDailyFreeze, reorderDailies, moveTaskAcrossFolders, lang, user, applyTaskTemplate } = useGame();
+  const { dailies, addDaily, editDaily, duplicateDaily, deleteDaily, toggleDaily, failDaily, useDailyFreeze, reorderDailies, moveTaskAcrossFolders, lang, user } = useGame();
   const dailyFolders = useModeFolders('daily');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Form
@@ -121,10 +123,10 @@ export const DailiesView: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => applyTaskTemplate('daily', 'morning_routine_d')}
+            onClick={() => setIsTemplateOpen(true)}
             className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
           >
-            {lang === 'id' ? 'Template PyQt' : 'PyQt templates'}
+            {lang === 'id' ? '📋 Template' : '📋 Templates'}
           </button>
           <button
             id="btn-create-daily"
@@ -425,6 +427,8 @@ export const DailiesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <TaskTemplateDialog mode="daily" open={isTemplateOpen} onClose={() => setIsTemplateOpen(false)} />
     </div>
   );
 };

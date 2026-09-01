@@ -6,6 +6,7 @@ import { t } from '../../i18n';
 import { formatMoney as fmtMoney } from '../../utils/currency';
 import { TaskFolderBar } from '../TaskFolderBar';
 import { life } from '../../api/life';
+import { fmtYmd, addDays } from '../../utils/serverTime';
 
 export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onNavigate }) => {
   const {
@@ -14,7 +15,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
     investments, addInvestment, collectInvestmentReturn, withdrawInvestment,
     subscriptions, addSubscription, renewSubscription, deleteSubscription,
     debtNotes, addDebtNote, settleDebtNote, deleteDebtNote,
-    lang, user,
+    lang, user, today, nowDate,
   } = useGame();
   const currency = user.currency || 'IDR';
 
@@ -25,7 +26,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [invAmt, setInvAmt] = useState(100000);
   const [subName, setSubName] = useState('');
   const [subAmt, setSubAmt] = useState(50000);
-  const [subDue, setSubDue] = useState(new Date().toISOString().split('T')[0]);
+  const [subDue, setSubDue] = useState(today);
   const [dnName, setDnName] = useState('');
   const [dnAmt, setDnAmt] = useState(50000);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
@@ -38,7 +39,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [txNotes, setTxNotes] = useState('');
   const [txFolderId, setTxFolderId] = useState<string | null>(null);
   const [txName, setTxName] = useState('');
-  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
+  const [txDate, setTxDate] = useState(today);
   const [editingTx, setEditingTx] = useState<any>(null);
   const { applyLive, showToast } = useGame();
 
@@ -46,7 +47,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [debtTitle, setDebtTitle] = useState('');
   // debt tab = hutang saja (payable); piutang → tab Catatan Hutang (parity PyQt).
   const [debtTotal, setDebtTotal] = useState<number>(200000);
-  const [debtDueDate, setDebtDueDate] = useState(new Date().toISOString().split('T')[0]);
+  const [debtDueDate, setDebtDueDate] = useState(today);
   const [debtFormNotes, setDebtFormNotes] = useState('');
 
   // Installment input for pay
@@ -97,14 +98,14 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
       addTransaction(txType, txCategory, txAmount, txNotes, txFolderId, txName.trim() || undefined, txDate);
     }
     setIsTxModalOpen(false);
-    setTxNotes(''); setTxName(''); setTxDate(new Date().toISOString().split('T')[0]); setTxFolderId(null);
+    setTxNotes(''); setTxName(''); setTxDate(today); setTxFolderId(null);
   };
   const openEditTx = (tx: any) => {
     setEditingTx(tx);
     setTxType(tx.type); setTxCategory(tx.category || '');
     setTxAmount(Math.round(tx.amount)); setTxNotes(tx.notes || '');
     setTxFolderId(tx.folderId || null); setTxName(tx.name || tx.category || '');
-    setTxDate(tx.date || new Date().toISOString().split('T')[0]);
+    setTxDate(tx.date || today);
     setIsTxModalOpen(true);
   };
 
@@ -132,7 +133,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const openEditDebt = (debt: any) => {
     setEditingDebt(debt);
     setDebtTitle(debt.title || ''); setDebtTotal(debt.totalAmount || 0);
-    setDebtDueDate(debt.dueDate || new Date().toISOString().split('T')[0]);
+    setDebtDueDate(debt.dueDate || today);
     setDebtFormNotes(debt.notes || '');
     setIsDebtModalOpen(true);
   };
@@ -175,13 +176,12 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
       {/* Trend Widget (parity with PyQt EconomyTrendWidget) */}
       {(() => {
         const dayLabel = (d: Date) => `${d.getDate()}/${d.getMonth() + 1}`;
-        const start = new Date();
-        start.setDate(start.getDate() - (trendDays - 1));
+        const t0 = nowDate() ?? new Date();
+        const start = addDays(t0, -(trendDays - 1));
         const buckets: { date: string; income: number; expense: number }[] = [];
         for (let i = 0; i < trendDays; i++) {
-          const d = new Date(start);
-          d.setDate(start.getDate() + i);
-          buckets.push({ date: d.toISOString().split('T')[0], income: 0, expense: 0 });
+          const d = addDays(start, i);
+          buckets.push({ date: fmtYmd(d), income: 0, expense: 0 });
         }
         const bucketByDate = new Map(buckets.map((b) => [b.date, b]));
         transactions.forEach((tx) => {
@@ -693,8 +693,8 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                 <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? `Nominal (${currency})` : `Amount (${currency})`}</label>
                 <input
                   type="number"
-                  min="1000"
-                  step="1000"
+                  min="0"
+                  step="any"
                   value={txAmount}
                   onChange={(e) => setTxAmount(Number(e.target.value))}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
@@ -765,8 +765,8 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? `Total Jumlah (${currency})` : `Total (${currency})`}</label>
                   <input
                     type="number"
-                    min="1000"
-                    step="10000"
+                    min="0"
+                    step="any"
                     value={debtTotal}
                     onChange={(e) => setDebtTotal(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"

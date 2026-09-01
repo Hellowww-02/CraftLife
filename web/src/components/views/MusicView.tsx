@@ -1,8 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
-import { DEFAULT_MUSIC_TRACKS, AMBIENT_SOUNDS } from '../../data/musicData';
-import { MusicTrack } from '../../types';
 import { studio } from '../../api/studio';
+import { t } from '../../i18n';
 import {
   Play,
   Pause,
@@ -10,22 +9,21 @@ import {
   SkipBack,
   Volume2,
   VolumeX,
-  Sliders,
   Sparkles,
-  Waves,
   Heart,
   Search,
-  Disc,
-  Music2,
-  ListMusic,
-  Clock3,
   Trash2,
-  FolderInput,
-  FolderOutput,
   Plus,
   FileAudio,
+  Shuffle,
+  Repeat,
+  FolderInput,
+  FolderOutput,
+  Download,
+  ChevronDown,
 } from 'lucide-react';
 
+// ── Tipe (parity MusicPage PyQt) ─────────────────────────────────────────────
 interface LibraryEntry {
   name: string;
   path: string;
@@ -48,6 +46,14 @@ interface HistoryEntry {
   played_at?: string;
   created_at?: string;
 }
+interface TrackRow {
+  path: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  missing: boolean;
+}
 
 const fmtDuration = (sec: number) => {
   if (!sec) return '';
@@ -55,93 +61,274 @@ const fmtDuration = (sec: number) => {
   const s = Math.round(sec % 60);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
+const fmtTime = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// Parity MusicPage._parse_lrc: [mm:ss.xx] baris → daftar {ms,text} terurut.
+const parseLrc = (text: string): { ms: number; text: string }[] => {
+  if (!text) return [];
+  const out: { ms: number; text: string }[] = [];
+  const re = /\[(\d+):(\d+(?:\.\d+)?)\]/g;
+  for (const raw of text.split('\n')) {
+    const stamps = Array.from(raw.matchAll(re));
+    const content = raw.replace(re, '').trim();
+    if (!stamps.length || !content) continue;
+    for (const m of stamps) {
+      out.push({ ms: (parseInt(m[1], 10) || 0) * 60000 + Math.round(parseFloat(m[2] || '0') * 1000), text: content });
+    }
+  }
+  out.sort((a, b) => a.ms - b.ms);
+  return out;
+};
 
 export const MusicView: React.FC = () => {
   const { lang, showToast } = useGame();
+  const tr = (key: string, vars?: Record<string, string | number>, fb?: string) => {
+    let s = t(key, fb || key);
+    if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+    return s;
+  };
 
-  // Lofi default player
-  const [tracks, setTracks] = useState<MusicTrack[]>(DEFAULT_MUSIC_TRACKS);
-  const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeCategory, setActiveCategory] = useState<'all' | 'lofi' | 'focus' | 'ambient' | 'synth'>('all');
-  const [volume, setVolume] = useState<number>(75);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [trackProgress, setTrackProgress] = useState<number>(30);
-  const [elapsed, setElapsed] = useState('01:15');
-
-  // Real local-file playback state (parity dengan QMediaPlayer PyQt)
+  // Player (parity QMediaPlayer)
   const [playingFile, setPlayingFile] = useState<LibraryEntry | null>(null);
   const [isLibraryPlaying, setIsLibraryPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState(false);
+  const [volume, setVolume] = useState<number>(72); // parity audio_output.setVolume(.72)
+  const [isMuted, setIsMuted] = useState(false);
+  const [progressMs, setProgressMs] = useState(0);
+  const [durationMs, setDurationMs] = useState(0);
+  const [dragging, setDragging] = useState(false);
 
-  // Ambient mixer
-  const [ambientVolumes, setAmbientVolumes] = useState<Record<string, number>>({
-    rain: 0, fire: 0, waves: 0, birds: 0, cafe: 0, wind: 0, whitenoise: 0,
-  });
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const oscRef = useRef<{ left: OscillatorNode; right: OscillatorNode; gain: GainNode } | null>(null);
-  const [isSynthRunning, setIsSynthRunning] = useState<boolean>(false);
-  const [synthPreset, setSynthPreset] = useState<'alpha' | 'beta' | 'theta' | 'delta'>('alpha');
-
-  // yt-dlp search/download
-  const [ytQuery, setYtQuery] = useState('');
-  const [ytBusy, setYtBusy] = useState(false);
-  const [ytResults, setYtResults] = useState<{ id: string; title: string; url: string }[]>([]);
-  const [ytJob, setYtJob] = useState<{ done?: boolean; percent?: string } | null>(null);
-
-  // Library, playlists, history
-  const [library, setLibrary] = useState<LibraryEntry[]>([]);
+  // Playlists / library (parity _reload_playlists + _metadata)
   const [playlists, setPlaylists] = useState<PlaylistEntry[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | number | null>(null);
+  const [library, setLibrary] = useState<LibraryEntry[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [newPlaylistName, setNewPlaylistName] = useState('');
 
-  // Import MP3/folder (parity MusicPage._add_files/_select_folder)
+  // Import
   const [importing, setImporting] = useState(false);
+  const [importingFolder, setImportingFolder] = useState(false);
   const importFilesRef = useRef<HTMLInputElement | null>(null);
   const importFolderRef = useRef<HTMLInputElement | null>(null);
 
-  // Lyrics
+  // Lyrics drawer (parity _toggle_lyrics + _load_lyrics + _update_synced_lyric)
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [lyrics, setLyrics] = useState<{ plain: string; synced: string }>({ plain: '', synced: '' });
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsSource, setLyricsSource] = useState('');
+  const [activeLyricLine, setActiveLyricLine] = useState(-1);
+  const syncedLinesRef = useRef<{ ms: number; text: string }[]>([]);
+  const syncedLines = useMemo(() => parseLrc(lyrics.synced), [lyrics.synced]);
 
-  const currentTrack = tracks[currentTrackIndex] || tracks[0];
+  // yt-dlp downloader modal (parity _open_downloader)
+  const [dlOpen, setDlOpen] = useState(false);
+  const [ytQuery, setYtQuery] = useState('');
+  const [ytBusy, setYtBusy] = useState(false);
+  const [ytResults, setYtResults] = useState<{ id: string; title: string; url: string }[]>([]);
+  const [ytJob, setYtJob] = useState<{ done?: boolean; percent?: string } | null>(null);
+  const [ytUrl, setYtUrl] = useState('');
+  const [dlTargetId, setDlTargetId] = useState<string | number>('');
 
-  const refreshMusic = useCallback(() => {
-    return studio.musicPlaylists().then((d) => {
-      const pls: PlaylistEntry[] = d.playlists || [];
+  // Track context menu (parity _track_menu)
+  const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    syncedLinesRef.current = syncedLines;
+    setActiveLyricLine(-1);
+  }, [syncedLines]);
+
+  const activePlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
+  const activeTracks = activePlaylist?.tracks || [];
+
+  // Sumber audio yang dikontrol PENUH React (parity QMediaPlayer). Satu playSrc
+  // agar tidak ada race re-render yang menimpa src + membatalkan play.
+  const playSrc = isLibraryPlaying && playingFile
+    ? `/music/stream?path=${encodeURIComponent(playingFile.path)}`
+    : '';
+
+  // Metadata join: path → LibraryEntry (parity _metadata / _render_tracks).
+  const metaFor = useCallback((path: string) => library.find((f) => f.path === path), [library]);
+  const trackRows: TrackRow[] = activeTracks.map((path) => {
+    const m = metaFor(path);
+    const base = path.split(/[\\\\/]/).pop() || path;
+    return {
+      path,
+      title: m?.title || base,
+      artist: m?.artist || tr('music_unknown_artist'),
+      album: m?.album || tr('music_unknown_album'),
+      duration: m?.duration || 0,
+      missing: !m,
+    };
+  });
+  const filteredRows = trackRows.filter((r) => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return true;
+    return `${r.title} ${r.artist} ${r.album}`.toLowerCase().includes(needle);
+  });
+
+  // Track index (parity current_index) → selectRow setelact.
+  const currentIndex = playingFile ? activeTracks.indexOf(playingFile.path) : -1;
+
+  // ── Data loading ───────────────────────────────────────────────────────────
+  const refreshMusic = useCallback((selectId?: string | number | null) => {
+    studio.musicPlaylists().then((d) => {
+      const pls: PlaylistEntry[] = (d.playlists || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        // parity: DB mengembalikan is_favorite (snake_case) → normalisasi.
+        isFavorite: p.isFavorite ?? p.is_favorite,
+        tracks: Array.isArray(p.tracks) ? p.tracks : [],
+      }));
       setPlaylists(pls);
       setHistory((d.history || []).map((h: any) => ({
         path: h.path || '', title: h.title || '', artist: h.artist || '',
         played_at: h.played_at || h.created_at || '',
       })));
-      if (selectedPlaylistId === null && pls.length) setSelectedPlaylistId(pls[0].id);
+      setSelectedPlaylistId((prev) => {
+        if (selectId !== undefined) return selectId;
+        if (prev !== null && pls.some((p) => p.id === prev)) return prev;
+        return pls.length ? pls[0].id : null;
+      });
     }).catch(() => {});
-  }, [selectedPlaylistId]);
+  }, []);
+
+  const refreshLibrary = () => studio.musicLibrary().then((d) => setLibrary(d.library || [])).catch(() => {});
 
   useEffect(() => {
-    studio.musicLibrary().then((d) => setLibrary(d.library || [])).catch(() => {});
+    refreshLibrary();
     refreshMusic();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activePlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
-  const activeTracks = activePlaylist?.tracks || [];
+  // ── Playback (parity _play_path / _play_pause / _next / _previous) ─────────
+  const handlePlayLibraryFile = (entry: LibraryEntry) => {
+    setPlayingFile(entry);
+    setIsLibraryPlaying(true);
+    setIsPlaying(true);
+    setProgressMs(0);
+    setDurationMs(0);
+    studio.logMusic(entry.path, entry.title || entry.name, entry.artist || '').then(() => refreshMusic()).catch(() => {});
+    loadLyrics(entry.artist || '', entry.title || entry.name);
+    showToast('info', tr('music_now_playing'), entry.title || entry.name);
+  };
 
+  const playLibraryPath = (path: string) => {
+    const entry = metaFor(path);
+    const base = path.split(/[\\\\/]/).pop() || path;
+    handlePlayLibraryFile(entry || { path, name: base, title: base, size: 0 });
+  };
+
+  const localSequence = (): string[] => activeTracks;
+
+  const handleNextTrack = () => {
+    const list = localSequence();
+    if (!list.length) return;
+    let idx = activeTracks.indexOf(playingFile?.path || '');
+    if (idx < 0) idx = 0;
+    if (shuffle && list.length > 1) {
+      const choices = list.filter((_, i2) => i2 !== idx);
+      idx = list.indexOf(choices[Math.floor(Math.random() * choices.length)]);
+    } else {
+      idx = (idx + 1) % list.length;
+    }
+    playLibraryPath(list[idx]);
+  };
+  const handlePrevTrack = () => {
+    const a = audioRef.current;
+    if (a && a.currentTime > 3) { a.currentTime = 0; return; } // parity _previous pos>3dtk restart
+    const list = localSequence();
+    if (!list.length) return;
+    let idx = activeTracks.indexOf(playingFile?.path || '');
+    if (idx < 0) idx = 0;
+    idx = (idx - 1 + list.length) % list.length;
+    playLibraryPath(list[idx]);
+  };
+
+  const toggleTrackPlay = () => setIsPlaying((p) => !p);
+
+  // ── Playlist actions (parity _create/_rename/_delete + _add_paths) ─────────
+  const createPlaylist = () => {
+    const name = window.prompt(tr('music_new_playlist'), tr('music_playlist_name'))?.trim();
+    if (!name) return;
+    studio.createPlaylist(name).then(() => refreshMusic()).catch(() => {});
+    setNewPlaylistName('');
+  };
+  const renamePlaylist = (p: PlaylistEntry) => {
+    if (p.isFavorite) return; // parity: favorit tak bisa di-rename
+    const name = window.prompt(tr('music_rename_playlist'), p.name)?.trim();
+    if (!name) return;
+    studio.renamePlaylist(p.id, name).then(() => refreshMusic(selectedPlaylistId)).catch(() => {});
+  };
+  const deletePlaylist = (p: PlaylistEntry) => {
+    if (p.isFavorite) { showToast('info', tr('music_delete_playlist'), tr('msg_no')); return; }
+    if (!window.confirm(tr('music_delete_playlist_confirm'))) return;
+    studio.deletePlaylist(p.id).then(() => { setSelectedPlaylistId(null); refreshMusic(null); }).catch(() => {});
+  };
+
+  const MUSIC_EXT = ['.mp3', '.wav', '.flac', '.m4a', '.mp4', '.ogg'];
+  const handleImport = async (files: FileList | File[], folderMode: boolean) => {
+    if (selectedPlaylistId === null) return; // parity: current_playlist_id None → return
+    const list = Array.from(files).sort((a, b) => {
+      const ra = (a as any).webkitRelativePath || a.name;
+      const rb = (b as any).webkitRelativePath || b.name;
+      return String(ra).localeCompare(String(rb));
+    });
+    folderMode ? setImportingFolder(true) : setImporting(true);
+    let added = 0, skipped = 0;
+    for (const f of list) {
+      const ext = `.${(f.name.split('.').pop() || '').toLowerCase()}`;
+      if (!MUSIC_EXT.includes(ext)) { skipped++; continue; }
+      try {
+        const up = await studio.uploadMusicFile(f);
+        if (up?.ok && up.path) { await studio.addPlaylistTrack(selectedPlaylistId, up.path); added++; }
+        else skipped++;
+      } catch { skipped++; }
+    }
+    setImporting(false);
+    setImportingFolder(false);
+    if (added) {
+      showToast('success', tr('music_add_files'), tr('music_add_song'));
+      refreshMusic(selectedPlaylistId);
+      refreshLibrary();
+    }
+    if (skipped) showToast('info', '', tr('music_format_error'));
+  };
+
+  const addToFavorites = (path: string) => {
+    const fav = playlists.find((p) => p.isFavorite);
+    if (!fav) { showToast('info', tr('music_add_to_favorites'), tr('msg_no')); return; }
+    studio.addPlaylistTrack(fav.id, path).then(() => refreshMusic(selectedPlaylistId)).catch(() => {});
+  };
+
+  const addToPlaylist = (path: string) => {
+    if (!selectedPlaylistId) return;
+    studio.addPlaylistTrack(selectedPlaylistId, path).then(() => refreshMusic(selectedPlaylistId)).catch(() => {});
+  };
+  const removeFromPlaylist = (index: number) => {
+    if (selectedPlaylistId === null) return;
+    studio.removePlaylistTrack(selectedPlaylistId, index).then(() => refreshMusic(selectedPlaylistId)).catch(() => {});
+  };
+  const moveTrackTo = (index: number, targetId: string | number | null, copy: boolean) => {
+    if (!targetId || selectedPlaylistId === null || String(targetId) === String(selectedPlaylistId)) return;
+    const fn = copy ? studio.copyPlaylistTrack : studio.movePlaylistTrack;
+    fn(selectedPlaylistId, targetId, index).then(() => refreshMusic(selectedPlaylistId)).catch(() => {});
+  };
+
+  // ── Lyrics (parity _load_lyrics) ──────────────────────────────────────────
   const loadLyrics = useCallback((artist: string, title: string) => {
     if (!title) return;
     setLyricsLoading(true);
     setLyrics({ plain: '', synced: '' });
     setLyricsSource('');
     studio.musicLyrics(artist || '', title).then((res) => {
-      // Defensive: hanya ambil field string dari respons; jangan pernah
-      // menyimpan objek mentah ke state (mencegah React error #31).
       const d = res?.result || res || {};
       const plain = typeof d.plain === 'string' ? d.plain : (typeof d.lyrics === 'string' ? d.lyrics : '');
       const synced = typeof d.synced === 'string' ? d.synced : '';
@@ -151,62 +338,59 @@ export const MusicView: React.FC = () => {
     }).catch(() => setLyricsLoading(false));
   }, []);
 
-  const loadLyricsForCurrent = useCallback(() => {
-    if (isLibraryPlaying && playingFile) {
-      loadLyrics(playingFile.artist || '', playingFile.title || playingFile.name);
-    } else {
-      loadLyrics(currentTrack?.artist || '', currentTrack?.title || '');
-    }
-  }, [isLibraryPlaying, playingFile, currentTrack, loadLyrics]);
-
-  const handlePlayLibraryFile = (entry: LibraryEntry) => {
-    setPlayingFile(entry);
-    setIsLibraryPlaying(true);
-    setIsPlaying(true);
-    if (audioRef.current) {
-      audioRef.current.src = `/music/stream?path=${encodeURIComponent(entry.path)}`;
-      audioRef.current.play().catch(() => {});
-    }
-    studio.logMusic(entry.path, entry.title || entry.name, entry.artist || '').then(() => refreshMusic()).catch(() => {});
-    loadLyrics(entry.artist || '', entry.title || entry.name);
-    showToast('info', 'Now Playing', entry.title || entry.name);
+  const toggleLyrics = () => {
+    setLyricsOpen((o) => {
+      const next = !o;
+      if (next && playingFile) loadLyrics(playingFile.artist || '', playingFile.title || playingFile.name);
+      return next;
+    });
   };
 
-  // Parity MusicPage._play_path: mainkan path apa pun dari daftar (playlist/library).
-  const playLibraryPath = (path: string) => {
-    const entry = library.find((f) => f.path === path);
-    const base = path.split(/[\\/]/).pop() || path;
-    handlePlayLibraryFile(entry || { path, name: base, title: base, size: 0 });
+  // ── Audio element events (parity _connect_player) ─────────────────────────
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onTime = () => {
+      if (!dragging) setProgressMs((audio.currentTime || 0) * 1000);
+      const ms = (audio.currentTime || 0) * 1000;
+      const lines = syncedLinesRef.current;
+      let idx = -1;
+      for (let i = 0; i < lines.length; i++) { if (lines[i].ms <= ms) idx = i; else break; }
+      setActiveLyricLine((p) => (p === idx ? p : idx));
+    };
+    const onDur = () => setDurationMs((audio.duration || 0) * 1000);
+    const onEnded = () => {
+      // parity _media_status_changed: repeat → ulangi; else auto-advance _next().
+      if (repeat) { audio.currentTime = 0; audio.play().catch(() => {}); return; }
+      handleNextTrack();
+    };
+    audio.addEventListener('timeupdate', onTime);
+    audio.addEventListener('durationchange', onDur);
+    audio.addEventListener('ended', onEnded);
+    return () => { audio.removeEventListener('timeupdate', onTime); audio.removeEventListener('durationchange', onDur); audio.removeEventListener('ended', onEnded); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repeat, dragging]);
+
+  // P16 fix: play/pause terpusat pada source yang SUDAH dikommit React.
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.volume = (isMuted ? 0 : volume) / 100;
+    if (isPlaying && playSrc) { a.play().catch(() => {}); }
+    else if (!isPlaying) { a.pause(); }
+  }, [playSrc, isPlaying, volume, isMuted]);
+
+  const seekTo = (pct: number) => {
+    const a = audioRef.current;
+    if (a && a.duration) a.currentTime = (pct / 100) * a.duration;
   };
 
-  // Parity MusicPage._favorite_track: tambah ke playlist favorit (disabled bila tak ada).
-  const addToFavorites = (path: string) => {
-    const fav = playlists.find((p) => p.isFavorite);
-    if (!fav) {
-      showToast('info', 'Playlist', lang === 'id' ? 'Playlist favorit tidak tersedia' : 'Favorite playlist unavailable');
-      return;
-    }
-    studio.addPlaylistTrack(fav.id, path)
-      .then((r) => {
-        const ok = r?.result;
-        if (ok) showToast('success', lang === 'id' ? 'Favorit' : 'Favorites', lang === 'id' ? 'Lagu ditambahkan ke favorit.' : 'Added to favorites.');
-        refreshMusic();
-      })
-      .catch(() => {});
-  };
+  // Now playing display (parity _update_now_playing)
+  const nowTitle = isLibraryPlaying ? (playingFile?.title || playingFile?.name || '') : tr('music_nothing_playing');
+  const nowArtist = isLibraryPlaying ? (playingFile?.artist || playingFile?.name || '') : tr('music_choose_track');
+  const nowAlbum = isLibraryPlaying ? (playingFile?.album || '') : '';
 
-
-
-  const playLofiTrack = (index: number) => {
-    setIsLibraryPlaying(false);
-    setPlayingFile(null);
-    setCurrentTrackIndex(index);
-    setIsPlaying(true);
-    loadLyrics(tracks[index]?.artist || '', tracks[index]?.title || '');
-  };
-
-  const refreshLibrary = () => studio.musicLibrary().then((d) => setLibrary(d.library || [])).catch(() => {});
-
+  // ── yt-dlp downloader (parity _open_downloader) ───────────────────────────
   const searchYt = async () => {
     if (!ytQuery.trim()) return;
     setYtBusy(true);
@@ -214,14 +398,13 @@ export const MusicView: React.FC = () => {
       const d = await studio.searchMusic(ytQuery.trim());
       const rows = d.results || d.result?.results || [];
       setYtResults(rows.map((x: any, i: number) => ({ id: String(x.id || i), title: x.title || x.url, url: x.url || x.webpage_url || '' })));
-    } catch {
-      showToast('damage', 'yt-dlp', 'search failed');
-    } finally {
-      setYtBusy(false);
-    }
+    } catch { showToast('damage', 'yt-dlp', 'search failed'); }
+    finally { setYtBusy(false); }
   };
-
   const downloadYt = async (url: string) => {
+    if (!url) return;
+    const targetId = dlTargetId || selectedPlaylistId;
+    if (targetId === null) return;
     try {
       const d = await studio.downloadMusic(url);
       const jid = d.jobId || d.result?.jobId;
@@ -232,604 +415,262 @@ export const MusicView: React.FC = () => {
         const job = j.job || j;
         setYtJob({ done: !!job.done, percent: String(job.percent || job.progress || '') });
         if (!job.done && !job.error) setTimeout(poll, 1500);
-        else refreshLibrary();
+        else { refreshLibrary(); refreshMusic(selectedPlaylistId); }
       };
       poll();
-    } catch {
-      showToast('damage', 'yt-dlp', 'download failed');
-    }
+    } catch { showToast('damage', 'yt-dlp', 'download failed'); }
   };
 
-  // Parity MusicPage._add_paths: validasi ekstensi AUDIO_EXTENSIONS
-  // (.mp3/.wav/.flac/.m4a/.mp4/.ogg), urut (sorted), tambahkan ke playlist aktif.
-  const MUSIC_EXT = ['.mp3', '.wav', '.flac', '.m4a', '.mp4', '.ogg'];
-  const handleImportFiles = async (files: FileList | File[]) => {
-    if (selectedPlaylistId === null) return; // parity: current_playlist_id None → return
-    const list = Array.from(files).sort((a, b) => {
-      const ra = (a as any).webkitRelativePath || a.name;
-      const rb = (b as any).webkitRelativePath || b.name;
-      return String(ra).localeCompare(String(rb));
-    });
-    setImporting(true);
-    let added = 0;
-    let skipped = 0;
-    for (const f of list) {
-      const ext = `.${(f.name.split('.').pop() || '').toLowerCase()}`;
-      if (!MUSIC_EXT.includes(ext)) { skipped++; continue; }
-      try {
-        const up = await studio.uploadMusicFile(f);
-        if (up?.ok && up.path) {
-          await studio.addPlaylistTrack(selectedPlaylistId, up.path);
-          added++;
-        } else {
-          skipped++;
-        }
-      } catch {
-        skipped++;
-      }
-    }
-    setImporting(false);
-    if (added) {
-      showToast('success',
-        lang === 'id' ? `${added} file ditambahkan` : `${added} file(s) added`,
-        lang === 'id' ? 'Lagu masuk ke playlist & library.' : 'Tracks stored to library and playlist.');
-      refreshMusic();
-      refreshLibrary();
-    }
-    if (skipped) {
-      showToast('info',
-        lang === 'id' ? `${skipped} file dilewati` : `${skipped} file(s) skipped`,
-        lang === 'id' ? 'Hanya .mp3/.wav/.flac/.m4a/.mp4/.ogg yang diterima.' : 'Only .mp3/.wav/.flac/.m4a/.mp4/.ogg are accepted.');
-    }
-  };
-
-  const createPlaylist = async () => {
-    const name = newPlaylistName.trim();
-    if (!name) return;
-    await studio.createPlaylist(name).catch(() => {});
-    setNewPlaylistName('');
-    refreshMusic();
-  };
-
-  const renamePlaylist = (p: PlaylistEntry) => {
-    const name = window.prompt(lang === 'id' ? 'Nama playlist baru' : 'New playlist name', p.name);
-    if (!name?.trim()) return;
-    studio.renamePlaylist(p.id, name.trim()).then(() => refreshMusic()).catch(() => {});
-  };
-
-  const deletePlaylist = (p: PlaylistEntry) => {
-    if (p.isFavorite) { showToast('info', 'Playlist', lang === 'id' ? 'Tidak bisa menghapus favorit' : 'Cannot delete favorite'); return; }
-    studio.deletePlaylist(p.id).then((r) => {
-      const ok = r?.result?.ok;
-      if (ok === false) showToast('damage', 'Playlist', lang === 'id' ? 'Gagal menghapus' : 'Delete failed');
-      refreshMusic();
-    }).catch(() => {});
-  };
-
-  const addToPlaylist = (path: string) => {
-    if (!selectedPlaylistId) { showToast('info', 'Playlist', lang === 'id' ? 'Buat/pilih playlist dulu' : 'Create/select a playlist first'); return; }
-    studio.addPlaylistTrack(selectedPlaylistId, path).then(() => refreshMusic()).catch(() => {});
-  };
-
-  const removeFromPlaylist = (index: number) => {
-    if (selectedPlaylistId === null) return;
-    studio.removePlaylistTrack(selectedPlaylistId, index).then(() => refreshMusic()).catch(() => {});
-  };
-
-  const moveTrackTo = (index: number, targetId: string | number | null, copy: boolean) => {
-    if (!targetId || selectedPlaylistId === null || String(targetId) === String(selectedPlaylistId)) return;
-    const fn = copy ? studio.copyPlaylistTrack : studio.movePlaylistTrack;
-    fn(selectedPlaylistId, targetId, index).then(() => refreshMusic()).catch(() => {});
-  };
-
-  // Binaural synth
-  const startBinauralSynth = (preset: 'alpha' | 'beta' | 'theta' | 'delta') => {
-    try {
-      if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') ctx.resume();
-      if (oscRef.current) { oscRef.current.left.stop(); oscRef.current.right.stop(); }
-      const baseFreq = 220;
-      let beatFreq = 10;
-      if (preset === 'beta') beatFreq = 18;
-      if (preset === 'theta') beatFreq = 6;
-      if (preset === 'delta') beatFreq = 2;
-      const merger = ctx.createChannelMerger(2);
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      const oscL = ctx.createOscillator();
-      const oscR = ctx.createOscillator();
-      oscL.type = 'sine'; oscR.type = 'sine';
-      oscL.frequency.setValueAtTime(baseFreq, ctx.currentTime);
-      oscR.frequency.setValueAtTime(baseFreq + beatFreq, ctx.currentTime);
-      oscL.connect(merger, 0, 0); oscR.connect(merger, 0, 1);
-      merger.connect(gain); gain.connect(ctx.destination);
-      oscL.start(); oscR.start();
-      oscRef.current = { left: oscL, right: oscR, gain };
-      setIsSynthRunning(true); setSynthPreset(preset);
-      showToast('info', 'Binaural Synth', `Generated ${preset.toUpperCase()} waves (${beatFreq}Hz)`);
-    } catch {
-      showToast('damage', 'Audio Warning', 'AudioContext is restricted in this environment.');
-    }
-  };
-  const stopBinauralSynth = () => {
-    if (oscRef.current) { try { oscRef.current.left.stop(); oscRef.current.right.stop(); } catch {} oscRef.current = null; }
-    setIsSynthRunning(false);
-  };
-
-  // Audio progress
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const onTime = () => {
-      const d = audio.duration || 0;
-      const t = audio.currentTime || 0;
-      if (d) setTrackProgress((t / d) * 100);
-      const m = Math.floor(t / 60); const s = Math.floor(t % 60);
-      setElapsed(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
-    };
-    const onEnded = () => {
-      if (repeat) { audio.currentTime = 0; audio.play().catch(() => {}); return; }
-      if (isLibraryPlaying) { setIsPlaying(false); return; }
-      handleNextTrack();
-    };
-    audio.addEventListener('timeupdate', onTime);
-    audio.addEventListener('ended', onEnded);
-    return () => { audio.removeEventListener('timeupdate', onTime); audio.removeEventListener('ended', onEnded); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repeat, isLibraryPlaying]);
-
-  // Parity MusicPage._next/_previous untuk pemutaran daftar lokal:
-  // urutan mengikuti playlist aktif bila track ada di sana, jika tidak library.
-  const localSequence = (): string[] => {
-    if (playingFile && activeTracks.includes(playingFile.path)) return activeTracks;
-    return libraryFiltered.map((f) => f.path);
-  };
-
-  const handleNextTrack = () => {
-    if (isLibraryPlaying && playingFile) {
-      const list = localSequence();
-      if (!list.length) return;
-      let idx = list.indexOf(playingFile.path);
-      if (idx < 0) idx = 0;
-      if (shuffle && list.length > 1) {
-        const choices = list.filter((_, i2) => i2 !== idx);
-        idx = list.indexOf(choices[Math.floor(Math.random() * choices.length)]);
-      } else {
-        idx = (idx + 1) % list.length;
-      }
-      playLibraryPath(list[idx]);
-      return;
-    }
-    setCurrentTrackIndex((p) => shuffle ? Math.floor(Math.random() * Math.max(1, tracks.length)) : (p < tracks.length - 1 ? p + 1 : 0));
-    setIsPlaying(true);
-  };
-  const handlePrevTrack = () => {
-    if (isLibraryPlaying && playingFile) {
-      // Parity _previous: bila posisi > 3 detik, restart lagu sekarang dulu.
-      const a = audioRef.current;
-      if (a && a.currentTime > 3) { a.currentTime = 0; return; }
-      const list = localSequence();
-      if (!list.length) return;
-      let idx = list.indexOf(playingFile.path);
-      if (idx < 0) idx = 0;
-      idx = (idx - 1 + list.length) % list.length;
-      playLibraryPath(list[idx]);
-      return;
-    }
-    setCurrentTrackIndex((p) => (p > 0 ? p - 1 : tracks.length - 1));
-    setIsPlaying(true);
-  };
-
-  const toggleTrackPlay = () => {
-    const nextPlay = !isPlaying;
-    setIsPlaying(nextPlay);
-    if (audioRef.current) {
-      if (nextPlay) audioRef.current.play().catch(() => {}); else audioRef.current.pause();
-    }
-  };
-
-  const toggleSongFavorite = (track: MusicTrack) => {
-    setTracks((prev) => prev.map((t) => (t.id === track.id ? { ...t, isFavorite: !t.isFavorite } : t)));
-  };
-
-  const filteredTracks = tracks.filter((t) => {
-    const matchesCat = activeCategory === 'all' || t.category === activeCategory;
-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.artist.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCat && matchesSearch;
-  });
-
-  const libraryFiltered = library.filter((f) =>
-    !searchQuery || `${f.title || f.name} ${f.artist || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
+  const libMeta = (path: string) => metaFor(path);
+  const renderRow = (r: TrackRow, idx: number) => (
+    <tr key={`${r.path}_${idx}`}
+      onDoubleClick={() => playLibraryPath(r.path)}
+      onClick={() => setMenuOpenFor(null)}
+      className={`border-b border-slate-800/60 ${currentIndex === activeTracks.indexOf(r.path) ? 'bg-emerald-500/10 text-emerald-200' : 'hover:bg-slate-800/30'} ${r.missing ? 'text-rose-400/70' : 'text-slate-300'} cursor-pointer`}>
+      <td className="px-3 py-2 text-slate-500 text-xs w-8">{idx + 1}</td>
+      <td className="px-3 py-2 text-xs font-semibold">
+        <span className="flex items-center gap-2"><FileAudio className={`w-3.5 h-3.5 ${r.missing ? 'text-rose-400' : 'text-emerald-400'} shrink-0`} />{r.title}</span>
+      </td>
+      <td className="px-3 py-2 text-xs">{r.artist}</td>
+      <td className="px-3 py-2 text-xs">{r.album}</td>
+      <td className="px-3 py-2 text-xs text-center font-mono">{r.duration ? fmtDuration(r.duration) : '—'}</td>
+      <td className="px-2 py-2 text-right w-8">
+        <button onClick={(e) => { e.stopPropagation(); setMenuOpenFor(menuOpenFor === idx ? null : idx); }}
+          className="p-1 text-slate-500 hover:text-slate-200"><ChevronDown className="w-3.5 h-3.5" /></button>
+      </td>
+    </tr>
   );
 
   return (
-    <div id="music-audio-studio-view" className="space-y-6">
-      <audio
-        ref={audioRef}
-        src={isLibraryPlaying && playingFile ? `/music/stream?path=${encodeURIComponent(playingFile.path)}` : currentTrack?.url}
-        loop={false}
-        onEnded={() => {}}
-      />
+    <div className="h-full flex flex-col bg-[#121212] text-slate-100">
+      <audio ref={audioRef} src={playSrc} preload="auto" onEnded={() => {}} loop={false}
+        onError={() => console.error('[MusicView] audio error, src=', playSrc, 'isLibraryPlaying=', isLibraryPlaying, 'playingFile=', playingFile)} />
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-2xl">🎵</div>
+      {/* Header (parity _page_header("music") + actions) */}
+      <div className="px-6 py-4 flex flex-wrap items-center gap-3 border-b border-slate-800/70">
+        <div className="mr-auto flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center text-xl">🎵</div>
           <div>
-            <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-              <span>{lang === 'id' ? 'Studio Musik & Suasana Fokus' : 'Music & Ambient Audio Studio'}</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-medium">Local • {isLibraryPlaying ? (playingFile?.title || playingFile?.name) : 'Lofi'}</span>
-            </h1>
-            <p className="text-xs text-slate-400">
-              {lang === 'id' ? 'Putar file musik lokal, baca lirik, kelola playlist, dan aktifkan gelombang binaural.' : 'Play local music files, read lyrics, manage playlists, and trigger binaural frequencies.'}
-            </p>
+            <h1 className="text-lg font-black">{tr('music')}</h1>
+            <p className="text-[11px] text-slate-400">{tr('music_subtitle')}</p>
+          </div>
+        </div>
+        <input ref={importFilesRef} type="file" multiple accept=".mp3,.wav,.flac,.m4a,.mp4,.ogg,audio/*"
+          className="hidden" onChange={(e) => { if (e.target.files?.length) handleImport(e.target.files, false); e.target.value = ''; }} />
+        <input ref={importFolderRef} type="file" multiple {...({ webkitdirectory: '', directory: '' } as any)}
+          className="hidden" onChange={(e) => { if (e.target.files?.length) handleImport(e.target.files, true); e.target.value = ''; }} />
+        <button onClick={() => importFilesRef.current?.click()} disabled={importing || selectedPlaylistId === null}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold">
+          <FolderInput className="w-4 h-4" />{tr('music_add_files')}
+        </button>
+        <button onClick={() => importFolderRef.current?.click()} disabled={importingFolder || selectedPlaylistId === null}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-sm font-bold">
+          <FolderInput className="w-4 h-4" />{tr('music_select_folder')}
+        </button>
+        <button onClick={() => setDlOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-200 hover:bg-emerald-600/35 text-sm font-bold">
+          <Download className="w-4 h-4" />{tr('music_download_title')}
+        </button>
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        {/* ── Sidebar playlist rail (parity musicSidebar) ── */}
+        <div className="w-60 shrink-0 border-r border-slate-800/70 p-4 space-y-3 bg-[#090909]">
+          <div className="text-emerald-400 text-xs font-black tracking-widest">CRAFTLIFE&nbsp;MUSIC</div>
+          <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">{tr('music_your_library')}</div>
+          <div className="flex-1 space-y-1 overflow-y-auto max-h-64">
+            {playlists.length === 0 && <p className="text-[11px] text-slate-600">{tr('music_no_tracks_to_save')}</p>}
+            {playlists.map((p) => {
+              const count = p.tracks?.length || 0;
+              const icon = p.isFavorite ? '♥' : '♫';
+              return (
+                <button key={p.id} onClick={() => refreshMusic(p.id)} onDoubleClick={() => renamePlaylist(p)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs ${selectedPlaylistId === p.id ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:bg-slate-900 hover:text-white'} transition-colors`}>
+                  <span className="text-emerald-400">{icon}</span>{' '}
+                  <span>{p.name}</span>
+                  <span className="block text-[10px] text-slate-500">{tr('music_track_count', { count })}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={createPlaylist} className="px-2 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-[11px] font-bold">{tr('music_new_playlist')}</button>
+            <div className="grid grid-cols-2 gap-1">
+              <button onClick={() => activePlaylist && renamePlaylist(activePlaylist)} className="px-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px]">{tr('music_rename_playlist')}</button>
+              <button onClick={() => activePlaylist && deletePlaylist(activePlaylist)} className="px-1 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-[11px]"><Trash2 className="w-3 h-3 mx-auto" /></button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Center: hero + search + track table ── */}
+        <div className="flex-1 min-w-0 flex flex-col p-5 space-y-4">
+          {/* Hero (parity musicHero) */}
+          <div className="rounded-2xl p-5 flex items-center gap-5 bg-gradient-to-br from-emerald-800/50 to-slate-900 border border-emerald-900/30">
+            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl bg-slate-900 border border-emerald-500/30 flex items-center justify-center text-5xl shrink-0">
+              {isLibraryPlaying ? <FileAudio className="w-12 h-12 text-emerald-300" /> : '♫'}
+            </div>
+            <div className="min-w-0">
+              <div className="text-emerald-300 text-[10px] font-black tracking-widest uppercase">{tr('music_now_playing_kicker')}</div>
+              <div className="text-2xl font-black truncate">{nowTitle || tr('music_nothing_playing')}</div>
+              <div className="text-sm text-slate-300 truncate">{nowArtist || tr('music_choose_track')}</div>
+              {nowAlbum && <div className="text-[11px] text-slate-400 truncate">{nowAlbum}</div>}
+            </div>
+          </div>
+
+          {/* Toolbar: search + count */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={tr('music_search_placeholder')}
+                className="w-full bg-slate-900 border border-slate-700 rounded-full pl-9 pr-3 py-2 text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <span className="text-[11px] text-slate-500 whitespace-nowrap">{tr('music_track_count', { count: activeTracks.length })}</span>
+          </div>
+
+          {/* Track table (parity musicTracks) */}
+          <div className="flex-1 rounded-2xl border border-slate-800 bg-[#121212] overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-[#121212] text-slate-400 text-[10px] uppercase tracking-wider">
+                <tr>
+                  <th className="px-3 py-2 w-8">#</th>
+                  <th className="px-3 py-2">{tr('music_track_title')}</th>
+                  <th className="px-3 py-2">{tr('music_artist')}</th>
+                  <th className="px-3 py-2">{tr('music_album')}</th>
+                  <th className="px-3 py-2 text-center">{tr('music_duration')}</th>
+                  <th className="px-2 py-2 w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-10 text-center text-xs text-slate-600">{tr('music_no_results')}</td></tr>
+                )}
+                {filteredRows.map((r, idx) => renderRow(r, activeTracks.indexOf(r.path)))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Track context menu (parity _track_menu) */}
+          {menuOpenFor !== null && filteredRows[menuOpenFor] && (() => {
+            const r = filteredRows[menuOpenFor];
+            const idx = activeTracks.indexOf(r.path);
+            const otherPls = playlists.filter((p) => String(p.id) !== String(selectedPlaylistId));
+            return (
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpenFor(null)}>
+                <div onClick={(e) => e.stopPropagation()}
+                  className="absolute right-6 top-1/2 -translate-y-1/2 w-56 rounded-xl bg-slate-800 border border-slate-700 p-1 shadow-2xl text-xs">
+                  <button onClick={() => { playLibraryPath(r.path); setMenuOpenFor(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700">{tr('music_play')}</button>
+                  <button onClick={() => { addToFavorites(r.path); setMenuOpenFor(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-700 flex items-center gap-2"><Heart className="w-3 h-3" />{tr('music_add_to_favorites')}</button>
+                  <div className="px-3 py-1 text-slate-500 text-[10px] uppercase">{tr('music_move_to_playlist')}</div>
+                  {otherPls.map((p) => <button key={p.id} onClick={() => { moveTrackTo(idx, p.id, false); setMenuOpenFor(null); }} className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-slate-700 pl-6">{p.name}</button>)}
+                  {otherPls.length === 0 && <div className="px-3 py-1 pl-6 text-slate-600">{tr('music_no_tracks_to_save')}</div>}
+                  <div className="px-3 py-1 text-slate-500 text-[10px] uppercase">{tr('music_copy_to_playlist')}</div>
+                  {otherPls.map((p) => <button key={p.id} onClick={() => { moveTrackTo(idx, p.id, true); setMenuOpenFor(null); }} className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-slate-700 pl-6 flex items-center gap-1.5"><FolderOutput className="w-3 h-3" />{p.name}</button>)}
+                  <div className="border-t border-slate-700 mt-1 pt-1" />
+                  <button onClick={() => { removeFromPlaylist(idx); setMenuOpenFor(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-rose-600/30 text-rose-300 flex items-center gap-2"><Trash2 className="w-3 h-3" />{tr('music_remove_from_playlist')}</button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* ── Lyrics drawer (parity musicLyricsPanel) ── */}
+        {lyricsOpen && (
+          <div className="w-72 shrink-0 border-l border-slate-800/70 p-5 bg-[#181818] space-y-3 overflow-y-auto">
+            <div className="text-white text-sm font-black">{tr('music_lyrics')}</div>
+            <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
+              {lyricsLoading ? <span className="text-slate-500">{tr('music_lyrics_searching')}</span>
+                : (syncedLines.length ? (
+                  <div className="space-y-1.5">
+                    {syncedLines.map((ln, i) => (
+                      <p key={i} className={`transition-all duration-200 ${i === activeLyricLine ? 'text-white font-bold' : 'text-slate-500'}`}>{ln.text}</p>
+                    ))}
+                  </div>
+                ) : (lyrics.plain ? (
+                  <span>{lyricsSource ? tr('music_lyrics_from_web') : ''}<span className="block pt-2">{lyrics.plain}</span></span>
+                ) : (
+                  <span className="text-slate-500 italic">{tr('music_no_lyrics')}</span>
+                )))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Persistent player deck (parity musicDeck) ── */}
+      <div className="border-t border-slate-800/70 bg-[#181818] px-5 py-3">
+        {/* Progress row */}
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-slate-400 font-mono shrink-0">{fmtTime(progressMs)}</span>
+          <input type="range" min={0} max={Math.max(1, durationMs)} value={progressMs}
+            onPointerDown={() => setDragging(true)}
+            onChange={(e) => setProgressMs(Number(e.target.value))}
+            onPointerUp={(e) => { setDragging(false); const a = audioRef.current; if (a && a.duration) a.currentTime = (Number((e.target as HTMLInputElement).value) / 1000); }}
+            className="flex-1 accent-emerald-500 h-1.5 bg-slate-700 rounded-lg" />
+          <span className="text-[10px] text-slate-400 font-mono shrink-0">{fmtTime(durationMs)}</span>
+        </div>
+        {/* Controls row */}
+        <div className="flex items-center gap-3 mt-1">
+          <div className="min-w-0 flex-1 truncate text-sm font-bold">
+            {isLibraryPlaying ? (playingFile?.title || playingFile?.name) : tr('music_nothing_playing')}
+          </div>
+          <button onClick={() => setShuffle((s) => !s)} title={tr('music_shuffle')}
+            className={`p-2 rounded-full transition-colors ${shuffle ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400 hover:text-white'}`}><Shuffle className="w-4 h-4" /></button>
+          <button onClick={handlePrevTrack} title={tr('music_prev')} className="p-2 text-slate-400 hover:text-white"><SkipBack className="w-5 h-5" /></button>
+          <button onClick={toggleTrackPlay} className="w-12 h-12 rounded-full bg-white hover:bg-emerald-400 text-slate-950 flex items-center justify-center transition-colors">
+            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+          </button>
+          <button onClick={handleNextTrack} title={tr('music_next')} className="p-2 text-slate-400 hover:text-white"><SkipForward className="w-5 h-5" /></button>
+          <button onClick={() => setRepeat((r) => !r)} title={tr('music_repeat')}
+            className={`p-2 rounded-full transition-colors ${repeat ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400 hover:text-white'}`}><Repeat className="w-4 h-4" /></button>
+          <button onClick={toggleLyrics} className={`px-2 py-1.5 rounded-lg text-xs font-bold ${lyricsOpen ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}>
+            <Sparkles className="w-3.5 h-3.5 inline mr-1" />{tr('music_lyrics')}
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsMuted((m) => !m)} className="text-slate-400 hover:text-white">
+              {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+            <input type="range" min={0} max={100} value={isMuted ? 0 : volume} onChange={(e) => { setVolume(Number(e.target.value)); setIsMuted(false); }}
+              className="w-24 accent-emerald-500 h-1 bg-slate-700 rounded-lg" />
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Hero Player */}
-          <div className="p-6 bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-950 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-slate-900 border border-emerald-500/30 flex items-center justify-center text-5xl shadow-2xl shrink-0">
-                {isLibraryPlaying ? <FileAudio className="w-14 h-14 text-emerald-300" /> : (currentTrack?.coverEmoji || '🎧')}
-              </div>
-              <div className="space-y-1 text-center sm:text-left flex-1">
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Now Playing</span>
-                <h2 className="text-xl font-bold text-slate-100">
-                  {isLibraryPlaying ? (playingFile?.title || playingFile?.name || 'Local Track') : (currentTrack?.title || 'Relaxing Beats')}
-                </h2>
-                <p className="text-sm text-slate-400">
-                  {isLibraryPlaying ? (playingFile?.artist || 'Local file') : (currentTrack?.artist || 'CraftLife Focus Radio')}
-                </p>
-                <div className="flex items-center justify-center sm:justify-start gap-2 pt-2">
-                  <span className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 font-mono">
-                    {isLibraryPlaying ? 'LOCAL' : (currentTrack?.category?.toUpperCase() || 'LOFI')}
-                  </span>
-                  <span className="text-xs text-slate-500">{isLibraryPlaying ? fmtDuration(playingFile?.duration || 0) : (currentTrack?.duration || '3:30')}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Progress */}
-            <div className="space-y-1.5">
-              <div
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                  setTrackProgress(pct);
-                  const a = audioRef.current;
-                  if (a && a.duration) a.currentTime = (pct / 100) * a.duration;
-                }}
-                className="w-full h-2 bg-slate-800 rounded-full cursor-pointer overflow-hidden relative"
-              >
-                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${trackProgress}%` }} />
-              </div>
-              <div className="flex justify-between text-[11px] text-slate-500 font-mono">
-                <span>{elapsed}</span>
-                <span>{isLibraryPlaying ? fmtDuration(playingFile?.duration || 0) : (currentTrack?.duration || '03:45')}</span>
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-              <div className="flex items-center gap-4 mx-auto sm:mx-0">
-                <button onClick={handlePrevTrack} className="p-2 text-slate-400 hover:text-slate-100 transition-colors"><SkipBack className="w-5 h-5" /></button>
-                <button onClick={toggleTrackPlay} className="w-14 h-14 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold flex items-center justify-center transition-all shadow-lg shadow-emerald-500/20">
-                  {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
-                </button>
-                <button onClick={handleNextTrack} className="p-2 text-slate-400 hover:text-slate-100 transition-colors"><SkipForward className="w-5 h-5" /></button>
-              </div>
-              <div className="flex items-center gap-2.5 mx-auto sm:mx-0">
-                <button onClick={() => setIsMuted(!isMuted)} className="text-slate-400 hover:text-slate-200">
-                  {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                </button>
-                <input type="range" min="0" max="100" value={isMuted ? 0 : volume}
-                  onChange={(e) => { setVolume(Number(e.target.value)); setIsMuted(false); if (audioRef.current) audioRef.current.volume = Number(e.target.value) / 100; }}
-                  className="w-24 accent-emerald-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer" />
-                <span className="text-xs text-slate-400 font-mono w-8">{isMuted ? '0%' : `${volume}%`}</span>
-              </div>
-            </div>
-
-            {/* Lyrics toggle */}
-            <div className="flex items-center justify-between gap-2 pt-1">
-              <button onClick={() => { setLyricsOpen((o) => !o); if (!lyricsOpen) loadLyricsForCurrent(); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{lang === 'id' ? 'Lirik' : 'Lyrics'}</span>
-              </button>
-              {lyricsOpen && (
-                <div className="text-[10px] text-slate-500">
-                  {lyricsLoading ? (lang === 'id' ? 'Mencari lirik…' : 'Searching lyrics…') : lyricsSource ? `via ${lyricsSource}` : (lang === 'id' ? 'Tidak ada lirik' : 'No lyrics')}
-                </div>
-              )}
-            </div>
-            {lyricsOpen && (
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800/70 max-h-56 overflow-y-auto text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
-                {lyricsLoading ? <span className="text-slate-500">{lang === 'id' ? 'Mencari lirik…' : 'Searching…'}</span> : (lyrics.plain || lyrics.synced || (
-                  <span className="text-slate-500 italic">{lang === 'id' ? 'Lirik tidak ditemukan untuk lagu ini.' : 'No lyrics found for this track.'}</span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Playlists */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                <ListMusic className="w-4 h-4 text-emerald-400" />
-                <span>{lang === 'id' ? 'Playlist' : 'Playlists'}</span>
-              </h3>
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Parity _add_files (dialog multi-file) & _select_folder (walk folder) */}
-                <input
-                  ref={importFilesRef} type="file" multiple
-                  accept=".mp3,.wav,.flac,.m4a,.mp4,.ogg,audio/*"
-                  className="hidden"
-                  onChange={(e) => { if (e.target.files?.length) handleImportFiles(e.target.files); e.target.value = ''; }}
-                />
-                <input
-                  ref={importFolderRef} type="file" multiple
-                  {...({ webkitdirectory: '', directory: '' } as any)}
-                  className="hidden"
-                  onChange={(e) => { if (e.target.files?.length) handleImportFiles(e.target.files); e.target.value = ''; }}
-                />
-                <button
-                  onClick={() => importFilesRef.current?.click()}
-                  disabled={importing || selectedPlaylistId === null}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs"
-                >
-                  <FolderInput className="w-3.5 h-3.5" />
-                  <span>{importing ? '…' : (lang === 'id' ? 'Tambah File' : 'Add Files')}</span>
-                </button>
-                <button
-                  onClick={() => importFolderRef.current?.click()}
-                  disabled={importing || selectedPlaylistId === null}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs"
-                >
-                  <FolderInput className="w-3.5 h-3.5" />
-                  <span>{lang === 'id' ? 'Pilih Folder' : 'Select Folder'}</span>
-                </button>
-                <input value={newPlaylistName} onChange={(e) => setNewPlaylistName(e.target.value)} placeholder={lang === 'id' ? 'Nama playlist…' : 'Playlist name…'}
-                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
-                <button onClick={createPlaylist} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs">
-                  <Plus className="w-3.5 h-3.5" /> <span>{lang === 'id' ? 'Buat' : 'Create'}</span>
-                </button>
-              </div>
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {playlists.map((p) => (
-                <button key={p.id} onClick={() => setSelectedPlaylistId(p.id)} onDoubleClick={() => renamePlaylist(p)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${selectedPlaylistId === p.id ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40' : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'}`}>
-                  {p.isFavorite ? <Heart className="w-3 h-3 fill-rose-400 text-rose-400" /> : <Music2 className="w-3 h-3" />}
-                  <span>{p.name}</span>
-                </button>
-              ))}
-            </div>
-            {selectedPlaylistId !== null && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-400">{lang === 'id' ? 'Klik ganda untuk rename.' : 'Double-click to rename.'}</span>
-                <button onClick={() => activePlaylist && deletePlaylist(activePlaylist)} className="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300"><Trash2 className="w-3 h-3" /></button>
-              </div>
-            )}
-            {activePlaylist && activeTracks.length > 0 && (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                {activeTracks.map((path, idx) => {
-                  const base = path.split(/[\\/]/).pop() || path;
-                  return (
-                    <div key={`${path}_${idx}`} className="p-2.5 rounded-xl border border-slate-800/80 bg-slate-950/50 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileAudio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <button onClick={() => handlePlayLibraryFile({ path, name: base, title: base, size: 0 })} className="truncate text-xs text-slate-200 hover:text-emerald-300">{base}</button>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {/* Parity _track_menu: mainkan, favorit, pindah, salin, hapus */}
-                        <button onClick={() => addToFavorites(path)} title={lang === 'id' ? 'Tambah ke favorit' : 'Add to favorites'} className="p-1 rounded-lg text-slate-400 hover:text-rose-400"><Heart className="w-3.5 h-3.5" /></button>
-                        <select title={lang === 'id' ? 'Pindah/salin ke' : 'Move/copy to'}
-                          defaultValue=""
-                          onChange={(e) => { if (e.target.value) moveTrackTo(idx, e.target.value, false); }}
-                          className="bg-slate-800 border border-slate-700 rounded-lg text-[10px] text-slate-300 px-1 py-0.5">
-                          <option value="">{lang === 'id' ? 'Pindah…' : 'Move…'}</option>
-                          {playlists.filter((p) => String(p.id) !== String(selectedPlaylistId)).map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
-                        <button title={lang === 'id' ? 'Salin ke' : 'Copy to'} onClick={() => moveTrackTo(idx, playlists.find((p) => String(p.id) !== String(selectedPlaylistId))?.id ?? null, true)}
-                          className="p-1 rounded-lg text-slate-400 hover:text-emerald-300"><FolderOutput className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => removeFromPlaylist(idx)} className="p-1 rounded-lg text-slate-400 hover:text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {activePlaylist && activeTracks.length === 0 && (
-              <p className="text-[11px] text-slate-500">{lang === 'id' ? 'Playlist kosong. Tambahkan lagu dari perpustakaan di bawah.' : 'Empty playlist. Add tracks from the library below.'}</p>
-            )}
-          </div>
-
-          {/* Playlist & Lofi Tracks table */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                <Disc className="w-4 h-4 text-emerald-400" />
-                <span>{lang === 'id' ? 'Daftar Lagu Lofi & Fokus' : 'Focus Playlist Library'}</span>
-              </h3>
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search tracks..."
-                  className="bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
-              </div>
-            </div>
-            <div className="flex gap-1.5 border-b border-slate-800 pb-3 text-xs flex-wrap">
-              {(['all', 'lofi', 'focus', 'ambient', 'synth'] as const).map((cat) => (
-                <button key={cat} onClick={() => setActiveCategory(cat)}
-                  className={`px-3 py-1 rounded-lg capitalize font-medium transition-colors ${activeCategory === cat ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200'}`}>
-                  {cat}
-                </button>
-              ))}
-            </div>
-            <div className="space-y-1.5 max-h-[280px] overflow-y-auto pr-1">
-              {filteredTracks.map((track, idx) => {
-                const isSelected = !isLibraryPlaying && track.id === currentTrack.id;
-                const realIndex = tracks.findIndex((t) => t.id === track.id);
-                return (
-                  <div key={track.id} onClick={() => playLofiTrack(realIndex)}
-                    className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${isSelected ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200 shadow-md' : 'bg-slate-950/50 border-slate-800/80 text-slate-300 hover:border-slate-700'}`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{track.coverEmoji}</span>
-                      <div>
-                        <h4 className="font-semibold text-xs text-slate-100">{track.title}</h4>
-                        <p className="text-[11px] text-slate-500">{track.artist}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button onClick={(e) => { e.stopPropagation(); loadLyrics(track.artist, track.title); }} title="Lyrics"><Sparkles className="w-3.5 h-3.5 text-slate-500 hover:text-emerald-300" /></button>
-                      <span className="text-xs font-mono text-slate-500">{track.duration}</span>
-                      <button onClick={(e) => { e.stopPropagation(); toggleSongFavorite(track); }}
-                        className={`p-1.5 ${track.isFavorite ? 'text-rose-400' : 'text-slate-600 hover:text-slate-400'}`}>
-                        <Heart className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-6">
-          {/* Local Library */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
+      {/* ── yt-dlp downloader modal (parity _open_downloader) ── */}
+      {dlOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-2xl space-y-3 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                <FolderInput className="w-4 h-4 text-emerald-400" />
-                <span>{lang === 'id' ? 'Perpustakaan Lokal' : 'Local Library'}</span>
-              </h3>
-              <button onClick={refreshLibrary} className="text-[11px] text-slate-500 hover:text-slate-300">↻</button>
+              <h3 className="text-sm font-black flex items-center gap-2"><Download className="w-4 h-4 text-emerald-400" />{tr('music_download_title')}</h3>
+              <button onClick={() => setDlOpen(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
-            {library.length === 0 && <p className="text-[11px] text-slate-500">{lang === 'id' ? 'Unduh lagu melalui yt-dlp di bawah.' : 'Download tracks via yt-dlp below.'}</p>}
-            <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-              {libraryFiltered.map((f) => (
-                <div key={f.path} className="p-2 rounded-xl border border-slate-800/80 bg-slate-950/50 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <button onClick={() => handlePlayLibraryFile(f)} className="block truncate text-xs text-slate-200 hover:text-emerald-300 font-semibold">{f.title || f.name}</button>
-                    {/* Parity kolom tabel PyQt: artist · album · durasi */}
-                    <p className="text-[10px] text-slate-500 truncate">
-                      {f.artist || f.name}{f.album ? ` · ${f.album}` : ''}{f.duration ? ` · ${fmtDuration(f.duration)}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => handlePlayLibraryFile(f)} className="p-1.5 text-emerald-400">{isLibraryPlaying && playingFile?.path === f.path ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}</button>
-                    <button onClick={() => addToFavorites(f.path)} title={lang === 'id' ? 'Tambah ke favorit' : 'Add to favorites'}><Heart className="w-3.5 h-3.5 text-slate-400 hover:text-rose-400" /></button>
-                    <button onClick={() => loadLyrics(f.artist || '', f.title || f.name)} title="Lyrics"><Sparkles className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-300" /></button>
-                    <button onClick={() => addToPlaylist(f.path)} title="Add to playlist"><Plus className="w-3.5 h-3.5 text-slate-400 hover:text-emerald-300" /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Ambient mixer */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-emerald-400" />
-                <span>{lang === 'id' ? 'Mixer Suara Alam' : 'Ambient Soundscape Mixer'}</span>
-              </h3>
-              <button onClick={() => setAmbientVolumes({ rain: 0, fire: 0, waves: 0, birds: 0, cafe: 0, wind: 0, whitenoise: 0 })}
-                className="text-[11px] text-slate-500 hover:text-slate-300">Reset</button>
-            </div>
-            <div className="space-y-3.5">
-              {AMBIENT_SOUNDS.map((snd) => {
-                const vol = ambientVolumes[snd.id] || 0;
-                return (
-                  <div key={snd.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-2 text-slate-300"><span>{snd.icon}</span><span>{lang === 'id' ? snd.nameId : snd.nameEn}</span></span>
-                      <span className="font-mono text-slate-500 text-[11px]">{vol}%</span>
-                    </div>
-                    <input type="range" min="0" max="100" value={vol}
-                      onChange={(e) => setAmbientVolumes((prev) => ({ ...prev, [snd.id]: Number(e.target.value) }))}
-                      className="w-full accent-emerald-500 h-1.5 bg-slate-950 rounded-lg cursor-pointer" />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* yt-dlp */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Unduh musik (yt-dlp)' : 'Download music (yt-dlp)'}</h3>
             <div className="flex gap-2">
-              <input value={ytQuery} onChange={(e) => setYtQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') searchYt(); }}
-                placeholder={lang === 'id' ? 'Cari YouTube…' : 'Search YouTube…'}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs" />
-              <button onClick={searchYt} disabled={ytBusy} className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">{lang === 'id' ? 'Cari' : 'Search'}</button>
+              <input value={ytQuery} onChange={(e) => setYtQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') searchYt(); }} placeholder={tr('music_search_web')}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm" />
+              <button onClick={searchYt} disabled={ytBusy} className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold">{tr('music_btn_search')}</button>
             </div>
-            {ytJob && !ytJob.done && <p className="text-xs text-emerald-300">{lang === 'id' ? 'Mengunduh' : 'Downloading'} {ytJob.percent}</p>}
-            <div className="space-y-1 max-h-40 overflow-y-auto">
+            <input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder={tr('music_url_placeholder')}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm" />
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-400">{tr('music_target_playlist')}</span>
+              <select value={String(dlTargetId || selectedPlaylistId || '')} onChange={(e) => setDlTargetId(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-sm text-slate-100">
+                {playlists.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1 max-h-64 overflow-y-auto">
               {ytResults.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded-lg bg-slate-950 border border-slate-800">
                   <span className="truncate text-slate-200">{r.title}</span>
-                  <button onClick={() => downloadYt(r.url)} className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300">{lang === 'id' ? 'Unduh' : 'Download'}</button>
+                  <button onClick={() => downloadYt(r.url)} className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300">{tr('music_btn_download')}</button>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Binaural */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                <Waves className="w-4 h-4 text-violet-400" />
-                <span>{lang === 'id' ? 'Binaural Focus Synth' : 'Binaural Focus Synth'}</span>
-              </h3>
-              {isSynthRunning && <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold animate-pulse">ACTIVE</span>}
+            <div className="flex gap-2">
+              <button onClick={() => downloadYt(ytUrl)} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold">{tr('music_download')}</button>
             </div>
-            <p className="text-xs text-slate-400">{lang === 'id' ? 'Synthesizer frekuensi audio gelombang otak untuk konsentrasi, kreativitas, atau relaksasi.' : 'Generates dual frequency sine waves to guide brainwave states for deep work.'}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                ['alpha', 'Alpha 10Hz', 'Deep Focus & Flow'],
-                ['beta', 'Beta 18Hz', 'Problem Solving'],
-                ['theta', 'Theta 6Hz', 'Creative Insight'],
-                ['delta', 'Delta 2Hz', 'Rest & Sleep'],
-              ] as const).map(([key, title, desc]) => (
-                <button key={key}
-                  onClick={() => (isSynthRunning && synthPreset === key ? stopBinauralSynth() : startBinauralSynth(key))}
-                  className={`p-2.5 rounded-xl border text-xs font-bold transition-all text-left ${isSynthRunning && synthPreset === key ? 'bg-violet-600 text-white border-violet-500' : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'}`}>
-                  <div>{title}</div>
-                  <span className="text-[10px] font-normal text-slate-400">{desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Recently played */}
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-              <Clock3 className="w-4 h-4 text-emerald-400" />
-              <span>{lang === 'id' ? 'Baru Diputar' : 'Recently Played'}</span>
-            </h3>
-            {history.length === 0 && <p className="text-[11px] text-slate-500">{lang === 'id' ? 'Belum ada riwayat.' : 'No play history yet.'}</p>}
-            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-              {history.slice(0, 20).map((h, i) => (
-                <div key={`${h.path}_${i}`} className="flex items-center justify-between gap-2 text-xs p-2 rounded-lg bg-slate-950 border border-slate-800/70">
-                  <div className="min-w-0">
-                    <button onClick={() => { const p = h.path || ''; if (p) handlePlayLibraryFile({ path: p, name: p.split(/[\\/]/).pop() || '', title: h.title || p.split(/[\\/]/).pop() || '', artist: h.artist || '', size: 0 }); }}
-                      className="block truncate text-slate-200 hover:text-emerald-300">{h.title || (h.path || '').split(/[\\/]/).pop()}</button>
-                    <p className="text-[10px] text-slate-500">{h.artist || ''} · {h.played_at ? new Date(h.played_at).toLocaleString() : ''}</p>
-                  </div>
-                  <Play className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                </div>
-              ))}
-            </div>
+            {ytJob && !ytJob.done && <p className="text-xs text-emerald-300">{tr('music_downloading', { pct: ytJob.percent || '0%' })}</p>}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -4,12 +4,14 @@ import { TaskDifficulty } from '../../types';
 import { CheckSquare, Plus, Trash2, Edit3, Calendar, Check, Clock } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
+import { TaskTemplateDialog } from '../TaskTemplateDialog';
 
 export const QuestsView: React.FC = () => {
-  const { quests, addQuest, editQuest, deleteQuest, toggleQuest, duplicateQuest, reorderQuests, moveTaskAcrossFolders, lang, applyTaskTemplate } = useGame();
+  const { quests, addQuest, editQuest, deleteQuest, toggleQuest, duplicateQuest, reorderQuests, moveTaskAcrossFolders, lang } = useGame();
   const questFolders = useModeFolders('todo');
   const [selectedFolderFilter, setSelectedFolderFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Form
@@ -104,10 +106,10 @@ export const QuestsView: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => applyTaskTemplate('todo', 'project_launch_t')}
+          onClick={() => setIsTemplateOpen(true)}
           className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
         >
-          {lang === 'id' ? 'Template PyQt' : 'PyQt templates'}
+          {lang === 'id' ? '📋 Template' : '📋 Templates'}
         </button>
         <button
           id="btn-create-quest"
@@ -380,6 +382,8 @@ export const QuestsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <TaskTemplateDialog mode="todo" open={isTemplateOpen} onClose={() => setIsTemplateOpen(false)} />
     </div>
   );
 };

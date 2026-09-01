@@ -21,7 +21,7 @@ export const FriendsView: React.FC = () => {
     user, friends, friendRequests, pvpChallenges,
     sendFriendRequest, acceptFriendRequest, rejectFriendRequest,
     sendPvpChallenge, respondPvpChallenge, claimPvPReward,
-    refreshSocial, lang, showToast, applyLive,
+    refreshSocial, lang, showToast, applyLive, clockNow,
   } = useGame();
 
   const [friendName, setFriendName] = useState('');
@@ -94,7 +94,7 @@ export const FriendsView: React.FC = () => {
     setChatInput('');
     setChatMsgs((prev) => [...prev, {
       id: `tmp-${Date.now()}`, text, isSelf: true, senderId: String(user.id ?? ''),
-      createdAt: new Date().toISOString(), replyToId: replyId, reactions: {},
+      createdAt: (clockNow() ?? new Date()).toISOString(), replyToId: replyId, reactions: {},
     }]);
     setReplyTarget(null);
     studio.sendFriendChat(chatWith.id, text, replyId)

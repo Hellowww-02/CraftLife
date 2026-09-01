@@ -37,9 +37,8 @@ function fmtTime(d: Date) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function emptyForm(): ReminderForm {
-  // Parity ReminderDialog default: datetime = sekarang.
-  const now = new Date();
+function emptyForm(now: Date): ReminderForm {
+  // Parity ReminderDialog default: datetime = sekarang (jam server via clockNow).
   return {
     title: '', description: '', date: fmtDate(now), time: fmtTime(now),
     repeat: 'none', repeatDays: new Set<number>(),
@@ -50,8 +49,11 @@ function emptyForm(): ReminderForm {
 export const RemindersView: React.FC = () => {
   const {
     reminders, addReminder, editReminder, deleteReminder, toggleReminder,
-    lang,
+    lang, nowDate,
   } = useGame();
+  // Jam & tanggal default berasal dari server (parity emptyForm/TimeSync),
+  // bukan new Date() browser.
+  const now = nowDate() ?? new Date();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState<null | { mode: 'add' } | { mode: 'edit'; rem: ReminderItem }>(null);
@@ -59,13 +61,13 @@ export const RemindersView: React.FC = () => {
   const [testTarget, setTestTarget] = useState<ReminderItem | null>(null);
   const [pastConfirm, setPastConfirm] = useState<(() => void) | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [form, setForm] = useState<ReminderForm>(emptyForm());
+  const [form, setForm] = useState<ReminderForm>(emptyForm(now));
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // refresh list tidak perlu (snapshot reaktif via applyLive) — tombol tetap ada parity _btn refresh.
   const refresh = () => { /* snapshot auto-refresh; no-op visual */ };
 
-  const openAdd = () => { setEditReset(); setForm(emptyForm()); setFormOpen({ mode: 'add' }); };
+  const openAdd = () => { setEditReset(); setForm(emptyForm(now)); setFormOpen({ mode: 'add' }); };
   const openEdit = () => {
     const r = reminders.find((x) => x.id === selectedId);
     if (!r) return;
@@ -75,7 +77,7 @@ export const RemindersView: React.FC = () => {
     const dayParts = (r.repeatDays || '').split(',').map((p) => p.trim()).filter(Boolean).map((p) => parseInt(p, 10));
     setForm({
       title: r.title, description: r.description || '',
-      date: dt.slice(0, 10) || fmtDate(new Date()), time: dt.slice(11, 16) || fmtTime(new Date()),
+      date: dt.slice(0, 10) || fmtDate(now), time: dt.slice(11, 16) || fmtTime(now),
       repeat: r.repeat, repeatDays: new Set(dayParts.filter((n) => !isNaN(n))),
       sound: r.sound, soundFile: r.soundFile || '', soundFileLabel: r.soundFile ? r.soundFile.split('/').pop() || '' : '',
     });

@@ -4,7 +4,7 @@ import { life } from '../../api/life';
 import { Timer, Heart, Moon, Footprints, Scale, Smile, Play, Pause, RotateCcw, Plus, Award } from 'lucide-react';
 
 export const HealthPomodoroView: React.FC = () => {
-  const { healthLogs, addHealthLog, pomodoroSessions, completePomodoroSession, lang } = useGame();
+  const { healthLogs, addHealthLog, pomodoroSessions, completePomodoroSession, lang, today } = useGame();
 
   // Pomodoro State
   const [timerMinutes, setTimerMinutes] = useState(25);
@@ -168,7 +168,7 @@ export const HealthPomodoroView: React.FC = () => {
               <Heart className="w-4 h-4 text-rose-400" />
               <span>{lang === 'id' ? 'Catatan Kesehatan Harian' : 'Daily Health Metrics'}</span>
             </h3>
-            <span className="text-xs text-slate-400">{new Date().toISOString().split('T')[0]}</span>
+            <span className="text-xs text-slate-400">{today}</span>
           </div>
 
           <form onSubmit={handleSaveHealthLog} className="space-y-3.5 text-xs">

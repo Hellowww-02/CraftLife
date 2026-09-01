@@ -51,7 +51,7 @@ interface ThemeRow { key: string; label: string; primary: string; glow: string; 
 interface ClassRow { key: string; name: string; icon: string; bonus: string; }
 
 export const SettingsView: React.FC = () => {
-  const { user, updateUserProfile, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast } = useGame();
+  const { user, updateUserProfile, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast, today, activeTheme, setActiveTheme } = useGame();
 
   const [name, setName] = useState(user.name);
   const [avatar, setAvatar] = useState(user.avatar);
@@ -68,7 +68,7 @@ export const SettingsView: React.FC = () => {
 
   // Parity SettingsPage state: theme, currency, font scale, high contrast
   const [themes, setThemes] = useState<ThemeRow[]>([]);
-  const [currentTheme, setCurrentTheme] = useState(String((user as any).theme || 'modern_dark'));
+
   const [currency, setCurrency] = useState(String(user.currency || 'IDR'));
   const [fontScale, setFontScale] = useState(Number(user.fontScale || 100));
   const [highContrast, setHighContrast] = useState(Boolean((user as any).highContrast));
@@ -149,7 +149,7 @@ export const SettingsView: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `craftlife_tracker_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `craftlife_tracker_${today}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('success', t('export_success', 'Data tracker diekspor!'), '');
@@ -494,20 +494,17 @@ export const SettingsView: React.FC = () => {
         </span>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {themes.map((th) => {
-            const active = currentTheme === th.key;
+            const active = activeTheme === th.key;
             return (
               <button
                 type="button"
                 key={th.key}
                 onClick={() => {
                   if (active) return;
-                  apiPost('/api/settings', { theme: th.key })
-                    .then(() => {
-                      setCurrentTheme(th.key);
-                      showToast('success', t('settings_theme_changed', 'Tema diganti: {name}').replace('{name}', th.label), '');
-                      confirmRestart();
-                    })
-                    .catch(() => undefined);
+                  // Parity SettingsPage theme radios: terapkan + persist via GameContext
+                  // (yang juga mengaplikasikan CSS vars — bukan theme dummy).
+                  setActiveTheme(th.key);
+                  showToast('success', t('settings_theme_changed', 'Tema diganti: {name}').replace('{name}', th.label), '');
                 }}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
                   active

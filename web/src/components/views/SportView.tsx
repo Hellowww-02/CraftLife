@@ -140,7 +140,10 @@ export const SportView: React.FC = () => {
 
   const submitReps = async () => {
     if (!repsModal.activity || repReps <= 0) return;
-    const res = await life.sportReps(repsModal.activity.id, repReps, repSets);
+    // Parity LogSportRepsDialog._save: `reps` yang dicatat = SETS × REPS (total),
+    // bukan reps per-set. PyQt memanggil add_sport_rep_log(uid, id, self._total(), sets).
+    const totalReps = repSets * repReps;
+    const res = await life.sportReps(repsModal.activity.id, totalReps, repSets);
     if (res?.result?.ok === false) {
       showToast('info', String(res.result.code || 'error'), '');
       return;

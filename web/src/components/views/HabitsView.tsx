@@ -4,11 +4,13 @@ import { TaskDifficulty } from '../../types';
 import { Zap, Plus, Trash2, Edit3, Folder, Flame, TrendingUp, TrendingDown, Check, X } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
+import { TaskTemplateDialog } from '../TaskTemplateDialog';
 
 export const HabitsView: React.FC = () => {
-  const { habits, addHabit, editHabit, duplicateHabit, deleteHabit, triggerHabit, reorderHabits, moveTaskAcrossFolders, lang, applyTaskTemplate } = useGame();
+  const { habits, addHabit, editHabit, duplicateHabit, deleteHabit, triggerHabit, reorderHabits, moveTaskAcrossFolders, lang } = useGame();
   const habitFolders = useModeFolders('habit');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Form State
@@ -105,10 +107,10 @@ export const HabitsView: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => applyTaskTemplate('habit', 'morning_routine')}
+          onClick={() => setIsTemplateOpen(true)}
           className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
         >
-          {lang === 'id' ? 'Template PyQt' : 'PyQt templates'}
+          {lang === 'id' ? '📋 Template' : '📋 Templates'}
         </button>
         <button
           id="btn-create-habit"
@@ -372,6 +374,8 @@ export const HabitsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <TaskTemplateDialog mode="habit" open={isTemplateOpen} onClose={() => setIsTemplateOpen(false)} />
     </div>
   );
 };

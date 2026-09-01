@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useGame } from '../context/GameContext';
 import { t } from '../i18n';
 import { ActiveView, NavTab } from '../types';
@@ -38,7 +38,7 @@ export interface SidebarProps {
   onClose?: () => void;
 }
 
-/** Urutan sama NavBar._TABS di MainPyQt6.py */
+/** Urutan & label sama persis NavBar._TABS di MainPyQt6.py (icon di atas, label di bawah). */
 const TAB_ORDER: { id: ActiveView; i18n: string; fallbackId: string; fallbackEn: string; icon: React.ReactNode; color?: string }[] = [
   { id: 'dashboard', i18n: 'nav_home', fallbackId: 'Beranda', fallbackEn: 'Home', icon: <LayoutDashboard className="w-4 h-4" /> },
   { id: 'profile', i18n: 'nav_profile', fallbackId: 'Profil', fallbackEn: 'Profile', icon: <Settings className="w-4 h-4" /> },
@@ -92,6 +92,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     achievements: unclaimedAchievements,
   };
 
+  // Auto-scroll item aktif ke view (parity NavBar._select → ensureWidgetVisible).
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (activeRef.current && (typeof activeRef.current.scrollIntoView === 'function')) {
+      try { activeRef.current.scrollIntoView({ block: 'nearest' }); } catch { /* ignore */ }
+    }
+  }, [currentTab]);
+
   return (
     <>
       {isOpen && (
@@ -101,65 +109,73 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
+      {/* ── Left nav rail (parity NavBar + nav_scroll di MainWindow._build) ── */}
       <aside
-        className={`w-64 shrink-0 h-full bg-slate-900 border-r border-slate-800/80 p-3 flex flex-col justify-between z-50 transition-transform duration-300 ease-in-out
-          max-lg:fixed max-lg:inset-y-0 max-lg:left-0
+        className={`w-[92px] shrink-0 h-full ct-surface-solid border-r ct-border flex flex-col z-50 transition-transform duration-300 ease-in-out
+          max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:w-64
           ${isOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}
           lg:translate-x-0 lg:static`}
       >
-        <div className="space-y-1 overflow-y-auto">
-          <div className="flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            <span>{t('nav_adventure_menu', lang === 'id' ? 'Menu Petualangan' : 'Adventure Menu')}</span>
-            {onClose && (
-              <button type="button" onClick={onClose} className="lg:hidden p-1 text-slate-400 hover:text-slate-200">
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          <nav className="space-y-0.5">
-            {TAB_ORDER.map((item) => {
-              const isActive =
-                currentTab === item.id ||
-                (item.id === 'lovespace' && currentTab === 'love') ||
-                (item.id === 'nutrition' && currentTab === 'health');
-              const badge = badges[item.id] || 0;
-              const label = t(item.i18n, lang === 'id' ? item.fallbackId : item.fallbackEn);
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  id={`nav-tab-${item.id}`}
-                  onClick={() => handleSelect(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                    isActive
-                      ? 'bg-gradient-to-r from-emerald-600/30 to-slate-800 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                      : 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className={item.color || 'text-slate-400'}>{item.icon}</span>
-                    <span className="truncate">{label}</span>
-                  </div>
-                  {badge > 0 && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-black rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      {badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+        {/* Mobile header */}
+        <div className="lg:hidden flex items-center justify-between px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80">
+          <span>{t('nav_adventure_menu', lang === 'id' ? 'Menu Petualangan' : 'Adventure Menu')}</span>
+          {onClose && (
+            <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        <div className="mt-4 pt-3 border-t border-slate-800/80 px-2 text-left">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>{t('nav_prestige_level', lang === 'id' ? 'Tingkat Rebirth' : 'Prestige Level')}:</span>
-            <span className="font-extrabold text-cyan-400">★ {user.rebirthCount}</span>
+        {/* Scrollable nav (nav_scroll) */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-1.5 py-2 space-y-1">
+          {TAB_ORDER.map((item) => {
+            const isActive =
+              currentTab === item.id ||
+              (item.id === 'lovespace' && currentTab === 'love') ||
+              (item.id === 'nutrition' && currentTab === 'health');
+            const badge = badges[item.id] || 0;
+            const label = t(item.i18n, lang === 'id' ? item.fallbackId : item.fallbackEn);
+            const accent = item.color || 'text-slate-400';
+            return (
+              <button
+                key={item.id}
+                ref={isActive ? activeRef : undefined}
+                type="button"
+                id={`nav-tab-${item.id}`}
+                onClick={() => handleSelect(item.id)}
+                title={label}
+                className={`relative w-full flex flex-col items-center gap-1 px-1 py-2 rounded-xl border text-[10px] font-bold leading-tight transition-all
+                  ${isActive
+                    ? 'bg-gradient-to-b from-emerald-600/25 to-slate-800 border-emerald-500/40 text-emerald-200 shadow-sm'
+                    : 'border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-100'}`}
+              >
+                {/* Active left indicator (parity navindicator / border-left) */}
+                <span
+                  className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full transition-all ${
+                    isActive ? 'bg-emerald-400' : 'bg-transparent'
+                  }`}
+                />
+                <span className={`relative text-xl leading-none ${isActive ? '' : accent}`}>
+                  {item.icon}
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black flex items-center justify-center border border-emerald-300">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </span>
+                <span className="text-center truncate w-full">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Footer (parity prestige + version) */}
+        <div className="mt-auto pt-2 pb-3 border-t border-slate-800/80 px-2 text-center">
+          <div className="text-[10px] text-slate-400">
+            <span className="font-extrabold text-cyan-400 text-xs">★ {user.rebirthCount}</span>
+            <span className="block mt-0.5">{t('nav_prestige_level', lang === 'id' ? 'Tingkat Rebirth' : 'Prestige Level')}</span>
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">
-            {t('web_offline_first', 'CraftLife v1.4.0 · Offline-First')}
-          </div>
+          <div className="text-[8px] text-slate-600 mt-1">{t('web_offline_first', 'CraftLife v1.4.0 · Offline-First')}</div>
         </div>
       </aside>
     </>

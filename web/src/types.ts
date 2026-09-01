@@ -79,6 +79,7 @@ export interface UserProfile {
   highContrast?: boolean;
   language?: string;
   onboardingDone?: boolean;
+  locked?: boolean;
 }
 
 export interface Habit {
@@ -657,3 +658,32 @@ export interface ReminderItem {
   soundFile: string; // path relatif media (reminder_sounds/...) utk sound custom
 }
 
+
+/** Waktu server (parity TimeSync): sumber tanggal & jam tunggal untuk web. */
+export interface ServerClock {
+  iso: string;
+  date: string; // YYYY-MM-DD (zona app Asia/Jakarta)
+  time: string; // HH:MM:SS
+  epoch: number; // unix seconds
+  tzOffsetMin: number;
+  weekday: number; // 0=Sen..6=Min (Python weekday)
+}
+
+/** Palet penuh tema (parity db.THEMES — source of truth untuk warna). */
+export interface ThemePalette {
+  key: string;
+  label: string;
+  primary: string;
+  light: string;
+  bg: string;
+  bg2: string;
+  bg3: string;
+  panel: string;
+  border: string;
+  accent: string;
+  accent2: string;
+  accent3: string;
+  glow: string;
+  text: string;
+  muted: string;
+}

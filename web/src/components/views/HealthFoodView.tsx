@@ -20,10 +20,6 @@ const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'] as const;
 const ACTIVITY_FACTORS = [1.2, 1.375, 1.55, 1.725, 1.9];
 const ACTIVITY_KEYS = ['food_bmi_activity_sedentary', 'food_bmi_activity_light', 'food_bmi_activity_moderate', 'food_bmi_activity_active', 'food_bmi_activity_very_active'];
 
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 const shiftISO = (iso: string, delta: number) => {
   const d = new Date(iso + 'T00:00:00');
   d.setDate(d.getDate() + delta);
@@ -34,10 +30,10 @@ type CatalogFood = { id: string; name: string; icon: string; calories: number; p
 
 /** HealthFoodPage PyQt → versi web. Seluruh data di server; UI hanya render. */
 export const HealthFoodView: React.FC = () => {
-  const { lang, showToast, applyLive } = useGame();
+  const { lang, showToast, applyLive, today } = useGame();
 
   // ── Date selector (parity _build_date_selector; ▶ disabled pada hari ini) ──
-  const [day, setDay] = useState(todayISO());
+  const [day, setDay] = useState(today);
   const [dayData, setDayData] = useState<any>(null);
   const [hist, setHist] = useState<any>(null);
   const loadDay = useCallback(() => {
@@ -218,7 +214,7 @@ export const HealthFoodView: React.FC = () => {
   useEffect(() => { loadRecipes(); }, [loadRecipes]);
 
   // ── Export (parity _export_nutrition) ──
-  const doExport = async (fmt: 'csv' | 'xlsx' | 'docx') => {
+  const doExport = async (fmt: 'csv' | 'xlsx' | 'docx' | 'pdf') => {
     try {
       const resp = await fetch(`${apiBase()}/api/nutrition/export?format=${fmt}&days=30`, { credentials: 'include' });
       if (!resp.ok) throw new Error(String(resp.status));
@@ -262,8 +258,8 @@ export const HealthFoodView: React.FC = () => {
         <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={() => setDay((d) => shiftISO(d, -1))} className="p-2 rounded-lg bg-slate-800 text-slate-200"><ChevronLeft className="w-4 h-4" /></button>
           <span className="text-xs font-bold text-slate-200 min-w-[210px] text-center">{dateLabel}</span>
-          <button type="button" disabled={day >= todayISO()} onClick={() => setDay((d) => shiftISO(d, +1))} className="p-2 rounded-lg bg-slate-800 text-slate-200 disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
-          <button type="button" onClick={() => setDay(todayISO())} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">{t('food_today', 'Hari Ini')}</button>
+          <button type="button" disabled={day >= today} onClick={() => setDay((d) => shiftISO(d, +1))} className="p-2 rounded-lg bg-slate-800 text-slate-200 disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
+          <button type="button" onClick={() => setDay(today)} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">{t('food_today', 'Hari Ini')}</button>
         </div>
       </div>
 
@@ -682,6 +678,7 @@ export const HealthFoodView: React.FC = () => {
               <button type="button" onClick={() => doExport('csv')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">{t('export_csv_option', 'CSV (.csv)')}</button>
               <button type="button" onClick={() => doExport('xlsx')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">Excel (.xlsx)</button>
               <button type="button" onClick={() => doExport('docx')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">Word (.docx)</button>
+              <button type="button" onClick={() => doExport('pdf')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">{t('export_pdf_option', 'PDF (.pdf)')}</button>
             </div>
           </div>
         </div>

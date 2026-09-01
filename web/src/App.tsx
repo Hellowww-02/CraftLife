@@ -127,23 +127,25 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen bg-slate-950 text-slate-100 flex overflow-hidden selection:bg-emerald-500/20 selection:text-emerald-300">
-      <Sidebar
-        activeView={activeView}
-        onSelectView={(view) => setActiveView(view)}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
+    // Shell 1:1 dengan MainWindow PyQt: TopBar full-width di atas, lalu body row
+    // = [nav rail | main content] (parity self._topbar + body.addWidget(nav_scroll|_stack)).
+    <div className="h-screen ct-app flex flex-col overflow-hidden selection:bg-emerald-500/20 selection:text-emerald-300">
+      <Navbar
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        onOpenSettings={() => setActiveView('settings')}
+        onOpenAchievements={() => setActiveView('achievements')}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        <Navbar
-          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-          onOpenSettings={() => setActiveView('settings')}
-          onOpenAchievements={() => setActiveView('achievements')}
-          onOpenPalette={() => setPaletteOpen(true)}
+      <div className="flex-1 flex min-h-0">
+        <Sidebar
+          activeView={activeView}
+          onSelectView={(view) => setActiveView(view)}
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto overflow-x-hidden">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
           {renderActiveView()}
         </main>
       </div>

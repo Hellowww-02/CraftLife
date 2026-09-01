@@ -146,12 +146,13 @@ export const LoveSpaceView: React.FC = () => {
     loveAlbumRemovePhoto,
     lang,
     showToast,
+    today,
+    nowDate,
   } = useGame();
 
   const [tab, setTab] = useState<TabId>('overview');
 
   // ── Overview / check-in ─────────────────────────────────────────────
-  const today = new Date().toISOString().split('T')[0];
   const todayCheckin = (loveSpace.checkins || []).find((c) => c.date === today);
   const [myMood, setMyMood] = useState(todayCheckin?.myMood || 3);
   const [partnerMood, setPartnerMood] = useState(todayCheckin?.partnerMood || 3);
@@ -181,8 +182,9 @@ export const LoveSpaceView: React.FC = () => {
 
   // ── Weekly review ───────────────────────────────────────────────────
   const weekStartInit = () => {
-    const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
-    return d.toISOString().split('T')[0];
+    const d = nowDate() ?? new Date();
+    const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   const [weekDate, setWeekDate] = useState(weekStartInit());
   const [revAppr, setRevAppr] = useState('');
@@ -232,6 +234,7 @@ export const LoveSpaceView: React.FC = () => {
   const upStats = useRef({ ok: 0, fail: 0 });
 
   // ── Profile edit ────────────────────────────────────────────────────
+  const [showTracking, setShowTracking] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [profPartner, setProfPartner] = useState(loveSpace.partnerName || '');
   const [profMy, setProfMy] = useState((loveSpace as any).myName || '');
@@ -378,16 +381,21 @@ export const LoveSpaceView: React.FC = () => {
               {t('love_edit_profile', 'Edit Profil')}
             </button>
             {coupleActive && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!window.confirm(t('couple_end_confirm', 'Akhiri hubungan couple?'))) return;
-                  studio.endCouple().then((r) => showToast(r.ok ? 'success' : 'info', r.result?.msg || r.result?.code || 'couple', ''));
-                }}
-                className={btnDanger}
-              >
-                {t('couple_end', 'Akhiri Couple')}
-              </button>
+              <>
+                <button type="button" onClick={() => setShowTracking(true)} className={btnGhost}>
+                  {t('love_open_tracking', 'Tracking Couple')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!window.confirm(t('couple_end_confirm', 'Akhiri hubungan couple?'))) return;
+                    studio.endCouple().then((r) => showToast(r.ok ? 'success' : 'info', r.result?.msg || r.result?.code || 'couple', ''));
+                  }}
+                  className={btnDanger}
+                >
+                  {t('couple_end', 'Akhiri Couple')}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1091,6 +1099,53 @@ export const LoveSpaceView: React.FC = () => {
                 setShowProfile(false);
               }}
             >{t('msg_ok', 'OK')}</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Couple tracking modal (parity CoupleTrackingDialog._tab_love) ── */}
+      {showTracking && (
+        <Modal title={t('ct_title', 'Tracking Couple')} onClose={() => setShowTracking(false)}>
+          <div className="space-y-2 text-xs text-slate-300">
+            <div className="grid grid-cols-2 gap-2">
+              {(loveSpace.checkins || []).length > 0 ? (
+                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t('love_checkin_history', 'Check-in')}</div>
+                  <div className="text-lg font-extrabold text-rose-300">{(loveSpace.checkins || []).length}</div>
+                  <div className="text-[10px] text-slate-500">{t('ct_avg_connection', 'Rata-rata')}: {((loveSpace.checkins || []).reduce((a, c) => a + (c.connectionScore || 0), 0) / ((loveSpace.checkins || []).length || 1)).toFixed(1)}</div>
+                </div>
+              ) : null}
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t('love_memories_title', 'Memori')}</div>
+                <div className="text-lg font-extrabold text-violet-300">{(loveSpace.memories || []).length}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t('love_gallery_title', 'Foto')}</div>
+                <div className="text-lg font-extrabold text-emerald-300">{(loveSpace.photos || []).length}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t('love_album_title', 'Album')}</div>
+                <div className="text-lg font-extrabold text-sky-300">{albums.length}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t('love_upcoming', 'Momen')}</div>
+                <div className="text-lg font-extrabold text-amber-300">{(loveSpace.events || []).length}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{t('love_prompt_history', 'Prompt')}</div>
+                <div className="text-lg font-extrabold text-teal-300">{((loveSpace.promptFavorites || []).length)} ⭐</div>
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-800/70 space-y-1">
+              <div className="flex justify-between"><span className="text-slate-400">{t('love_days_together', 'Hari Bersama')}</span><b className="text-slate-100">{daysTogether}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">{t('love_cycle_history', 'Riwayat Siklus')}</span><b className="text-slate-100">{(loveSpace.cycles || []).length}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">{t('love_weekly_review', 'Review Mingguan')}</span><b className="text-slate-100">{(loveSpace.weeklyReviews || []).length}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">{t('love_checkin_history', 'Check-in')}</span><b className="text-slate-100">{(loveSpace.checkins || []).length}</b></div>
+              <div className="flex justify-between"><span className="text-slate-400">{t('love_partner', 'Pasangan')}</span><b className="text-slate-100">{loveSpace.partnerName || '—'}</b></div>
+            </div>
+          </div>
+          <div className="flex justify-end mt-4">
+            <button type="button" className={btnGhost} onClick={() => setShowTracking(false)}>{t('btn_close', 'Tutup')}</button>
           </div>
         </Modal>
       )}

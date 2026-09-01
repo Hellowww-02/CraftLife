@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { studio } from '../api/studio';
 import { AVATAR_CLASSES, PETS_DATA } from '../data/gameData';
-import { Heart, Sparkles, Coins, Gem, Menu, Settings, Trophy, Globe, Bell } from 'lucide-react';
+import { Heart, Sparkles, Coins, Gem, Menu, Settings, Trophy, Globe, Bell, Clock } from 'lucide-react';
 
 interface NavbarProps {
   onToggleSidebar?: () => void;
@@ -17,8 +17,27 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAchievements,
   onOpenPalette,
 }) => {
-  const { user, lang, setLang, userPets, totalBuffs, achievements } = useGame();
+  const { user, lang, setLang, userPets, totalBuffs, achievements, clockNow, today, serverNow } = useGame();
   const [notifOpen, setNotifOpen] = useState(false);
+
+  // ── Digital clock (parity TopBar._update_time + TimeSync): jam berjalan maju
+  //    tiap detik dengan basis waktu server (bukan zona/clock browser). ──
+  const tzMin = serverNow?.tzOffsetMin ?? 0;
+  const [clockTick, setClockTick] = useState('--:--:--');
+  useEffect(() => {
+    const renderClock = () => {
+      const d = clockNow();
+      if (!d) { setClockTick('--:--:--'); return; }
+      // Wall-clock server = instan server + tz offset (Asia/Jakarta). Dibaca via
+      // getUTC* karena ms tersebut merepresentasikan waktu dinding server.
+      const wall = new Date(d.getTime() + (tzMin * 60000));
+      setClockTick(wall.toISOString().slice(11, 19));
+    };
+    renderClock();
+    const t = window.setInterval(renderClock, 1000);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clockNow, tzMin]);
   const [notifs, setNotifs] = useState<{ id: string; message: string; type: string; isRead: boolean; createdAt: string }[]>([]);
   const loadNotifs = () => {
     studio.notifications().then((d) => {
@@ -41,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const xpPercentage = Math.max(0, Math.min(100, Math.round((user.xp / user.xpToNextLevel) * 100)));
 
   return (
-    <header className="shrink-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5">
+    <header className="shrink-0 z-30 ct-surface-solid backdrop-blur-md border-b ct-border px-4 py-2.5">
       <div className="flex items-center justify-between gap-3">
         {/* Left: Mobile Toggle + User Avatar & Vitals */}
         <div className="flex items-center gap-3">
@@ -147,19 +166,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right: Currencies & Quick Links */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Gold */}
+          {/* Gold — nilai LOKAL (offline-first source of truth). Sinkronisasi cloud
+              best-effort; status sync lihat Settings → Cloud & Sync. */}
           <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-extrabold text-xs sm:text-sm">
             <Coins className="w-3.5 h-3.5 text-amber-400" />
             <span>{(user.gold ?? 0).toLocaleString()}</span>
-            {user.cloudLinked && user.goldCloud != null && (
-              <span className="text-[9px] font-bold text-sky-300 uppercase tracking-wide">cloud</span>
-            )}
           </div>
 
           {/* Gems */}
           <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 font-extrabold text-xs sm:text-sm">
             <Gem className="w-3.5 h-3.5 text-cyan-400" />
             <span>{user.gems}</span>
+          </div>
+
+          {/* Digital clock + date (parity TimeSync / TopBar chip_time) */}
+          <div
+            className="hidden sm:flex flex-col items-end px-3 py-1 rounded-xl bg-slate-950/60 border border-slate-700/70 text-slate-200"
+            title={today}
+          >
+            <span className="font-mono text-[13px] font-bold leading-none tabular-nums">{clockTick}</span>
+            <span className="text-[9px] text-slate-500 font-semibold mt-0.5">{today}</span>
           </div>
 
           {onOpenPalette && (

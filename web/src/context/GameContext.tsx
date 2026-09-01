@@ -18,6 +18,8 @@ import {
   Transaction,
   Debt,
   SavingGoal,
+  ServerClock,
+  ThemePalette,
   InvestmentItem,
   SubscriptionItem,
   DebtNote,
@@ -48,6 +50,7 @@ import { rpg } from '../api/rpg';
 import { life } from '../api/life';
 import { studio } from '../api/studio';
 import { loadMessages, t } from '../i18n';
+import { applyTheme } from '../utils/theme';
 import { applyBootstrapCatalogs, liveShopItems, livePets } from '../data/liveCatalog';
 
 interface NotificationToast {
@@ -76,8 +79,22 @@ interface GameContextType {
   setLang: (lang: 'id' | 'en') => void;
   soundEnabled: boolean;
   setSoundEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-  activeTheme: 'dark' | 'emerald' | 'amber' | 'slate';
-  setActiveTheme: (theme: 'dark' | 'emerald' | 'amber' | 'slate') => void;
+  activeTheme: string;
+  setActiveTheme: (theme: string) => void;
+  themePalettes: Record<string, ThemePalette>;
+  /** Contoh palet yg aktif (utk render/swatch). */
+  activePalette: ThemePalette | null;
+
+  // ── Server clock (parity TimeSync): 'today' + jam konsisten dgn backend. ──
+  serverNow: ServerClock | null;
+  /** Waktu wall-clock server sekarang sebagai Date (berjalan maju tiap tick). */
+  clockNow: () => Date | null;
+  /** Date 'kalender' hari ini dalam zona app (field lokal = Y/M/D yang benar
+   *  di zona browser APAPUN — bisa dipakai .getFullYear/.getMonth/.getDate/.getDay). */
+  nowDate: () => Date | null;
+  /** Tanggal server (YYYY-MM-DD) — sumber 'today' tunggal, bukan new Date(). */
+  today: string;
+  serverClockOffsetMs: number;
 
   // Folders
   taskFolders: TaskFolder[];
@@ -380,7 +397,79 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<UserProfile>(emptyUser);
   const [lang, setLang] = useState<'id' | 'en'>(saved?.lang || 'en');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(saved?.soundEnabled !== undefined ? saved.soundEnabled : true);
-  const [activeTheme, setActiveTheme] = useState<'dark' | 'emerald' | 'amber' | 'slate'>(saved?.activeTheme || 'dark');
+
+  // ── Server clock (parity TimeSync) ────────────────────────────────────────
+  // serverNow = waktu pada saat bootstrap diterima. Untuk merender jam digital
+  // yang terus berjalan kita simpan base epoch + base receive-moment, lalu
+  // clockNow() menambahkan elapsed (Date.now() - receivedAt) — jadi jam selalu
+  // forward walau re-render. Tanggal/kuadran waktu memakai zona app (Jakarta).
+  const [serverNow, setServerNow] = useState<ServerClock | null>(null);
+  const serverClockBase = useRef<{ epoch: number; receivedAt: number; tzOffsetMin: number } | null>(null);
+  const clockNow = useCallback(() => {
+    const base = serverClockBase.current;
+    if (!base) return null;
+    // epoch (server instant) + elapsed sejak diterima = sekarang.
+    // Render file .getUTC*() di Navbar agar menampilkan wall-clock server
+    // (bukan zona browser). Untuk tanggal lihat /serverDateKey.
+    const ms = (base.epoch * 1000) + (Date.now() - base.receivedAt);
+    return new Date(ms);
+  }, []);
+  /** Tanggal wall-clock server (YYYY-MM-DD) dihitung dari jam server + tz offset. */
+  const serverDateKey = useCallback(() => {
+    const base = serverClockBase.current;
+    if (!base) return '';
+    const ms = (base.epoch * 1000) + (Date.now() - base.receivedAt) + (base.tzOffsetMin * 60000);
+    try { return new Date(ms).toISOString().slice(0, 10); } catch { return ''; }
+  }, []);
+  const today = serverNow?.date || serverDateKey() || (() => { try { return new Date().toISOString().slice(0, 10); } catch { return ''; } })();
+  const serverClockOffsetMs = serverNow ? (serverNow.epoch * 1000 + serverNow.tzOffsetMin * 60000) - Date.now() : 0;
+  /** Return Date kalender (field lokal=zona app). Lihat catatan nowDate di nilai konteks. */
+  const nowDate = useCallback((): Date | null => {
+    const base = serverClockBase.current;
+    if (!base) return null;
+    const ms = (base.epoch * 1000) + (Date.now() - base.receivedAt) + (base.tzOffsetMin * 60000);
+    try {
+      const w = new Date(ms); // UTC fields = wall-clock server
+      // Bangun objek Date lokal dengan Y/M/D server agar getFullYear/... akurat
+      // di zona browser apa pun.
+      return new Date(w.getUTCFullYear(), w.getUTCMonth(), w.getUTCDate());
+    } catch { return null; }
+  }, []);
+  // ── Sistem Tema (parity db.THEMES / SettingsPage theme radios) ─────────
+  // activeTheme = key tema (mis. 'modern_dark'). Palet diterapkan ke CSS vars
+  // lewat applyTheme() (utils/theme.ts) — bukan LOCALSTORAGE dummy.
+  const [themePalettes, setThemePalettes] = useState<Record<string, ThemePalette>>({});
+  const [activeTheme, setActiveThemeState] = useState<string>(saved?.activeTheme || 'modern_dark');
+  const activePalette = themePalettes[activeTheme] || null;
+
+  // Load katalog tema (palet penuh) dari server — parity SettingsPage theme radios.
+  useEffect(() => {
+    let alive = true;
+    apiGet<any>('/api/catalog/themes')
+      .then((d) => {
+        if (!alive || !Array.isArray(d?.themes)) return;
+        const m: Record<string, ThemePalette> = {};
+        for (const p of d.themes) if (p?.key) m[p.key] = p;
+        setThemePalettes(m);
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
+  // Terapkan theme yg aktif ke CSS vars setiap kali palet tersedia / key berubah.
+  useEffect(() => {
+    const pal = themePalettes[activeTheme] || activePalette;
+    if (pal) applyTheme(pal);
+  }, [activeTheme, themePalettes, activePalette]);
+
+  const setActiveTheme = useCallback((theme: string) => {
+    setActiveThemeState(theme);
+    const pal = themePalettes[theme];
+    if (pal) applyTheme(pal);
+    // Persist ke user via API (parity SettingsPage: POST /api/settings {theme}).
+    apiPost('/api/settings', { theme }).catch(() => undefined);
+  }, [themePalettes]);
+
   const [taskFolders, setTaskFolders] = useState<TaskFolder[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [dailies, setDailies] = useState<Daily[]>([]);
@@ -430,12 +519,24 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Kurs mata uang (single source dari server: db.CURRENCY_RATES)
       await ensureCurrencyRates();
       const data = await apiGet<any>('/api/bootstrap');
+      // ── Server clock: ikat base jam server agar 'today' & jam konsisten dgn
+      //    reset harian backend (bukan new Date() browser). ──
+      if (data?.serverNow?.epoch) {
+        setServerNow(data.serverNow);
+        serverClockBase.current = { epoch: data.serverNow.epoch, receivedAt: Date.now(), tzOffsetMin: data.serverNow.tzOffsetMin || 0 };
+        lastServerDate.current = data.serverNow.date;
+      }
       if (data?.user) {
         setUser((prev) => ({
           ...prev,
           ...data.user,
           xpToNextLevel: data.user.xpToNextLevel || (data.user.level || 1) * 150,
         }));
+        // ── Tema terkait user (parity SettingsPage): terapkan palet dari DB. ──
+        const uTheme = (data.user as any).theme;
+        if (uTheme && themePalettes[uTheme] && uTheme !== activeTheme) {
+          setActiveThemeState(uTheme);
+        }
       }
       if (Array.isArray(data.taskFolders)) setTaskFolders(data.taskFolders);
       if (Array.isArray(data.habits)) setHabits(data.habits);
@@ -478,9 +579,31 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  const lastServerDate = useRef<string>('');
+
   useEffect(() => {
     fetchBootstrap();
   }, [fetchBootstrap]);
+
+  // ── Day-rollover heartbeat (parity TaskPage.load): bila app dibiarkan terbuka
+  //    melewati tengah malam (zona app), server.date berubah → reset harian task
+  //    harus dijalankan lagi. Dihitung lokal dari jam server (serverDateKey);
+  //    jika tanggal berbeda dari bootstrap terakhir → re-bootstrap (reset done_today).
+  useEffect(() => {
+    const tick = () => {
+      const key = serverDateKey();
+      if (key && lastServerDate.current && key !== lastServerDate.current) {
+        lastServerDate.current = key;
+        fetchBootstrap();
+      } else if (key && !lastServerDate.current) {
+        lastServerDate.current = key;
+      }
+    };
+    const t = window.setInterval(tick, 30000);
+    // re-bootstrap sekali setelah 60s agar jam/offset tetap fresh
+    const t2 = window.setTimeout(fetchBootstrap, 60000);
+    return () => { window.clearInterval(t); window.clearTimeout(t2); };
+  }, [fetchBootstrap, serverDateKey]);
 
   const retryBootstrap = useCallback(() => {
     fetchBootstrap();
@@ -1595,6 +1718,13 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSoundEnabled,
         activeTheme,
         setActiveTheme,
+        themePalettes,
+        activePalette,
+        serverNow,
+        clockNow,
+        nowDate,
+        today,
+        serverClockOffsetMs,
         taskFolders,
         addTaskFolder,
         renameTaskFolder,

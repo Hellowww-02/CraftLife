@@ -19,8 +19,8 @@ interface HolidayMap { [date: string]: { nameId: string; nameEn: string } }
 function pad(n: number) { return String(n).padStart(2, '0'); }
 
 export const CalendarView: React.FC = () => {
-  const { calendarNotes, saveCalendarNote, deleteCalendarNote, lang } = useGame();
-  const now = new Date();
+  const { calendarNotes, saveCalendarNote, deleteCalendarNote, lang, nowDate } = useGame();
+  const now = nowDate() ?? new Date();
   // Parity CalendarPage.__init__: tampilkan SATU TAHUN penuh (12 bulan, grid 3 kolom).
   const [year, setYear] = useState(now.getFullYear());
   const [holidays, setHolidays] = useState<HolidayMap>({});
