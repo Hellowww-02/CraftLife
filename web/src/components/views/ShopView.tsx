@@ -15,6 +15,11 @@ const tr = (key: string, vars?: Record<string, string | number>) => {
 };
 
 const EQUIP_TYPES = ['weapon', 'armor', 'shoes', 'accessory'] as const;
+// P26: semua item NON-consumable berhak masuk slot equipment (1 per slot, maks 10),
+// sinkron dengan backend `_is_equippable_item` (bukan consumable). Consumable
+// (potion/apple/ice_block) TIDAK masuk slot — tetap dipakai lewat tombol Use.
+const isEquippable = (tp?: string) => !!tp && tp !== 'consumable';
+const MAX_EQUIP_SLOTS = 10;
 const enchantCost = (lvl: number) => (lvl + 1) * 50; // parity ENCHANT_COST_FORMULA client-side display
 const sellPriceOf = (cost: number) => Math.max(1, Math.floor(cost * 0.1));
 
@@ -29,12 +34,17 @@ export const ShopView: React.FC = () => {
   const SHOP_ITEMS = liveShopItems() as Record<string, any>;
   const PETS_DATA = livePets() as Record<string, any>;
 
-  const [tab, setTab] = useState<'items' | 'pets'>('items');
+  const [tab, setTab] = useState<'items' | 'pets' | 'inventory'>('items');
   const [sellDlg, setSellDlg] = useState<{ inv: any; it: any } | null>(null);
 
   const invMap = useMemo(() => new Map(inventory.map((i: any) => [i.itemId, i])), [inventory]);
   const ownedPetIds = useMemo(() => new Set(userPets.map((p) => p.petId)), [userPets]);
   const activePetIds = useMemo(() => new Set(userPets.filter((p) => p.isEquipped).map((p) => p.petId)), [userPets]);
+  // P26: jumlah slot yang terisi (equip_slot 1..10).
+  const slotUsedCount = useMemo(
+    () => inventory.filter((i: any) => Number(i.equipSlot || 0) >= 1).length,
+    [inventory],
+  );
 
   // ── Buff bar (parity db.get_all_active_buffs) ──
   const buffText = activeBuffs && activeBuffs.length
@@ -68,12 +78,12 @@ export const ShopView: React.FC = () => {
 
       {/* Tabs (parity _tabs items/pets) */}
       <div className="inline-flex rounded-2xl bg-slate-900 border border-slate-800 p-1 gap-1">
-        {(['items', 'pets'] as const).map((tb) => (
+        {(['items', 'pets', 'inventory'] as const).map((tb) => (
           <button key={tb} type="button" onClick={() => setTab(tb)}
             className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wider transition-all ${tab === tb
               ? 'bg-amber-500 text-slate-950 shadow-[0_2px_12px_rgba(251,191,36,0.35)]'
               : 'text-slate-400 hover:text-slate-200'}`}>
-            {tb === 'items' ? tr('shop_tab_items') : tr('shop_tab_pets')}
+            {tb === 'items' ? tr('shop_tab_items') : tb === 'pets' ? tr('shop_tab_pets') : tr('shop_tab_inventory')}
           </button>
         ))}
       </div>
@@ -83,7 +93,9 @@ export const ShopView: React.FC = () => {
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {visibleItems.map((it: any) => {
             const inv: any = invMap.get(it.id);
-            const qty = inv?.qty || 0;
+            // backend snapshot pakai `quantity`, bukan `qty` — kalau salah, qty selalu
+            // 0 & item yang SUDAH dimiliki tetap tampil "Buy" (bug P25).
+            const qty = inv?.quantity || 0;
             const owned = qty > 0;
             const elvl = Number(inv?.enchantLevel || inv?.enchant_level || 0);
             const cost = Number(it.cost || 0);
@@ -121,7 +133,7 @@ export const ShopView: React.FC = () => {
                     ) : (
                       <>
                         {/* equip/unequip untuk tipe equipment (parity toggle via _stats/_equipped) */}
-                        {EQUIP_TYPES.includes(it.type as any) && (
+                        {isEquippable(it.type) && (
                           inv?.equipped ? (
                             <button type="button" onClick={() => unequipItem(it.id)}
                               className="h-[30px] rounded-xl bg-rose-900/50 hover:bg-rose-900/80 text-rose-200 text-[11px] font-bold">
@@ -129,7 +141,8 @@ export const ShopView: React.FC = () => {
                             </button>
                           ) : (
                             <button type="button" onClick={() => equipItem(it.id)}
-                              className="h-[30px] rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold">
+                              disabled={slotUsedCount >= MAX_EQUIP_SLOTS}
+                              className="h-[30px] rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed">
                               {tr('shop_equip')}
                             </button>
                           )
@@ -178,6 +191,72 @@ export const ShopView: React.FC = () => {
             );
           })}
         </section>
+      )}
+
+      {/* ── TAB INVENTORY (subtabs baru; parity source-of-truth backend inventory) ── */}
+      {tab === 'inventory' && (
+        <div className="space-y-4">
+          {/* ── P26: grid 10 slot equipment (ala Minecraft hotbar) ── */}
+          <EquipmentSlots
+            inventory={inventory}
+            SHOP_ITEMS={SHOP_ITEMS}
+            onUnequip={unequipItem}
+            slotsLabel={tr('shop_equip_slots_label', { used: slotUsedCount, max: MAX_EQUIP_SLOTS })}
+          />
+
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {inventory.length === 0 ? (
+            <div className="col-span-full rounded-2xl bg-slate-900/60 border border-slate-800 p-8 text-center text-slate-500 text-sm">
+              {tr('web_inv_empty')}
+            </div>
+          ) : inventory.map((inv: any) => {
+            const it = SHOP_ITEMS[inv.itemId] || {
+              icon: '🎒', name: String(inv.itemId), type: inv.itemType || 'item', cost: inv.cost || 0,
+            };
+            const qty = Number(inv.quantity || 0);
+            const elvl = Number(inv.enchantLevel || inv.enchant_level || 0);
+            return (
+              <div key={inv.itemId}
+                className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
+                <span className="text-3xl">{it.icon}</span>
+                <span className="text-xs font-bold text-slate-100">{it.name || inv.itemId}</span>
+                {elvl > 0 && <span className="text-[9px] font-bold text-violet-300">⛏️ +{elvl}</span>}
+                <p className="text-[10px] text-slate-500">{tr(`shop_type_${it.type || 'item'}`)}</p>
+                <span className="text-[11px] font-bold text-sky-300">
+                  × {qty} {inv.equipped ? `· ${tr('shop_equipped')}` : ''}
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  {it.type === 'consumable' && qty > 0 && (
+                    <button type="button" onClick={() => useConsumable(it.id)}
+                      className="h-[30px] rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold">
+                      {tr('shop_use', { qty })}
+                    </button>
+                  )}
+                  {isEquippable(it.type) && (
+                    inv?.equipped ? (
+                      <button type="button" onClick={() => unequipItem(it.id)}
+                        className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                        {tr('shop_unequip')}
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => equipItem(it.id)}
+                        disabled={slotUsedCount >= MAX_EQUIP_SLOTS}
+                        className="h-[30px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+                        {tr('shop_equip')}
+                      </button>
+                    )
+                  )}
+                  <button type="button"
+                    onClick={() => setSellDlg({ inv, it })}
+                    className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                    {tr('shop_sell')}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          </section>
+        </div>
       )}
 
       {/* ── TAB PETS (3 kolom) ── */}
@@ -239,11 +318,71 @@ function equipTypesWithEnchant(tp: string): boolean {
   return (EQUIP_TYPES as readonly string[]).includes(tp);
 }
 
+/** P26: grid 10 slot equipment (ala Minecraft hotbar). Item aktif ditampilkan di
+ * slot-nya (equip_slot 1..10); slot kosong ditampilkan sebagai kotak abu tipis.
+ * Klik slot terisi → unequip. */
+function EquipmentSlots({ inventory, SHOP_ITEMS, onUnequip, slotsLabel }: {
+  inventory: any[]; SHOP_ITEMS: Record<string, any>; onUnequip: (id: string) => void; slotsLabel: string;
+}) {
+  // Item yang aktif di-slot, dipetakan per nomor slot.
+  const bySlot = useMemo(() => {
+    const m = new Map<number, any>();
+    for (const inv of inventory || []) {
+      const s = Number(inv.equipSlot || 0);
+      if (s >= 1) m.set(s, inv);
+    }
+    return m;
+  }, [inventory]);
+
+  const slots = Array.from({ length: MAX_EQUIP_SLOTS }, (_, i) => i + 1);
+
+  return (
+    <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-bold text-slate-300">{slotsLabel}</h4>
+        <span className="text-[10px] text-slate-500">{tr('shop_equip_slot_hint')}</span>
+      </div>
+      {/* 2 baris × 5 kolom, persis seperti hotbar Minecraft */}
+      <div className="grid grid-cols-5 gap-2">
+        {slots.map((s) => {
+          const inv = bySlot.get(s);
+          const it = inv && (SHOP_ITEMS[inv.itemId] || { icon: '🎒', name: String(inv.itemId), type: 'item' });
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => inv && onUnequip(inv.itemId)}
+              title={inv ? `${it?.name} · ${tr('shop_unequip')}` : `${tr('shop_equip_slot_empty')} ${s}`}
+              disabled={!inv}
+              className={`relative aspect-square rounded-lg border flex items-center justify-center text-2xl transition
+                ${inv
+                  ? 'bg-slate-800 border-sky-500/50 hover:border-rose-500/60 cursor-pointer'
+                  : 'bg-slate-950/50 border-slate-800 cursor-default'}`}>
+              {inv ? (
+                <>
+                  <span>{it?.icon}</span>
+                  {Number(inv.quantity || 1) > 0 && (
+                    <span className="absolute bottom-0.5 right-1 text-[9px] font-bold text-slate-300">
+                      {Number(inv.quantity || 1)}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-xs text-slate-700">{s}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SellDialog({ inv, it, onClose, onSell }: {
   inv: any; it: any; onClose: () => void; onSell: (qty: number) => void;
 }) {
   const pricePer = sellPriceOf(Number(it.cost || 0));
-  const maxQty = Math.max(1, inv?.qty || 1);
+  const maxQty = Math.max(1, inv?.quantity || 1);
   const [qty, setQty] = useState(1);
 
   return (

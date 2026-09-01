@@ -40,30 +40,30 @@ export interface SidebarProps {
 
 /** Urutan & label sama persis NavBar._TABS di MainPyQt6.py (icon di atas, label di bawah). */
 const TAB_ORDER: { id: ActiveView; i18n: string; fallbackId: string; fallbackEn: string; icon: React.ReactNode; color?: string }[] = [
-  { id: 'dashboard', i18n: 'nav_home', fallbackId: 'Beranda', fallbackEn: 'Home', icon: <LayoutDashboard className="w-4 h-4" /> },
-  { id: 'profile', i18n: 'nav_profile', fallbackId: 'Profil', fallbackEn: 'Profile', icon: <Settings className="w-4 h-4" /> },
-  { id: 'habits', i18n: 'nav_habits', fallbackId: 'Habits', fallbackEn: 'Habits', icon: <Zap className="w-4 h-4" />, color: 'text-amber-400' },
-  { id: 'dailies', i18n: 'nav_dailies', fallbackId: 'Dailies', fallbackEn: 'Dailies', icon: <CalendarCheck className="w-4 h-4" />, color: 'text-emerald-400' },
-  { id: 'quests', i18n: 'nav_quests', fallbackId: 'Quests', fallbackEn: 'Quests', icon: <CheckSquare className="w-4 h-4" />, color: 'text-blue-400' },
-  { id: 'sport', i18n: 'nav_sporttrack', fallbackId: 'SportTrack', fallbackEn: 'SportTrack', icon: <Activity className="w-4 h-4" />, color: 'text-rose-400' },
-  { id: 'economy', i18n: 'nav_economy', fallbackId: 'Economy', fallbackEn: 'Economy', icon: <Wallet className="w-4 h-4" />, color: 'text-green-400' },
-  { id: 'supplies', i18n: 'nav_supplies', fallbackId: 'Supplies', fallbackEn: 'Supplies', icon: <Package className="w-4 h-4" />, color: 'text-amber-400' },
-  { id: 'nutrition', i18n: 'nav_health_food', fallbackId: 'Health & Food', fallbackEn: 'Health & Food', icon: <Salad className="w-4 h-4" />, color: 'text-teal-400' },
-  { id: 'lovespace', i18n: 'nav_love', fallbackId: 'Love Space', fallbackEn: 'Love Space', icon: <Heart className="w-4 h-4" />, color: 'text-rose-400' },
-  { id: 'learning', i18n: 'nav_learning', fallbackId: 'Learning', fallbackEn: 'Learning', icon: <BookOpen className="w-4 h-4" />, color: 'text-violet-400' },
-  { id: 'pomodoro', i18n: 'nav_pomodoro', fallbackId: 'Pomodoro', fallbackEn: 'Pomodoro', icon: <Timer className="w-4 h-4" />, color: 'text-purple-400' },
-  { id: 'music', i18n: 'nav_music', fallbackId: 'Music', fallbackEn: 'Music', icon: <Music2 className="w-4 h-4" />, color: 'text-emerald-400' },
-  { id: 'notes', i18n: 'nav_notes', fallbackId: 'Notes', fallbackEn: 'Notes', icon: <FileText className="w-4 h-4" />, color: 'text-cyan-400' },
-  { id: 'reminders', i18n: 'nav_reminders', fallbackId: 'Reminders', fallbackEn: 'Reminders', icon: <Bell className="w-4 h-4" />, color: 'text-amber-300' },
-  { id: 'calendar', i18n: 'nav_calendar', fallbackId: 'Kalender', fallbackEn: 'Calendar', icon: <CalendarIcon className="w-4 h-4" />, color: 'text-cyan-400' },
-  { id: 'craft', i18n: 'nav_crafting', fallbackId: 'Crafting', fallbackEn: 'Crafting', icon: <Hammer className="w-4 h-4" />, color: 'text-amber-400' },
-  { id: 'shop', i18n: 'nav_shop', fallbackId: 'Shop', fallbackEn: 'Shop', icon: <ShoppingBag className="w-4 h-4" />, color: 'text-yellow-400' },
-  { id: 'pets', i18n: 'nav_pets', fallbackId: 'Pets', fallbackEn: 'Pets', icon: <Dog className="w-4 h-4" />, color: 'text-indigo-400' },
-  { id: 'friends', i18n: 'nav_friends', fallbackId: 'Friends', fallbackEn: 'Friends', icon: <UserPlus className="w-4 h-4" />, color: 'text-sky-400' },
-  { id: 'guild', i18n: 'nav_guild', fallbackId: 'Guild', fallbackEn: 'Guild', icon: <Shield className="w-4 h-4" />, color: 'text-amber-400' },
-  { id: 'achievements', i18n: 'nav_achievement', fallbackId: 'Achievement', fallbackEn: 'Achievement', icon: <Trophy className="w-4 h-4" />, color: 'text-amber-300' },
-  { id: 'leaderboard', i18n: 'nav_leaderboard', fallbackId: 'Leaderboard', fallbackEn: 'Leaderboard', icon: <Trophy className="w-4 h-4" />, color: 'text-yellow-400' },
-  { id: 'settings', i18n: 'nav_settings', fallbackId: 'Settings', fallbackEn: 'Settings', icon: <Settings className="w-4 h-4" /> },
+  { id: 'dashboard', i18n: 'nav_home', fallbackId: 'Beranda', fallbackEn: 'Home', icon: <LayoutDashboard className="w-[19px] h-[19px]" /> },
+  { id: 'profile', i18n: 'nav_profile', fallbackId: 'Profil', fallbackEn: 'Profile', icon: <Settings className="w-[19px] h-[19px]" /> },
+  { id: 'habits', i18n: 'nav_habits', fallbackId: 'Habits', fallbackEn: 'Habits', icon: <Zap className="w-[19px] h-[19px]" />, color: 'text-amber-400' },
+  { id: 'dailies', i18n: 'nav_dailies', fallbackId: 'Dailies', fallbackEn: 'Dailies', icon: <CalendarCheck className="w-[19px] h-[19px]" />, color: 'text-emerald-400' },
+  { id: 'quests', i18n: 'nav_quests', fallbackId: 'Quests', fallbackEn: 'Quests', icon: <CheckSquare className="w-[19px] h-[19px]" />, color: 'text-blue-400' },
+  { id: 'sport', i18n: 'nav_sporttrack', fallbackId: 'SportTrack', fallbackEn: 'SportTrack', icon: <Activity className="w-[19px] h-[19px]" />, color: 'text-rose-400' },
+  { id: 'economy', i18n: 'nav_economy', fallbackId: 'Economy', fallbackEn: 'Economy', icon: <Wallet className="w-[19px] h-[19px]" />, color: 'text-green-400' },
+  { id: 'supplies', i18n: 'nav_supplies', fallbackId: 'Supplies', fallbackEn: 'Supplies', icon: <Package className="w-[19px] h-[19px]" />, color: 'text-amber-400' },
+  { id: 'nutrition', i18n: 'nav_health_food', fallbackId: 'Health & Food', fallbackEn: 'Health & Food', icon: <Salad className="w-[19px] h-[19px]" />, color: 'text-teal-400' },
+  { id: 'lovespace', i18n: 'nav_love', fallbackId: 'Love Space', fallbackEn: 'Love Space', icon: <Heart className="w-[19px] h-[19px]" />, color: 'text-rose-400' },
+  { id: 'learning', i18n: 'nav_learning', fallbackId: 'Learning', fallbackEn: 'Learning', icon: <BookOpen className="w-[19px] h-[19px]" />, color: 'text-violet-400' },
+  { id: 'pomodoro', i18n: 'nav_pomodoro', fallbackId: 'Pomodoro', fallbackEn: 'Pomodoro', icon: <Timer className="w-[19px] h-[19px]" />, color: 'text-purple-400' },
+  { id: 'music', i18n: 'nav_music', fallbackId: 'Music', fallbackEn: 'Music', icon: <Music2 className="w-[19px] h-[19px]" />, color: 'text-emerald-400' },
+  { id: 'notes', i18n: 'nav_notes', fallbackId: 'Notes', fallbackEn: 'Notes', icon: <FileText className="w-[19px] h-[19px]" />, color: 'text-cyan-400' },
+  { id: 'reminders', i18n: 'nav_reminders', fallbackId: 'Reminders', fallbackEn: 'Reminders', icon: <Bell className="w-[19px] h-[19px]" />, color: 'text-amber-300' },
+  { id: 'calendar', i18n: 'nav_calendar', fallbackId: 'Kalender', fallbackEn: 'Calendar', icon: <CalendarIcon className="w-[19px] h-[19px]" />, color: 'text-cyan-400' },
+  { id: 'craft', i18n: 'nav_crafting', fallbackId: 'Crafting', fallbackEn: 'Crafting', icon: <Hammer className="w-[19px] h-[19px]" />, color: 'text-amber-400' },
+  { id: 'shop', i18n: 'nav_shop', fallbackId: 'Shop', fallbackEn: 'Shop', icon: <ShoppingBag className="w-[19px] h-[19px]" />, color: 'text-yellow-400' },
+  { id: 'pets', i18n: 'nav_pets', fallbackId: 'Pets', fallbackEn: 'Pets', icon: <Dog className="w-[19px] h-[19px]" />, color: 'text-indigo-400' },
+  { id: 'friends', i18n: 'nav_friends', fallbackId: 'Friends', fallbackEn: 'Friends', icon: <UserPlus className="w-[19px] h-[19px]" />, color: 'text-sky-400' },
+  { id: 'guild', i18n: 'nav_guild', fallbackId: 'Guild', fallbackEn: 'Guild', icon: <Shield className="w-[19px] h-[19px]" />, color: 'text-amber-400' },
+  { id: 'achievements', i18n: 'nav_achievement', fallbackId: 'Achievement', fallbackEn: 'Achievement', icon: <Trophy className="w-[19px] h-[19px]" />, color: 'text-amber-300' },
+  { id: 'leaderboard', i18n: 'nav_leaderboard', fallbackId: 'Leaderboard', fallbackEn: 'Leaderboard', icon: <Trophy className="w-[19px] h-[19px]" />, color: 'text-yellow-400' },
+  { id: 'settings', i18n: 'nav_settings', fallbackId: 'Settings', fallbackEn: 'Settings', icon: <Settings className="w-[19px] h-[19px]" /> },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ── Left nav rail (parity NavBar + nav_scroll di MainWindow._build) ── */}
       <aside
-        className={`w-[92px] shrink-0 h-full ct-surface-solid border-r ct-border flex flex-col z-50 transition-transform duration-300 ease-in-out
+        className={`w-[102px] shrink-0 h-full ct-surface-solid border-r ct-border flex flex-col z-50 transition-transform duration-300 ease-in-out
           max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:w-64
           ${isOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}
           lg:translate-x-0 lg:static`}
@@ -163,7 +163,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                   )}
                 </span>
-                <span className="text-center truncate w-full">{label}</span>
+                {/* Label boleh wrap ke 2 baris (parity NavBar label bawah ikon). `truncate`
+                    sebelumnya memotong teks panjang (mis. "Health & Food", "Achievement"). */}
+                <span className="text-center w-full leading-tight break-words">{label}</span>
               </button>
             );
           })}

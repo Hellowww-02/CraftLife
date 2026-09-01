@@ -2,7 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { studio } from '../api/studio';
 import { AVATAR_CLASSES, PETS_DATA } from '../data/gameData';
-import { Heart, Sparkles, Coins, Gem, Menu, Settings, Trophy, Globe, Bell, Clock } from 'lucide-react';
+import { t as i18nT } from '../i18n';
+import { Heart, Sparkles, Coins, Menu, Settings, Trophy, Globe, Bell, Clock } from 'lucide-react';
+
+/** Interpolasi kecil (parity pola `tr` di view lain): {var} → nilai. */
+const tr = (key: string, vars?: Record<string, string | number>, fallback?: string) => {
+  let s = i18nT(key, fallback ?? key);
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+  return s;
+};
+
+/** `t` alias yg dipakai di JSX (bukan `window.setInterval` scope). */
+const t = (key: string, fallback: string) => i18nT(key, fallback);
 
 interface NavbarProps {
   onToggleSidebar?: () => void;
@@ -68,13 +79,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onToggleSidebar}
               className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-slate-100 hover:bg-slate-700"
-              title="Toggle Menu"
+              title={t('nav_toggle_menu', 'Toggle Menu')}
             >
               <Menu className="w-5 h-5" />
             </button>
           )}
 
-          <div className="relative cursor-pointer" onClick={onOpenSettings} title="Hero Profile">
+          <div className="relative cursor-pointer" onClick={onOpenSettings} title={t('nav_hero_profile', 'Hero Profile')}>
             <div
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center text-xl font-bold border-2 shadow-inner transition-transform hover:scale-105"
               style={{
@@ -101,7 +112,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="space-y-0.5">
               <div className="flex items-center justify-between text-[9px] font-medium text-slate-400">
                 <span className="flex items-center gap-1 text-red-400">
-                  <Heart className="w-2.5 h-2.5 fill-red-500 text-red-500" /> HP
+                  <Heart className="w-2.5 h-2.5 fill-red-500 text-red-500" /> {t('nav_hp_abbr', 'HP')}
                 </span>
                 <span>{user.hp}/{user.maxHp}</span>
               </div>
@@ -117,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="space-y-0.5">
               <div className="flex items-center justify-between text-[9px] font-medium text-slate-400">
                 <span className="flex items-center gap-1 text-sky-400">
-                  <Sparkles className="w-2.5 h-2.5 text-sky-400" /> MP
+                  <Sparkles className="w-2.5 h-2.5 text-sky-400" /> {t('nav_mp_abbr', 'MP')}
                 </span>
                 <span>{user.mp}/{user.maxMp}</span>
               </div>
@@ -134,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Center: XP Progress Bar (Desktop) */}
         <div className="hidden lg:flex flex-col items-center justify-center min-w-[200px] max-w-xs">
           <div className="flex items-center justify-between w-full text-[10px] font-semibold text-slate-300 mb-0.5">
-            <span className="text-amber-300">Level {user.level} Progress</span>
+            <span className="text-amber-300">{tr('nav_level_progress', { level: user.level })}</span>
             <span className="text-slate-400">{user.xp} / {user.xpToNextLevel} ({xpPercentage}%)</span>
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
@@ -173,12 +184,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{(user.gold ?? 0).toLocaleString()}</span>
           </div>
 
-          {/* Gems */}
-          <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 font-extrabold text-xs sm:text-sm">
-            <Gem className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{user.gems}</span>
-          </div>
-
           {/* Digital clock + date (parity TimeSync / TopBar chip_time) */}
           <div
             className="hidden sm:flex flex-col items-end px-3 py-1 rounded-xl bg-slate-950/60 border border-slate-700/70 text-slate-200"
@@ -203,7 +208,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenAchievements}
               className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors"
-              title="Achievements"
+              title={t('nav_achievements', 'Achievements')}
             >
               <Trophy className="w-4 h-4" />
               {unclaimedAchievements > 0 && (
@@ -219,7 +224,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onOpenSettings}
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors"
-              title="Settings"
+              title={t('nav_settings', 'Settings')}
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -229,7 +234,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={() => setLang(lang === 'en' ? 'id' : 'en')}
             className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 transition-colors"
-            title="Toggle Language"
+            title={t('nav_toggle_language', 'Toggle Language')}
           >
             <Globe className="w-3.5 h-3.5 text-sky-400" />
             <span>{lang.toUpperCase()}</span>

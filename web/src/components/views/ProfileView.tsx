@@ -51,7 +51,7 @@ const ProfilePhotoCard: React.FC<{ lang: string; showToast: (k: any, a: string, 
 
   return (
     <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
-      <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Foto profil' : 'Profile photo'}</div>
+        <div className="text-xs font-bold text-slate-300">{t('profile_photo', lang === 'id' ? 'Foto profil' : 'Profile photo')}</div>
       <div className="flex items-center gap-4">
         <div className="w-20 h-20 rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-4xl shrink-0">
           {user.hasProfilePhoto ? (
@@ -156,8 +156,8 @@ const TalentPanel: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
   const tiers = state?.tiers || {};
   return (
     <div className="rounded-2xl border border-amber-500/30 bg-amber-950/10 p-4 space-y-3">
-      <div className="text-sm font-black text-amber-200">{lang === 'id' ? 'Pohon talent' : 'Talent tree'}</div>
-      <p className="text-[11px] text-slate-400">{lang === 'id' ? 'Poin' : 'Points'}: {state?.points ?? '—'}</p>
+      <div className="text-sm font-black text-amber-200">{t('talent_tree', lang === 'id' ? 'Pohon talent' : 'Talent tree')}</div>
+      <p className="text-[11px] text-slate-400">{t('points', lang === 'id' ? 'Poin' : 'Points')}: {state?.points ?? '—'}</p>
       {[1, 2, 3].map((t) => (
         <div key={t} className="space-y-1">
           <div className="text-[10px] uppercase text-slate-500">Tier {t}</div>
@@ -278,7 +278,7 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
               <button type="button" onClick={() => { setModalOpen(false); setConfirmText(''); }} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold">
-                {lang === 'id' ? 'Batal' : 'Cancel'}
+                {t('btn_cancel', lang === 'id' ? 'Batal' : 'Cancel')}
               </button>
               <button type="button" onClick={doRebirth} className="px-4 py-2 rounded-xl bg-violet-500 text-slate-950 font-bold">
                 {t('profile_rebirth_confirm_btn', '🌀 Rebirth')}
@@ -311,13 +311,34 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
   // lock/unlock di tempat lain, atau pindah akun).
   useEffect(() => { setLocked(Boolean(user.locked)); }, [user.locked]);
 
+  // P24: class kini diubah lewat /api/profile/class (db.change_class → cooldown ter-enforce).
+  // Simpan identitas lewat /api/settings TANPA heroClass, agar class tidak bypass cooldown.
   const save = () => {
-    updateUserProfile({ displayName: name, name, bio, avatarEmoji: emoji, avatar: emoji, heroClass, avatarClass: heroClass as any });
-    apiPost('/api/settings', { displayName: name, bio, avatar: emoji, heroClass }).catch(() => undefined);
+    updateUserProfile({ displayName: name, name, bio, avatarEmoji: emoji, avatar: emoji });
+    apiPost('/api/settings', { displayName: name, bio, avatar: emoji }).catch(() => undefined);
+  };
+
+  const changeClass = (cls: string) => {
+    setHeroClass(cls);
+    apiPost<any>('/api/profile/class', { class: cls })
+      .then((r) => {
+        if (r?.ok === false) {
+          showToast('info', r?.result?.msg || r?.error || 'class_change_failed', '');
+          // kembalikan ke class yang sebenarnya tersimpan di backend
+          setHeroClass(String(user.avatarClass || user.heroClass || 'warrior').toLowerCase());
+          return;
+        }
+        updateUserProfile({ heroClass: cls, avatarClass: cls as any });
+        showToast('success', r?.result?.msg || cls, '');
+      })
+      .catch((e) => {
+        showToast('info', String(e?.error || e?.message || e), '');
+        setHeroClass(String(user.avatarClass || user.heroClass || 'warrior').toLowerCase());
+      });
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 w-full mx-auto max-w-2xl">
       <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-slate-800 text-4xl flex items-center justify-center">{emoji}</div>
@@ -328,12 +349,12 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
             </p>
           </div>
           <button type="button" onClick={onOpenSettings} className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold">
-            {lang === 'id' ? 'Pengaturan' : 'Settings'}
+            {t('nav_settings', lang === 'id' ? 'Pengaturan' : 'Settings')}
           </button>
         </div>
         <div className="grid sm:grid-cols-2 gap-2 text-xs">
           <input value={name} onChange={(e) => setName(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800" />
-          <select value={heroClass} onChange={(e) => setHeroClass(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
+          <select value={heroClass} onChange={(e) => changeClass(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
             {['warrior', 'mage', 'rogue', 'paladin', 'ranger', 'healer'].map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
@@ -342,7 +363,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           <input value={bio} onChange={(e) => setBio(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800" placeholder="bio" />
         </div>
         <button type="button" onClick={save} className="px-4 py-2 rounded-xl bg-yellow-500 text-slate-950 text-xs font-black">
-          {lang === 'id' ? 'Simpan profil' : 'Save profile'}
+          {t('save_profile', lang === 'id' ? 'Simpan profil' : 'Save profile')}
         </button>
       </div>
 
@@ -377,7 +398,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
       <RebirthCard lang={lang} showToast={showToast} />
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
-        <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Warna avatar' : 'Avatar color'}</div>
+        <div className="text-xs font-bold text-slate-300">{t('profile_color', '🎨 Warna Avatar')}</div>
         <div className="flex flex-wrap gap-2">
           {['#5a8a2e', '#d04020', '#4da6ff', '#f0a800', '#9a50e0', '#4dd9e0', '#e8e8e8', '#ff6a00'].map((c) => (
             <button
@@ -392,7 +413,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
             />
           ))}
         </div>
-        <div className="text-xs font-bold text-slate-300 pt-2">{lang === 'id' ? 'Emoji' : 'Emoji'}</div>
+        <div className="text-xs font-bold text-slate-300 pt-2">{t('profile_emoji', '😀 Emoji Avatar')}</div>
         <div className="flex flex-wrap gap-1">
           {['⚔️', '🧙', '🏹', '💊', '🗡️', '🛡️', '🔮', '🌟', '👑', '🐉', '🦊', '🐺'].map((em) => (
             <button
@@ -475,16 +496,16 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           }}
           className="px-3 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black"
         >
-          {lang === 'id' ? 'Generate kode cadangan' : 'Generate backup codes'}
+          {t('generate_backup_codes', lang === 'id' ? 'Generate kode cadangan' : 'Generate backup codes')}
         </button>
       </div>
 
       {/* Account security: change password + lock/unlock (parity with PyQt) */}
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
-        <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Keamanan Akun' : 'Account Security'}</div>
+        <div className="text-xs font-bold text-slate-300">{t('account_security', lang === 'id' ? 'Keamanan Akun' : 'Account Security')}</div>
         <div className="grid sm:grid-cols-2 gap-2">
-          <input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} placeholder={lang === 'id' ? 'Kata sandi lama' : 'Current password'} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
-          <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder={lang === 'id' ? 'Kata sandi baru (min. 8)' : 'New password (min. 8)'} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+          <input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} placeholder={t('old_password', lang === 'id' ? 'Kata sandi lama' : 'Current password')} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+          <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder={t('new_password', lang === 'id' ? 'Kata sandi baru (min. 8)' : 'New password (min. 8)')} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
         </div>
         <button
           type="button"
@@ -496,7 +517,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           }}
           className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold"
         >
-          {lang === 'id' ? 'Ganti kata sandi' : 'Change password'}
+          {t('change_password', lang === 'id' ? 'Ganti kata sandi' : 'Change password')}
         </button>
         <div className="pt-2 border-t border-slate-800" />
         <div className="text-xs font-bold text-slate-300">{t('profile_lock_account', '🔒 Lock Akun (Freeze Tracking)')}</div>
@@ -539,16 +560,30 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
       </div>
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
-        <div className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Kode redeem' : 'Redeem code'}</div>
+        <div className="text-xs font-bold text-slate-300">{t('redeem_code', lang === 'id' ? 'Kode redeem' : 'Redeem code')}</div>
         <div className="flex gap-2">
           <input value={code} onChange={(e) => setCode(e.target.value)} className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
           <button
             type="button"
             onClick={() => {
-              apiPost<any>('/api/profile/redeem', { code }).then((r) => {
-                showToast(r.ok ? 'success' : 'info', r.result?.msg || r.error || 'redeem', '');
-                setCode('');
-              }).catch((e) => showToast('info', String(e?.message || e), ''));
+              const doRedeem = (password?: string) => {
+                apiPost<any>('/api/profile/redeem', { code, ...(password !== undefined ? { password } : {}) }).then((r) => {
+                  if (r?.error === 'admin_redeem_password_wrong') {
+                    showToast('info', t('redeem_admin_password_wrong', 'Password salah.'), '');
+                    return;
+                  }
+                  showToast(r.ok ? 'success' : 'info', r.result?.msg || r.error || 'redeem', '');
+                  if (r?.ok) setCode('');
+                }).catch((e) => showToast('info', String(e?.message || e), ''));
+              };
+              // P24: kalau kode admin, minta password akun (parity PyQt). Server tetap gating.
+              if (/^ADMINADMINADMIN$/i.test(code.trim())) {
+                const pwd = window.prompt(t('redeem_admin_password_prompt', 'Masukkan password akun untuk menukar kode admin:'), '');
+                if (pwd === null) return;
+                doRedeem(pwd);
+                return;
+              }
+              doRedeem();
             }}
             className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black"
           >

@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
 import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart, Package, Search, FolderOpen, Pencil } from 'lucide-react';
 import { DualLineChart, DonutChart } from '../charts';
 import { t } from '../../i18n';
 import { formatMoney as fmtMoney } from '../../utils/currency';
-import { TaskFolderBar } from '../TaskFolderBar';
+// TaskFolderBar dihapus dari Economy (bukan elemen PyQt EconomyPage — lihat komentar di atas).
 import { life } from '../../api/life';
 import { fmtYmd, addDays } from '../../utils/serverTime';
 
 export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onNavigate }) => {
   const {
-    transactions, addTransaction, deleteTransaction, moveTransaction, debts, addDebt, payDebtInstallment, deleteDebt,
+    transactions, addTransaction, deleteTransaction, debts, addDebt, payDebtInstallment, deleteDebt,
     savings, addSaving, addToSaving, withdrawFromSaving, deleteSaving,
     investments, addInvestment, collectInvestmentReturn, withdrawInvestment,
     subscriptions, addSubscription, renewSubscription, deleteSubscription,
@@ -54,14 +54,20 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [payAmountInput, setPayAmountInput] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [trendDays, setTrendDays] = useState<7 | 30 | 90>(30);
-  const [selectedFolder, setSelectedFolder] = useState('all');
+  // [P25-fix] selectedFolder dihapus — TaskFolderBar (folder strip) tidak ada di PyQt EconomyPage.
+
+  // Daftar kategori unik dari transaksi (parity PyQt economy category_combo / sub-tab).
+  const uniqueCategories = useMemo(
+    () => [...new Set(transactions.map((t: any) => (t.category || '').trim()).filter(Boolean))].sort(),
+    [transactions],
+  );
 
   const filteredTx = transactions.filter((tx) => {
     if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
-    if (selectedFolder !== 'all') {
-      if ((tx.folderId || null) !== selectedFolder) return false;
-    }
+    // [P25-fix] filter folder dihapus (tidak ada di PyQt EconomyPage)
+    if (categoryFilter !== 'all' && (tx.category || '').trim() !== categoryFilter) return false;
     const q = search.trim().toLowerCase();
     if (q) {
       const hay = `${tx.category || ''} ${tx.notes || ''} ${tx.name || ''}`.toLowerCase();
@@ -354,19 +360,19 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
               <option value="income">{t('economy_filter_income', lang === 'id' ? 'Pemasukan' : 'Income')}</option>
               <option value="expense">{t('economy_filter_expense', lang === 'id' ? 'Pengeluaran' : 'Expense')}</option>
             </select>
+            {/* Kategori filter (parity PyQt economy category_combo) */}
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+              <option value="all">{t('economy_all_categories', lang === 'id' ? 'Semua Kategori' : 'All Categories')}</option>
+              {uniqueCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
             <button onClick={() => onNavigate?.('supplies')} className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5">
               <Package className="w-3.5 h-3.5" /> {t('economy_open_supplies', lang === 'id' ? 'Buka Persediaan' : 'Open Supplies')}
             </button>
           </div>
-          <TaskFolderBar
-            mode="economy"
-            selected={selectedFolder}
-            onSelect={setSelectedFolder}
-            accent="emerald"
-            allLabel={lang === 'id' ? 'Semua' : 'All'}
-            allCount={transactions.length}
-            onDropInto={(fid) => undefined}
-          />
+          {/* P25-fix: PyQt EconomyPage TIDAK punya folder-chip strip (TaskFolderBar) di
+              daftar — hanya folder_btn (add) + kategori + tipe + cari. Strip folder
+              adalah pola TaskPage (habits/dailies/quests) dan membuat folder habit
+              bocor muncul di Economy. Dihapus agar 1:1 PyQt. */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredTx.map((tx) => (
               <div
@@ -394,8 +400,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   <div className={`font-black text-xs ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {tx.type === 'income' ? '+' : '-'}{fmtMoney(tx.amount, currency)}
                   </div>
-                  {/* Pindah folder (parity drag-drop EconomyPage) */}
-                  <TxFolderPill tx={tx} />
+                  {/* [P25-fix] folder pill per-item dihapus (tidak ada di PyQt EconomyPage list) */}
                   <button
                     onClick={() => openEditTx(tx)}
                     className="p-1 rounded text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
@@ -827,19 +832,6 @@ const TxFolderSelect: React.FC<{ folderId: string | null; setFolderId: (v: strin
 };
 
 /** Pill kecil memindahkan transaksi antar-folder (parity drag-drop PyQt). */
-const TxFolderPill: React.FC<{ tx: any }> = ({ tx }) => {
-  const { taskFolders, moveTransaction } = useGame();
-  const folders = taskFolders.filter((f: any) => f.mode === 'economy');
-  if (folders.length === 0) return null;
-  return (
-    <select
-      value={tx.folderId || ''}
-      onChange={(e) => moveTransaction(tx.id, e.target.value || null)}
-      className="px-1.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] text-slate-300"
-      title={tx.folderId ? undefined : 'Root'}
-    >
-      <option value="">📂 Root</option>
-      {folders.map((f: any) => (<option key={f.id} value={f.id}>{f.icon || '📁'} {f.name}</option>))}
-    </select>
-  );
-};
+// [P25-fix] TxFolderPill per-item DIHAPUS — PyQt EconomyPage list tidak punya folder
+// dropdown per transaksi. Folder hanya dipilih via dialog tambah (TxFolderSelect,
+// parity economy_folder_label) atau folder_btn header.

@@ -253,7 +253,7 @@ export const HealthFoodView: React.FC = () => {
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex items-center gap-2 flex-wrap">
         <Salad className="w-6 h-6 text-teal-400" />
         <h2 className="text-xl font-black text-slate-100 mr-2">
-          {lang === 'id' ? 'Kesehatan & Nutrisi' : 'Health & Food'}
+          {t('page_health_title', lang === 'id' ? 'Kesehatan & Nutrisi' : 'Health & Food')}
         </h2>
         <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={() => setDay((d) => shiftISO(d, -1))} className="p-2 rounded-lg bg-slate-800 text-slate-200"><ChevronLeft className="w-4 h-4" /></button>
@@ -384,7 +384,7 @@ export const HealthFoodView: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Database Makanan' : 'Food Database'}</h3>
+            <h3 className="font-bold text-sm text-slate-200">{t('health_food_db', lang === 'id' ? 'Database Makanan' : 'Food Database')}</h3>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl text-xs">
               {MEALS.map((m) => (
                 <button key={m} type="button" onClick={() => setMealTarget(m)} className={`px-2.5 py-1 rounded-lg capitalize font-semibold transition-colors ${mealTarget === m ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}>
@@ -397,11 +397,11 @@ export const HealthFoodView: React.FC = () => {
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={lang === 'id' ? 'Cari makanan (Ayam, Nasi, Telur...)' : 'Search food items...'}
+                placeholder={t('health_search_food_ph', lang === 'id' ? 'Cari makanan (Ayam, Nasi, Telur...)' : 'Search food items...')}
                 className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-teal-500" />
             </div>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1.5 rounded-xl text-xs">
-              <span className="text-slate-400 font-semibold">{lang === 'id' ? 'Porsi:' : 'Portion:'}</span>
+              <span className="text-slate-400 font-semibold">{t('health_portion', lang === 'id' ? 'Porsi:' : 'Portion:')}</span>
               <input type="number" step="0.5" min="0.5" max="10" value={portionInput} onChange={(e) => setPortionInput(Math.max(0.5, Number(e.target.value)))} className="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold" />
             </div>
           </div>
@@ -410,7 +410,7 @@ export const HealthFoodView: React.FC = () => {
             type="text"
             value={logNotes}
             onChange={(e) => setLogNotes(e.target.value)}
-            placeholder={lang === 'id' ? 'Catatan log (opsional, mis. tanpa nasi, double protein)...' : 'Log notes (optional, e.g. no rice, double protein)...'}
+            placeholder={t('health_log_notes_ph', lang === 'id' ? 'Catatan log (opsional, mis. tanpa nasi, double protein)...' : 'Log notes (optional, e.g. no rice, double protein)...')}
             className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-teal-500"
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
@@ -571,11 +571,11 @@ export const HealthFoodView: React.FC = () => {
             <h3 className="font-bold text-sm text-slate-200">{t('food_recipes', '📖 Resep Makanan')}</h3>
           </div>
           <button type="button" onClick={() => setRecipeCreateOpen(true)} className="px-3 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-bold flex items-center gap-1">
-            <Plus className="w-3.5 h-3.5" /> {lang === 'id' ? 'Kelola / Baru' : 'Manage / New'}
+            <Plus className="w-3.5 h-3.5" /> {t('health_manage_btn', lang === 'id' ? 'Kelola / Baru' : 'Manage / New')}
           </button>
         </div>
         {recipes.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-4">{lang === 'id' ? 'Belum ada resep.' : 'No recipes yet.'}</p>
+          <p className="text-sm text-slate-500 text-center py-4">{t('health_no_recipes', 'Belum ada resep.')}</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {recipes.map((r) => (
@@ -584,7 +584,7 @@ export const HealthFoodView: React.FC = () => {
                   <span className="text-xl">{r.icon}</span>
                   <div className="min-w-0">
                     <div className="font-bold text-slate-100 text-sm truncate">{r.name}</div>
-                    <div className="text-[11px] text-slate-400">{r.items.length} {lang === 'id' ? 'bahan' : 'ingredients'} · {r.servingSize} {lang === 'id' ? 'porsi' : 'serving'}</div>
+                    <div className="text-[11px] text-slate-400">{r.items.length} {t('health_ingredients', 'bahan')} · {r.servingSize} {t('health_servings', 'porsi')}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -613,7 +613,7 @@ export const HealthFoodView: React.FC = () => {
                 ))}
               </div>
               <div className="flex items-center justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setCustomOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+                <button type="button" onClick={() => setCustomOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold">{t('btn_cancel', 'Batal')}</button>
                 <button type="submit" className="px-4 py-2 rounded-xl bg-teal-500 text-slate-950 font-bold">{t('dialog_add', '➕  Tambah')}</button>
               </div>
             </form>
@@ -635,7 +635,7 @@ export const HealthFoodView: React.FC = () => {
             <label className="block text-xs text-slate-300">{t('food_fat_label', 'Lemak (g)')}
               <input type="number" min={0} max={200} value={goalForm.fat} onChange={(e) => setGoalForm((g) => ({ ...g, fat: Math.max(0, Math.min(200, Number(e.target.value) || 0)) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setEditGoals(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              <button type="button" onClick={() => setEditGoals(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{t('btn_cancel', 'Batal')}</button>
               <button type="button" onClick={async () => { await life.saveNutritionGoals(goalForm).catch(() => undefined); setEditGoals(false); showToast('success', t('food_save_goals', 'Target nutrisi tersimpan'), ''); loadDay(); }} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">{t('food_save_goals', '💾 Simpan Target')}</button>
             </div>
           </div>
@@ -650,8 +650,8 @@ export const HealthFoodView: React.FC = () => {
             <label className="block text-xs text-slate-300">{t('food_water_goal_dialog_label', 'Target harian (ml):')}
               <input type="number" min={500} max={10000} step={100} value={waterGoalInput} onChange={(e) => setWaterGoalInput(Math.max(500, Math.min(10000, Number(e.target.value) || 2500)))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setWaterGoalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
-              <button type="button" onClick={saveWaterGoal} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">💾 {lang === 'id' ? 'Simpan' : 'Save'}</button>
+              <button type="button" onClick={() => setWaterGoalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{t('btn_cancel', 'Batal')}</button>
+              <button type="button" onClick={saveWaterGoal} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">💾 {t('btn_save', 'Simpan')}</button>
             </div>
           </div>
         </div>
@@ -726,22 +726,22 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
       <div className="max-w-lg w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? '🍲 Buat Resep Baru' : '🍲 Create New Recipe'}</h3>
+          <h3 className="text-lg font-black text-slate-100">{t('food_recipe_new_title', '🍲 Buat Resep Baru')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">
-          <label className="block text-slate-300 font-semibold">{lang === 'id' ? 'Nama Resep' : 'Recipe Name'}
+          <label className="block text-slate-300 font-semibold">{t('food_recipe_name', 'Nama Resep')}
             <input value={name} onChange={(e) => setName(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
           </label>
-          <label className="block text-slate-300 font-semibold">{lang === 'id' ? 'Ikon' : 'Icon'}
+          <label className="block text-slate-300 font-semibold">{t('food_recipe_icon', 'Ikon')}
             <input value={icon} onChange={(e) => setIcon(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
           </label>
-          <label className="block text-slate-300 font-semibold">{lang === 'id' ? 'Jumlah Porsi' : 'Servings'}
+          <label className="block text-slate-300 font-semibold">{t('food_recipe_servings', 'Jumlah Porsi')}
             <input type="number" step="0.5" min="0.5" value={servingSize} onChange={(e) => setServingSize(Math.max(0.5, Number(e.target.value) || 1))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
           </label>
         </div>
         <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 text-xs">
-          <div className="font-bold text-slate-300">{lang === 'id' ? 'Bahan' : 'Ingredients'}</div>
+          <div className="font-bold text-slate-300">{t('food_recipe_ingredients', 'Bahan')}</div>
           <div className="flex gap-2">
             <select value={sel} onChange={(e) => setSel(e.target.value)} className="flex-1 px-2 py-2 rounded-lg bg-slate-800 border border-slate-700">
               {catalog.map((f) => (<option key={f.id} value={f.id}>{f.icon} {f.name}</option>))}
@@ -759,11 +759,11 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
               ))}
             </div>
           )}
-          <div className="text-[10px] text-slate-500">{lang === 'id' ? 'Total kalori' : 'Total calories'}: {Math.round(totalCal)} kcal</div>
+          <div className="text-[10px] text-slate-500">{t('health_total_calories', 'Total kalori')}: {Math.round(totalCal)} kcal</div>
         </div>
         <div className="flex justify-end gap-2 text-xs">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
-          <button type="button" disabled={busy || !name.trim() || !items.length} onClick={submit} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-black disabled:opacity-50">💾 {lang === 'id' ? 'Simpan' : 'Save'}</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold">{t('btn_cancel', 'Batal')}</button>
+          <button type="button" disabled={busy || !name.trim() || !items.length} onClick={submit} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-black disabled:opacity-50">💾 {t('btn_save', 'Simpan')}</button>
         </div>
       </div>
     </div>

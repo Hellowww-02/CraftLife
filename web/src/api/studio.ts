@@ -51,6 +51,7 @@ export const studio = {
   leaveGuild: () => apiPost<any>('/api/guild/leave', {}),
   kickGuild: (userId: string) => apiPost<any>('/api/guild/kick', { userId }),
   inviteGuild: (username: string) => apiPost<any>('/api/guild/invite', { username }),
+  inviteGuildFriend: (friendId: string) => apiPost<any>('/api/guild/invite', { friendId }),
   acceptGuildInvite: (id: string) => apiPost<any>(`/api/guild/invites/${id}/accept`, {}),
   rejectGuildInvite: (id: string) => apiPost<any>(`/api/guild/invites/${id}/reject`, {}),
   removeFriend: (friendId: string) => apiPost<any>('/api/friends/remove', { friendId }),

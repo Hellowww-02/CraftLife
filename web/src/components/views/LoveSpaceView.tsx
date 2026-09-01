@@ -66,6 +66,65 @@ const ViewerImage: React.FC<{ photo: any }> = ({ photo }) => {
   return <img src={url} alt="" className="w-full h-full object-contain" />;
 };
 
+/** Photo viewer with zoom in/out/reset + pan-drag — parity `_GalleryViewerDialog`
+ * (zoom ×1.25, clamp 0.25..4.0, persen label, drag-to-pan via scrollable area). */
+const ZoomableViewer: React.FC<{ photo: any; t: (k: string, fb: string) => string }> = ({ photo, t }) => {
+  const [url, setUrl] = useState('');
+  const [zoom, setZoom] = useState(1.0);
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    let alive = true;
+    if (photo?.id) studio.lovePhotoImage(photo.id).then((u) => { if (alive) setUrl(u); }).catch(() => setUrl(''));
+    return () => { alive = false; setZoom(1); setPos({ x: 0, y: 0 }); };
+  }, [photo?.id]);
+  const clamp = (z: number) => Math.min(4.0, Math.max(0.25, z));
+  const zoomIn = () => setZoom((z) => clamp(z * 1.25));
+  const zoomOut = () => setZoom((z) => clamp(z / 1.25));
+  const zoomReset = () => { setZoom(1); setPos({ x: 0, y: 0 }); };
+  const onMouseDown = (e: React.MouseEvent) => { setDrag({ x: e.clientX - pos.x, y: e.clientY - pos.y }); };
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (drag) setPos({ x: e.clientX - drag.x, y: e.clientY - drag.y });
+  };
+  const onMouseUp = () => setDrag(null);
+  return (
+    <div className="space-y-2">
+      {/* Toolbar (parity zoom bar) */}
+      <div className="flex items-center gap-1.5">
+        <button type="button" onClick={zoomOut} title={t('love_gallery_zoom_out_tip', 'Perkecil')}
+          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200">➖</button>
+        <button type="button" onClick={zoomIn} title={t('love_gallery_zoom_in_tip', 'Perbesar')}
+          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200">➕</button>
+        <button type="button" onClick={zoomReset} title={t('love_gallery_zoom_reset_tip', 'Reset zoom')}
+          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200">🔄</button>
+        <span className="text-[11px] text-slate-500 px-1">{Math.round(zoom * 100)}%</span>
+      </div>
+      <div className="rounded-xl overflow-hidden bg-slate-950 max-h-[55vh] flex items-center justify-center cursor-grab active:cursor-grabbing">
+        {url ? (
+          <div className="overflow-auto w-full h-full max-h-[55vh]" style={{ cursor: 'grab' }}>
+            <img
+              src={url} alt=""
+              draggable={false}
+              className="select-none object-contain transition-transform"
+              style={{
+                transform: `translate(${pos.x}px, ${pos.y}px) scale(${zoom})`,
+                transition: drag ? 'none' : 'transform 0.15s ease-out',
+                transformOrigin: 'center',
+              }}
+              onMouseDown={onMouseDown}
+              onMouseMove={onMouseMove}
+              onMouseUp={onMouseUp}
+              onMouseLeave={onMouseUp}
+            />
+          </div>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-600 text-4xl">🖼️</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }> = ({ title, onClose, children, wide }) => (
   <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
     <div
@@ -961,9 +1020,7 @@ export const LoveSpaceView: React.FC = () => {
       {/* ── Photo lightbox + edit (parity _GalleryViewerDialog/_GalleryEditDialog) ── */}
       {viewer && (
         <Modal title={viewer.caption || t('love_gallery_untitled', 'Foto')} onClose={() => setViewer(null)} wide>
-          <div className="rounded-xl overflow-hidden bg-slate-950 max-h-[55vh] flex items-center justify-center">
-            <ViewerImage photo={viewer} />
-          </div>
+          <ZoomableViewer photo={viewer} t={t} />
           {myPhotosOwn(viewer) && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <input

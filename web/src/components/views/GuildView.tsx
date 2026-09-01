@@ -21,7 +21,7 @@ interface BossItem {
 }
 
 export const GuildView: React.FC = () => {
-  const { user, guild, refreshSocial, lang, showToast, applyLive } = useGame();
+  const { user, guild, friends, refreshSocial, lang, showToast, applyLive } = useGame();
   const isLeader = !!guild.leaderId && String(guild.leaderId) === String(user.id ?? '');
 
   const [tick, setTick] = useState(0);
@@ -77,6 +77,9 @@ export const GuildView: React.FC = () => {
   // ── Deskripsi & chat & invite member ──
   const [descDraft, setDescDraft] = useState('');
   const [chatText, setChatText] = useState('');
+
+  // ── P26: undang teman ke guild (leader only) ──
+  const [inviteFriendDlg, setInviteFriendDlg] = useState(false);
 
   const members: any[] = guild.members || [];
   const memberCount = members.length;
@@ -191,9 +194,16 @@ export const GuildView: React.FC = () => {
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">{tr('page_guild_subtitle')}</p>
           <h2 className="text-2xl font-black text-slate-100">{guild.name}</h2>
-          <p className="text-xs text-slate-400">{guild.description || ''}</p>
+          <p className="text-xs text-slate-400">{tr('guild_id_level', { id: guild.id, level: guild.level || 1 })}</p>
+          {guild.description && <p className="text-xs text-slate-400">{tr('guild_description_label', { desc: guild.description })}</p>}
         </div>
         <div className="flex items-center gap-2">
+          {isLeader && (
+            <button type="button" onClick={() => setInviteFriendDlg(true)}
+              className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold">
+              {tr('guild_invite_friend_btn')}
+            </button>
+          )}
           {isLeader && (
             <button type="button" onClick={() => setDescDraft(guild.description || '')}
               className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">
@@ -533,6 +543,42 @@ export const GuildView: React.FC = () => {
                 className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
                 {lang === 'id' ? 'Buat Boss' : 'Create Boss'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── P26: Leader undang teman (server-enforced) ── */}
+      {inviteFriendDlg && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-100">{tr('guild_invite_friend_title')}</h3>
+              <button type="button" onClick={() => setInviteFriendDlg(false)} className="text-slate-400 text-lg leading-none">×</button>
+            </div>
+            {(friends || []).length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6">{tr('guild_invite_friend_empty')}</p>
+            ) : (
+              <div className="space-y-2">
+                {(friends || []).map((f: any) => (
+                  <div key={f.id} className="flex items-center gap-2 rounded-lg bg-slate-800/60 border border-slate-700 px-3 py-2">
+                    <span className="text-xl">{f.avatarEmoji || '⚔️'}</span>
+                    <span className="flex-1 text-xs">
+                      <b className="text-slate-100">{f.displayName || f.name}</b>
+                      <span className="text-slate-500 block">@{f.username}</span>
+                    </span>
+                    <button type="button"
+                      onClick={() => void post(studio.inviteGuildFriend(String(f.id)))}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold">
+                      {tr('guild_invite_friend_send')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setInviteFriendDlg(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">{tr('btn_close')}</button>
             </div>
           </div>
         </div>

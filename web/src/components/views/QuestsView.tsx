@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
+import { t } from '../../i18n';
 import { CheckSquare, Plus, Trash2, Edit3, Calendar, Check, Clock } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
@@ -95,36 +96,37 @@ export const QuestsView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <CheckSquare className="w-6 h-6 text-blue-400" />
-            <h2 className="text-xl font-black text-slate-100">{lang === 'id' ? 'Daftar Quest & Tugas' : 'Quest & To-Do List'}</h2>
+            <h2 className="text-xl font-black text-slate-100">{t('quest_quest_to_do_list', 'Quest & To-Do List')}</h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            {lang === 'id'
-              ? 'Selesaikan tugas satu kali (To-Do) untuk mendapatkan hadiah besar XP, Gold, dan menyerang Boss secara dahsyat!'
-              : 'Complete one-time tasks and project goals for huge XP & Gold rewards and high critical strikes against Bosses!'}
+            {t('quest_subtitle', 'Complete one-time quests and tasks to earn big rewards.')}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsTemplateOpen(true)}
-          className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
-        >
-          {lang === 'id' ? '📋 Template' : '📋 Templates'}
-        </button>
-        <button
-          id="btn-create-quest"
-          onClick={openCreateModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-xs shadow-lg shadow-blue-500/20 transition-all shrink-0"
-        >
-          <Plus className="w-4 h-4" /> {lang === 'id' ? 'Buat Quest Baru' : 'New Quest'}
-        </button>
+        {/* Kelompok aksi kanan: Templates + New Quest berdampingan (parity TaskPage header). */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsTemplateOpen(true)}
+            className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
+          >
+            {t('habit_templates', '📋 Templates')}
+          </button>
+          <button
+            id="btn-create-quest"
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-xs shadow-lg shadow-blue-500/20 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" /> {t('quest_new_quest', 'New Quest')}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={lang === 'id' ? 'Cari quest…' : 'Search quests…'}
+          placeholder={t('quest_search_quests', 'Search quests…')}
           className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 w-48"
         />
         <select
@@ -132,7 +134,7 @@ export const QuestsView: React.FC = () => {
           onChange={(e) => setDiffFilter(e.target.value)}
           className="px-2 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200"
         >
-          <option value="all">{lang === 'id' ? 'Semua prioritas' : 'All priorities'}</option>
+          <option value="all">{t('quest_all_priorities', 'All priorities')}</option>
           <option value="trivial">Trivial</option>
           <option value="easy">Easy</option>
           <option value="medium">Medium</option>
@@ -146,7 +148,7 @@ export const QuestsView: React.FC = () => {
         selected={selectedFolderFilter}
         onSelect={setSelectedFolderFilter}
         accent="bg-blue-500/20 text-blue-300 border border-blue-500/40"
-        allLabel={lang === 'id' ? 'Semua Quest' : 'All Quests'}
+        allLabel={t('quest_all_quests', 'All Quests')}
         allCount={quests.length}
         onDropInto={(fid) => {
           const idx = drag.dragIndex;
@@ -166,7 +168,7 @@ export const QuestsView: React.FC = () => {
               : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
           }`}
         >
-          {lang === 'id' ? 'Belum Selesai' : 'Pending'} ({quests.filter((q) => !q.isCompleted).length})
+          {t('quest_pending', 'Pending')} ({quests.filter((q) => !q.isCompleted).length})
         </button>
 
         <button
@@ -177,7 +179,7 @@ export const QuestsView: React.FC = () => {
               : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
           }`}
         >
-          {lang === 'id' ? 'Selesai' : 'Completed'} ({quests.filter((q) => q.isCompleted).length})
+          {t('quest_completed', 'Completed')} ({quests.filter((q) => q.isCompleted).length})
         </button>
 
         <button
@@ -188,7 +190,7 @@ export const QuestsView: React.FC = () => {
               : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
           }`}
         >
-          {lang === 'id' ? 'Semua' : 'All'} ({quests.length})
+          {t('quest_all', 'All')} ({quests.length})
         </button>
       </div>
 
@@ -257,7 +259,7 @@ export const QuestsView: React.FC = () => {
                 <button
                   onClick={() => duplicateQuest(quest.id)}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-                  title={lang === 'id' ? 'Duplikasi' : 'Duplicate'}
+                  title={t('habit_duplicate', 'Duplicate')}
                 >
                   <Calendar className="w-3.5 h-3.5" />
                 </button>
@@ -284,7 +286,7 @@ export const QuestsView: React.FC = () => {
       {filteredQuests.length === 0 && (
         <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
           <CheckSquare className="w-8 h-8 text-blue-500/40 mx-auto mb-2" />
-          <p className="text-sm font-semibold">{lang === 'id' ? 'Tidak ada quest dalam daftar ini.' : 'No quests in this category.'}</p>
+          <p className="text-sm font-semibold">{t('quest_no_quests_in_this_category', 'No quests in this category.')}</p>
         </div>
       )}
 
@@ -293,12 +295,12 @@ export const QuestsView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-black text-slate-100">
-              {editingId ? (lang === 'id' ? 'Edit Quest' : 'Edit Quest') : (lang === 'id' ? 'Buat Quest Baru' : 'New Quest')}
+              {editingId ? (t('quest_edit_quest', 'Edit Quest')) : (t('quest_new_quest', 'New Quest'))}
             </h3>
 
             <form onSubmit={handleSave} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Judul Quest / Tugas' : 'Quest Title'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('quest_quest_title', 'Quest Title')}</label>
                 <input
                   type="text"
                   required
@@ -311,7 +313,7 @@ export const QuestsView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Tingkat Kesulitan' : 'Difficulty'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{t('habit_difficulty', 'Difficulty')}</label>
                   <select
                     value={difficulty}
                     onChange={(e) => setDifficulty(e.target.value as TaskDifficulty)}
@@ -326,7 +328,7 @@ export const QuestsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Tenggat Waktu' : 'Due Date'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{t('quest_due_date', 'Due Date')}</label>
                   <input
                     type="date"
                     value={dueDate}
@@ -337,13 +339,13 @@ export const QuestsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Folder' : 'Folder'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('daily_folder', 'Folder')}</label>
                 <select
                   value={folderId}
                   onChange={(e) => setFolderId(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
                 >
-                  <option value="">{lang === 'id' ? 'Tanpa Folder' : 'No Folder'}</option>
+                  <option value="">{t('habit_no_folder', 'No Folder')}</option>
                   {questFolders.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.icon} {f.name}
@@ -353,7 +355,7 @@ export const QuestsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Catatan Tambahan' : 'Notes'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('habit_notes', 'Notes')}</label>
                 <textarea
                   rows={2}
                   value={notes}
@@ -369,13 +371,13 @@ export const QuestsView: React.FC = () => {
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
                 >
-                  {lang === 'id' ? 'Batal' : 'Cancel'}
+                  {t('habit_cancel', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold"
                 >
-                  {lang === 'id' ? 'Simpan' : 'Save'}
+                  {t('habit_save', 'Save')}
                 </button>
               </div>
             </form>

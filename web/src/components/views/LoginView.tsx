@@ -11,6 +11,9 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
   const [avatarClass, setAvatarClass] = useState('warrior');
   const [classes, setClasses] = useState<Record<string, { name: string; icon: string; bonus: string }>>({});
   const [backupCode, setBackupCode] = useState('');
+  // P24: metode reset (parity PyQt reset dialog — security answer atau backup code)
+  const [resetMethod, setResetMethod] = useState<'backup' | 'security'>('backup');
+  const [secAnswer, setSecAnswer] = useState('');
 
   // Parity _register_tab: combobox class dari db.AVATAR_CLASSES (name + bonus).
   useEffect(() => {
@@ -28,7 +31,11 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
     setError('');
     try {
       if (mode === 'reset') {
-        const res = await apiPost<any>('/api/auth/reset', { username, password, code: backupCode });
+        // P24: kirim method + code (backup) atau answer (security) sesuai pilihan.
+        const res = await apiPost<any>('/api/auth/reset', {
+          username, password, method: resetMethod,
+          ...(resetMethod === 'security' ? { answer: secAnswer } : { code: backupCode }),
+        });
         if (!res?.ok) {
           setError(res?.error || 'reset_failed');
           return;
@@ -108,12 +115,47 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
           </>
         )}
         {mode === 'reset' && (
-          <input
-            className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
-            placeholder={t('web_backup_code', 'Kode cadangan')}
-            value={backupCode}
-            onChange={(e) => setBackupCode(e.target.value)}
-          />
+          <>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setResetMethod('backup')}
+                className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border ${
+                  resetMethod === 'backup'
+                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
+                    : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}
+              >
+                {t('reset_method_backup', 'Kode Cadangan')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setResetMethod('security')}
+                className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border ${
+                  resetMethod === 'security'
+                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
+                    : 'bg-slate-800 border-slate-700 text-slate-400'
+                }`}
+              >
+                {t('reset_method_security', 'Pertanyaan Keamanan')}
+              </button>
+            </div>
+            {resetMethod === 'backup' ? (
+              <input
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+                placeholder={t('web_backup_code', 'Kode cadangan')}
+                value={backupCode}
+                onChange={(e) => setBackupCode(e.target.value)}
+              />
+            ) : (
+              <input
+                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+                placeholder={t('reset_password_security_question', 'Jawaban pertanyaan keamanan')}
+                value={secAnswer}
+                onChange={(e) => setSecAnswer(e.target.value)}
+              />
+            )}
+          </>
         )}
         <input
           type="password"

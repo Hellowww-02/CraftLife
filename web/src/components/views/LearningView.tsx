@@ -634,7 +634,7 @@ export const LearningView: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_330px] gap-4">
             {/* ── SOURCES PANEL ── */}
             {showSources && (
-              <div className={`${compactPanel !== 'sources' ? 'hidden lg:flex' : 'flex'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3`}>
+              <div className={`${compactPanel !== 'sources' ? 'hidden lg:flex' : 'flex ct-slide-in'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_sources_panel', 'Sumber')} <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{activeNotebook.sources?.length || 0}</span></span>
                   <button onClick={() => setShowNewSourceModal(true)} className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700" title={tr('learning_add_source', 'Tambah Sumber')}><Plus className="w-3.5 h-3.5" /></button>
@@ -673,7 +673,7 @@ export const LearningView: React.FC = () => {
             )}
 
             {/* ── CHAT PANEL ── */}
-            <div className={`${compactPanel !== 'chat' ? 'hidden lg:flex' : 'flex'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
+            <div className={`${compactPanel !== 'chat' ? 'hidden lg:flex' : 'flex ct-slide-in'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_chat_panel', 'Chat AI')}</span>
                 <div className="flex items-center gap-1 text-xs text-slate-400">
@@ -724,7 +724,7 @@ export const LearningView: React.FC = () => {
 
             {/* ── STUDIO PANEL ── */}
             {showStudio && (
-              <div className={`${compactPanel !== 'studio' ? 'hidden lg:flex' : 'flex'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3`}>
+              <div className={`${compactPanel !== 'studio' ? 'hidden lg:flex' : 'flex ct-slide-in'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_studio_panel', 'Studio')}</span>
                   <span className="text-[10px] text-slate-500">{tr('learning_studio_hint', 'Buat materi dari sumber')}</span>

@@ -530,7 +530,7 @@ export const CRAFT_RECIPES: CraftRecipe[] = [
     resultItemId: 'bedrock_sword',
     requiredItems: [
       { itemId: 'netherite_sword', quantity: 1 },
-      { itemId: 'nether_star', quantity: 1 },
+      { itemId: 'diamond_sword', quantity: 1 },
     ],
     goldCost: 500,
   },
@@ -538,41 +538,78 @@ export const CRAFT_RECIPES: CraftRecipe[] = [
     resultItemId: 'phantom_wings',
     requiredItems: [
       { itemId: 'elytra', quantity: 1 },
-      { itemId: 'wind_cloak', quantity: 1 },
+      { itemId: 'golden_boots', quantity: 1 },
     ],
     goldCost: 400,
   },
   {
     resultItemId: 'aegis_of_void',
     requiredItems: [
-      { itemId: 'diamond_chestplate', quantity: 1 },
       { itemId: 'tower_shield', quantity: 1 },
+      { itemId: 'diamond_chestplate', quantity: 1 },
     ],
     goldCost: 600,
   },
   {
     resultItemId: 'inferno_blade',
     requiredItems: [
-      { itemId: 'storm_blade', quantity: 1 },
-      { itemId: 'diamond_sword', quantity: 1 },
+      { itemId: 'netherite_sword', quantity: 1 },
+      { itemId: 'blaze_rod', quantity: 1 },
     ],
-    goldCost: 550,
+    goldCost: 700,
+  },
+  {
+    resultItemId: 'healers_blessing',
+    requiredItems: [
+      { itemId: 'golden_apple', quantity: 1 },
+      { itemId: 'greater_health_potion', quantity: 1 },
+      { itemId: 'elixir', quantity: 1 },
+    ],
+    goldCost: 300,
+  },
+  {
+    resultItemId: 'gilded_compass',
+    requiredItems: [
+      { itemId: 'compass', quantity: 1 },
+      { itemId: 'golden_apple', quantity: 1 },
+    ],
+    goldCost: 450,
   },
   {
     resultItemId: 'frost_guard',
     requiredItems: [
       { itemId: 'turtle_shell', quantity: 1 },
-      { itemId: 'steel_helm', quantity: 1 },
+      { itemId: 'ice_block', quantity: 1 },
+      { itemId: 'wind_cloak', quantity: 1 },
     ],
-    goldCost: 450,
+    goldCost: 550,
+  },
+  {
+    resultItemId: 'scholar_crown',
+    requiredItems: [
+      { itemId: 'scholar_tome', quantity: 1 },
+      { itemId: 'golden_boots', quantity: 1 },
+      { itemId: 'compass', quantity: 1 },
+    ],
+    goldCost: 500,
   },
   {
     resultItemId: 'void_core',
     requiredItems: [
-      { itemId: 'beacon', quantity: 1 },
-      { itemId: 'dragon_egg', quantity: 1 },
+      { itemId: 'ender_pearl', quantity: 1 },
+      { itemId: 'nether_star', quantity: 1 },
+      { itemId: 'blaze_rod', quantity: 1 },
     ],
     goldCost: 800,
+  },
+  {
+    resultItemId: 'ember_charm',
+    requiredItems: [
+      { itemId: 'blaze_rod', quantity: 1 },
+      { itemId: 'honey_bottle', quantity: 1 },
+      { itemId: 'lucky_charm', quantity: 1 },
+    ],
+    goldCost: 400,
   },
 ];
 

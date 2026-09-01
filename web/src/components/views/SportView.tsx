@@ -80,7 +80,7 @@ export const SportView: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) {
-      showToast('info', lang === 'id' ? 'Nama aktivitas kosong' : 'Empty activity name', '');
+      showToast('info', t('sport_empty_activity', 'Nama aktivitas kosong'), '');
       return;
     }
     const body = {
@@ -181,26 +181,24 @@ export const SportView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Activity className="w-6 h-6 text-rose-400" />
-              <h2 className="text-xl font-black text-slate-100">{lang === 'id' ? 'Pelacak Olahraga & Kebugaran' : 'Sport & Workout Tracker'}</h2>
+              <h2 className="text-xl font-black text-slate-100">{t('page_sport_title', lang === 'id' ? 'Pelacak Olahraga & Kebugaran' : 'Sport & Workout Tracker')}</h2>
             </div>
             <p className="text-xs text-slate-400">
-              {lang === 'id'
-                ? 'Catat sesi latihan harianmu, bakar kalori, naikkan Sport Level, dan perkuat karakter RPG-mu!'
-                : 'Log workouts, burn calories, level up your Sport Mastery, and enhance your overall character endurance!'}
+              {t('page_sport_subtitle', 'Catat sesi latihan harianmu, bakar kalori, naikkan Sport Level, dan perkuat karakter RPG-mu!')}
             </p>
           </div>
 
           <div className="grid grid-cols-3 gap-3 mt-4 pt-3 border-t border-slate-800">
             <div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'id' ? 'Total Sesi' : 'Workouts'}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_total_sessions', lang === 'id' ? 'Total Sesi' : 'Workouts')}</div>
               <div className="text-base font-extrabold text-slate-200">{sportLogs.length}</div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'id' ? 'Total Durasi' : 'Duration'}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_total_duration', lang === 'id' ? 'Total Durasi' : 'Duration')}</div>
               <div className="text-base font-extrabold text-rose-400">{totalMinutes} m</div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'id' ? 'Kalori Terbakar' : 'Calories'}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_calories_burned', lang === 'id' ? 'Kalori Terbakar' : 'Calories')}</div>
               <div className="text-base font-extrabold text-amber-400">{totalCaloriesBurned} kcal</div>
             </div>
           </div>
@@ -210,7 +208,7 @@ export const SportView: React.FC = () => {
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{lang === 'id' ? 'Tingkat Kebugaran' : 'Sport Mastery'}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('sport_mastery', lang === 'id' ? 'Tingkat Kebugaran' : 'Sport Mastery')}</span>
               <Award className="w-5 h-5 text-rose-400" />
             </div>
             <div className="text-2xl font-black text-rose-400 mt-2">Level {user.sportLevel}</div>
@@ -230,7 +228,7 @@ export const SportView: React.FC = () => {
               onClick={openAdd}
               className="w-full py-2 px-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5"
             >
-              <Plus className="w-4 h-4" /> {lang === 'id' ? 'Catat Sesi Latihan' : 'Log Workout'}
+              <Plus className="w-4 h-4" /> {t('sport_log_workout', lang === 'id' ? 'Catat Sesi Latihan' : 'Log Workout')}
             </button>
           </div>
         </div>
@@ -241,12 +239,12 @@ export const SportView: React.FC = () => {
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-sky-400" />
-            <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Grafik Reps' : 'Reps Chart'}</h3>
+            <h3 className="font-bold text-sm text-slate-200">{t('sport_reps_chart', lang === 'id' ? 'Grafik Reps' : 'Reps Chart')}</h3>
           </div>
-          <div className="text-xs text-slate-400">{lang === 'id' ? 'Total reps' : 'Total reps'}: <span className="text-sky-300 font-bold">{totalRepsAll}</span></div>
+          <div className="text-xs text-slate-400">{t('sport_total_reps_label', 'Total reps')}: <span className="text-sky-300 font-bold">{totalRepsAll}</span></div>
         </div>
         {repChartData.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-6">{lang === 'id' ? 'Belum ada sesi reps. Catat set×reps lewat tombol “Reps”.' : 'No rep sessions yet. Log sets×reps via the "Reps" button.'}</p>
+          <p className="text-sm text-slate-500 text-center py-6">{t('sport_reps_empty', 'Belum ada sesi reps. Catat set×reps lewat tombol "Reps".')}</p>
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[420px]">
@@ -259,13 +257,13 @@ export const SportView: React.FC = () => {
       {/* Kartu aktivitas (parity _build_card_content SportTrackPage PyQt) */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Aktivitas Olahraga' : 'Sport Activities'}</h3>
+          <h3 className="font-bold text-sm text-slate-200">{t('sport_activities_title', 'Aktivitas Olahraga')}</h3>
           <button
             type="button"
             onClick={() => applyTaskTemplate('sport', 'running_starter_s')}
             className="px-3 py-1.5 rounded-xl bg-slate-800 text-[11px] font-bold text-slate-200"
           >
-            {lang === 'id' ? 'Template PyQt' : 'PyQt templates'}
+            {t('sport_pyqt_templates', 'Template PyQt')}
           </button>
         </div>
 
@@ -326,7 +324,7 @@ export const SportView: React.FC = () => {
                         onClick={() => completeSportLog(log.id)}
                         className="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-bold"
                       >
-                        {lang === 'id' ? 'Selesai +XP' : 'Complete +XP'}
+                        {t('sport_complete_xp', 'Selesai +XP')}
                       </button>
                       <button
                         type="button"
@@ -362,7 +360,7 @@ export const SportView: React.FC = () => {
         {sportLogs.length === 0 && (
           <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
             <Dumbbell className="w-8 h-8 text-rose-500/40 mx-auto mb-2" />
-            <p className="text-sm font-semibold">{lang === 'id' ? 'Belum ada catatan olahraga.' : 'No workouts logged yet.'}</p>
+            <p className="text-sm font-semibold">{t('sport_no_logs_yet', 'Belum ada catatan olahraga.')}</p>
           </div>
         )}
       </div>
@@ -372,12 +370,12 @@ export const SportView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-black text-slate-100">
-              {form.id ? (lang === 'id' ? 'Edit Aktivitas Olahraga' : 'Edit Sport Activity') : (lang === 'id' ? 'Catat Aktivitas Olahraga' : 'Log Sport Session')}
+              {form.id ? t('sport_edit_title', 'Edit Aktivitas Olahraga') : t('sport_log_session_title', 'Catat Aktivitas Olahraga')}
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Nama aktivitas' : 'Activity name'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('sport_activity_name', 'Nama aktivitas')}</label>
                 <input
                   type="text"
                   value={form.name}
@@ -389,7 +387,7 @@ export const SportView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-2">{lang === 'id' ? 'Jenis Olahraga' : 'Sport Type'}</label>
+                <label className="block text-slate-300 font-semibold mb-2">{t('sport_type_label', 'Jenis Olahraga')}</label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 max-h-40 overflow-y-auto pr-1">
                   {SPORT_TYPES.map((st) => (
                     <button
@@ -411,7 +409,7 @@ export const SportView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Tingkat Kesulitan' : 'Difficulty'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{t('sport_difficulty_label', 'Tingkat Kesulitan')}</label>
                   <select
                     value={form.difficulty}
                     onChange={(e) => setForm((f) => ({ ...f, difficulty: e.target.value as TaskDifficulty }))}
@@ -424,7 +422,7 @@ export const SportView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Berat Badan (kg)' : 'Body Weight (kg)'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{t('sport_weight_label', 'Berat Badan (kg)')}</label>
                   <input
                     type="number"
                     min={30}
@@ -438,7 +436,7 @@ export const SportView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Durasi (Menit)' : 'Duration (mins)'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('sport_duration', 'Durasi (menit)')}</label>
                 <input
                   type="number"
                   min={1}
@@ -456,7 +454,7 @@ export const SportView: React.FC = () => {
                   onChange={(e) => setForm((f) => ({ ...f, autoCalc: e.target.checked }))}
                   className="w-4 h-4 rounded text-rose-500 bg-slate-900 border-slate-700"
                 />
-                <span className="text-slate-300">✨ {lang === 'id' ? 'Hitung otomatis (MET × berat × durasi × intensitas)' : 'Auto-calculate (MET × weight × duration × intensity)'}</span>
+                <span className="text-slate-300">✨ {t('sport_auto_calc', 'Hitung otomatis (MET × berat × durasi × intensitas)')}</span>
               </label>
 
               <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 text-center text-xs">
@@ -465,7 +463,7 @@ export const SportView: React.FC = () => {
                     <Flame className="w-4 h-4" /> {calories} kcal • {kcalPerMin.toFixed(1)} kcal/min • MET {met.toFixed(1)} × {factor.toFixed(2)}
                   </span>
                 ) : (
-                  <span className="text-slate-300">✏️ {lang === 'id' ? 'Manual' : 'Manual'}: {form.calories} kcal</span>
+                  <span className="text-slate-300">✏️ {t('sport_manual', 'Manual')}: {form.calories} kcal</span>
                 )}
               </div>
 
@@ -487,7 +485,7 @@ export const SportView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Catatan' : 'Notes'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('sport_notes_label', 'Catatan')}</label>
                 <input
                   type="text"
                   value={form.notes}
@@ -497,7 +495,7 @@ export const SportView: React.FC = () => {
                 />
               </div>
 
-              <p className="text-[10px] text-slate-500 italic">💡 {lang === 'id' ? 'Rumus: Kalori = MET × Berat(kg) × Durasi(jam) × Faktor Intensitas' : 'Formula: Calories = MET × Weight(kg) × Duration(hrs) × Intensity factor'}</p>
+              <p className="text-[10px] text-slate-500 italic">💡 {t('sport_formula', 'Rumus: Kalori = MET × Berat(kg) × Durasi(jam) × Faktor Intensitas')}</p>
 
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
@@ -505,7 +503,7 @@ export const SportView: React.FC = () => {
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
                 >
-                  {lang === 'id' ? 'Batal' : 'Cancel'}
+                  {t('sport_cancel', 'Batal')}
                 </button>
                 <button
                   type="submit"
@@ -525,7 +523,7 @@ export const SportView: React.FC = () => {
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">
-                {lang === 'id' ? 'Catat Sesi Reps' : 'Log Reps'} — {repsModal.activity.sportName || repsModal.activity.name}
+                {t('sport_reps_session_title', 'Catat Sesi Reps')} — {repsModal.activity.sportName || repsModal.activity.name}
               </h3>
               <button onClick={() => setRepsModal({ open: false, activity: null })} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -560,7 +558,7 @@ export const SportView: React.FC = () => {
               <div className="text-sky-300 font-black text-xl">{repSets * repReps}</div>
             </div>
 
-            <input value={repNote} onChange={(e) => setRepNote(e.target.value)} placeholder={lang === 'id' ? 'Catatan…' : 'Note…'} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+            <input value={repNote} onChange={(e) => setRepNote(e.target.value)} placeholder={t('sport_reps_note_ph', 'Catatan…')} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
 
             {repInfo && repInfo.history && repInfo.history.length > 0 && (
               <div className="space-y-1">
@@ -571,7 +569,7 @@ export const SportView: React.FC = () => {
             )}
 
             <div className="flex items-center justify-end gap-2">
-              <button onClick={() => setRepsModal({ open: false, activity: null })} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+              <button onClick={() => setRepsModal({ open: false, activity: null })} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{t('sport_cancel', 'Batal')}</button>
               <button onClick={submitReps} disabled={repReps <= 0} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold text-xs">{t('dialog_save', '💾 Simpan')}</button>
             </div>
           </div>

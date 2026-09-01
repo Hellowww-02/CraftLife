@@ -415,7 +415,18 @@ export const MusicView: React.FC = () => {
         const job = j.job || j;
         setYtJob({ done: !!job.done, percent: String(job.percent || job.progress || '') });
         if (!job.done && !job.error) setTimeout(poll, 1500);
-        else { refreshLibrary(); refreshMusic(selectedPlaylistId); }
+        else {
+          // P27: parity PyQt MusicPage._open_downloader → on_done → db.add_song_to_playlist.
+          // File hasil unduhan HARUS didaftarkan ke playlist terpilih, bukan hanya
+          // muncul di library (scan folder). Jika tidak, lagu "berhasil diunduh"
+          // tapi tidak masuk daftar putar.
+          if (!job.error && job.path) {
+            await studio.addPlaylistTrack(targetId, job.path).then(() => undefined).catch(() => undefined);
+          }
+          if (job.error) showToast('damage', 'yt-dlp', job.error);
+          refreshLibrary();
+          refreshMusic(selectedPlaylistId);
+        }
       };
       poll();
     } catch { showToast('damage', 'yt-dlp', 'download failed'); }

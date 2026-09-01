@@ -27,7 +27,7 @@ const CATEGORIES = [
 ];
 
 export const AchievementsView: React.FC = () => {
-  const { lang, showToast } = useGame();
+  const { lang, showToast, applyLive } = useGame();
   const [items, setItems] = useState<Achievement[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
@@ -71,8 +71,11 @@ export const AchievementsView: React.FC = () => {
           isId ? `Reward diklaim: +${a.xpReward} XP +${a.goldReward} Gold` : `Reward claimed: +${a.xpReward} XP +${a.goldReward} Gold`,
           '',
         );
+        // P24-fix: snapshot_claim berisi user + achievements terbaru. Terapkan ke
+        // estado global via applyLive agar XP/Gold di navbar & daftar claim langsung
+        // segar (sebelumnya hanya load() list, gold/XP header tidak pernah di-refresh).
+        applyLive(res);
         await load();
-        // snapshot diisi ulang lewat bootstrap agar XP/gold di header segar
       }
     } catch (e: any) {
       showToast('info', String(e?.message || e), '');
@@ -82,7 +85,7 @@ export const AchievementsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5 max-w-6xl">
+    <div className="space-y-5 w-full mx-auto max-w-6xl">
       <div>
         <h2 className="text-xl font-black text-slate-100">🏆 {t('nav_achievements', 'Achievement')}</h2>
         <p className="text-xs text-slate-400 mt-1">

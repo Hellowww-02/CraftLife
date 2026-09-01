@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { ActiveView, NavTab } from '../../types';
 import { ProgressRing } from '../charts';
+import { t } from '../../i18n';
 import { DashboardWidgetsDialog } from '../DashboardWidgetsDialog';
 import { YearWrappedDialog } from '../YearWrappedDialog';
 
@@ -132,14 +133,14 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                 onClick={() => setWrappedOpen(true)}
                 className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/30"
               >
-                <Trophy className="w-3.5 h-3.5" /> {lang === 'id' ? 'Tahun Ini' : 'Year Wrapped'}
+                <Trophy className="w-3.5 h-3.5" /> {t('dash_wrapped_btn', lang === 'id' ? 'Tahun Ini' : 'Year Wrapped')}
               </button>
               <button
                 type="button"
                 onClick={() => setWidgetsOpen(true)}
                 className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-700"
               >
-                <Settings2 className="w-3.5 h-3.5" /> {lang === 'id' ? 'Atur Widget' : 'Widgets'}
+                <Settings2 className="w-3.5 h-3.5" /> {t('dash_widgets_btn', lang === 'id' ? 'Atur Widget' : 'Widgets')}
               </button>
             </div>
           </div>
@@ -147,17 +148,17 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           {/* Quick Action Stats */}
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'id' ? 'Dailies' : 'Dailies'}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('dashboard_dailies', 'Dailies')}</div>
               <div className="text-sm font-extrabold text-emerald-400">{completedDailiesCount}/{totalDailiesCount}</div>
             </div>
 
             <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'id' ? 'Quests' : 'Quests'}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('dashboard_quests', 'Quests')}</div>
               <div className="text-sm font-extrabold text-sky-400">{pendingQuests.length}</div>
             </div>
 
             <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{lang === 'id' ? 'Air' : 'Water'}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('dash_water', lang === 'id' ? 'Air' : 'Water')}</div>
               <div className="text-sm font-extrabold text-cyan-400">{Math.round((waterLog.amountMl / waterLog.targetMl) * 100)}%</div>
             </div>
           </div>
@@ -175,8 +176,8 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           return (
             <div key="heatmap" className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
               <div className="flex items-baseline justify-between mb-2">
-                <h3 className="text-xs font-bold text-slate-300">{lang === 'id' ? 'Heatmap 28 hari (dailies selesai)' : '28-day heatmap (dailies done)'}</h3>
-                <span className="text-[9px] text-slate-500">{lang === 'id' ? 'less' : 'less'} ⬜🟩🟩🟩 {lang === 'id' ? 'more' : 'more'}</span>
+                <h3 className="text-xs font-bold text-slate-300">{t('dash_heatmap_title', 'Heatmap 28 hari')}</h3>
+                <span className="text-[9px] text-slate-500">{t('heatmap_less', 'Less')} ⬜🟩🟩🟩 {t('heatmap_more', 'More')}</span>
               </div>
               <div className="grid grid-cols-7 gap-1">
                 {Array.from({ length: 28 }).map((_, i) => {
@@ -213,7 +214,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
           <div className="truncate">
             <h4 className="font-bold text-xs text-slate-200 group-hover:text-violet-300 transition-colors truncate">
-              {lang === 'id' ? 'Belajar AI' : 'AI Study'}
+              {t('dash_ai_study', 'Belajar AI')}
             </h4>
             <span className="text-[10px] text-slate-500">NotebookLM</span>
           </div>
@@ -228,7 +229,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
           <div className="truncate">
             <h4 className="font-bold text-xs text-slate-200 group-hover:text-emerald-300 transition-colors truncate">
-              {lang === 'id' ? 'Musik & Lofi' : 'Focus Audio'}
+              {t('dash_focus_audio', 'Musik & Lofi')}
             </h4>
             <span className="text-[10px] text-slate-500">Spotify / Synth</span>
           </div>
@@ -243,7 +244,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
           <div className="truncate">
             <h4 className="font-bold text-xs text-slate-200 group-hover:text-rose-300 transition-colors truncate">
-              {lang === 'id' ? 'Ruang Cinta' : 'Love Space'}
+              {t('dash_love_space', 'Ruang Cinta')}
             </h4>
             <span className="text-[10px] text-slate-500">Couple Sync</span>
           </div>
@@ -258,7 +259,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
           <div className="truncate">
             <h4 className="font-bold text-xs text-slate-200 group-hover:text-amber-300 transition-colors truncate">
-              {lang === 'id' ? 'Guild & PvP' : 'Guild & PvP'}
+              {t('dash_guild_pvp', 'Guild & PvP')}
             </h4>
             <span className="text-[10px] text-slate-500">Boss Raid</span>
           </div>
@@ -273,7 +274,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
           <div className="truncate">
             <h4 className="font-bold text-xs text-slate-200 group-hover:text-cyan-300 transition-colors truncate">
-              {lang === 'id' ? 'Kalender' : 'Calendar'}
+              {t('dash_calendar', 'Kalender')}
             </h4>
             <span className="text-[10px] text-slate-500">Holidays / Alarm</span>
           </div>
@@ -288,13 +289,13 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <CalendarCheck className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Rutinitas Harian (Dailies)' : 'Daily Routine'}</h3>
+                <h3 className="font-bold text-sm text-slate-200">{t('dash_daily_routine', 'Rutinitas Harian')}</h3>
               </div>
               <button
                 onClick={() => navigate('dailies')}
                 className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
               >
-                <span>{lang === 'id' ? 'Lihat Semua' : 'View All'}</span> <ArrowRight className="w-3 h-3" />
+                <span>{t('dash_view_all', 'Lihat Semua')}</span> <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
@@ -330,7 +331,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             onClick={() => navigate('dailies')}
             className="w-full mt-4 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-xs font-semibold text-slate-300 transition-colors flex items-center justify-center gap-1.5"
           >
-            <Plus className="w-3.5 h-3.5" /> {lang === 'id' ? 'Kelola Dailies' : 'Manage Dailies'}
+            <Plus className="w-3.5 h-3.5" /> {t('dash_manage_dailies', 'Kelola Dailies')}
           </button>
         </div>
 
@@ -340,13 +341,13 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Zap className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Habit Tracker' : 'Habit Tracker'}</h3>
+                <h3 className="font-bold text-sm text-slate-200">{t('dash_habit_tracker', 'Habit Tracker')}</h3>
               </div>
               <button
                 onClick={() => navigate('habits')}
                 className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
               >
-                <span>{lang === 'id' ? 'Lihat Semua' : 'View All'}</span> <ArrowRight className="w-3 h-3" />
+                <span>{t('dash_view_all', 'Lihat Semua')}</span> <ArrowRight className="w-3 h-3" />
               </button>
             </div>
 
@@ -390,7 +391,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             onClick={() => navigate('habits')}
             className="w-full mt-4 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-xs font-semibold text-slate-300 transition-colors flex items-center justify-center gap-1.5"
           >
-            <Plus className="w-3.5 h-3.5" /> {lang === 'id' ? 'Kelola Habits' : 'Manage Habits'}
+            <Plus className="w-3.5 h-3.5" /> {t('dash_manage_habits', 'Kelola Habits')}
           </button>
         </div>
 
@@ -400,7 +401,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Swords className="w-5 h-5 text-red-400" />
-                <h3 className="font-bold text-sm text-red-300">{lang === 'id' ? 'Dungeon Boss' : 'Dungeon Boss'}</h3>
+                <h3 className="font-bold text-sm text-red-300">{t('dash_dungeon_boss', 'Dungeon Boss')}</h3>
               </div>
               {activeBoss && (
                 <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
@@ -434,7 +435,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
               </div>
             ) : (
               <div className="text-center py-6 text-xs text-slate-400">
-                {lang === 'id' ? 'Tidak ada boss aktif. Pilih boss di Boss Arena!' : 'No active boss. Select one in Boss Arena!'}
+                {t('dash_no_active_boss', 'Tidak ada boss aktif. Pilih boss di Boss Arena!')}
               </div>
             )}
           </div>
@@ -443,7 +444,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
             onClick={() => navigate('boss')}
             className="w-full mt-4 py-2 px-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-xs font-bold text-red-300 border border-red-500/40 transition-colors flex items-center justify-center gap-1.5"
           >
-            <Swords className="w-3.5 h-3.5" /> {lang === 'id' ? 'Masuk Boss Arena' : 'Enter Boss Arena'}
+            <Swords className="w-3.5 h-3.5" /> {t('dash_enter_boss_arena', 'Masuk Boss Arena')}
           </button>
         </div>
       </div>
@@ -455,10 +456,10 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <CheckSquare className="w-4 h-4 text-sky-400" />
-              <h4 className="font-bold text-xs text-slate-200">{lang === 'id' ? 'Quests (To-Do)' : 'Quests (To-Do)'}</h4>
+              <h4 className="font-bold text-xs text-slate-200">{t('quest_quest_to_do_list', 'Quests (To-Do)')}</h4>
             </div>
             <button onClick={() => navigate('quests')} className="text-[11px] text-sky-400 font-semibold hover:underline">
-              {lang === 'id' ? 'Buka' : 'Open'}
+              {t('dash_open', 'Buka')}
             </button>
           </div>
           <div className="space-y-1.5">
@@ -475,7 +476,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
               ))
             ) : (
               <div className="text-xs text-slate-400 text-center py-4">
-                {lang === 'id' ? 'Semua quest selesai! 🏆' : 'All quests completed! 🏆'}
+                {t('dash_all_quests_done', 'Semua quest selesai! 🏆')}
               </div>
             )}
           </div>
@@ -486,23 +487,23 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-rose-400" />
-              <h4 className="font-bold text-xs text-slate-200">{lang === 'id' ? 'SportTrack' : 'SportTrack'}</h4>
+              <h4 className="font-bold text-xs text-slate-200">{t('dash_sporttrack', 'SportTrack')}</h4>
             </div>
             <button onClick={() => navigate('sport')} className="text-[11px] text-rose-400 font-semibold hover:underline">
-              {lang === 'id' ? 'Buka' : 'Open'}
+              {t('dash_open', 'Buka')}
             </button>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">{lang === 'id' ? 'Sport Level' : 'Sport Level'}:</span>
+              <span className="text-slate-400">{t('dash_sport_level', 'Sport Level')}:</span>
               <span className="font-bold text-rose-400">Lv. {user.sportLevel}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">{lang === 'id' ? 'Sesi Latihan' : 'Total Sessions'}:</span>
+              <span className="text-slate-400">{t('sport_total_sessions', 'Sesi Latihan')}:</span>
               <span className="font-bold text-slate-200">{sportLogs.length}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-400">{lang === 'id' ? 'Kalori Masuk Hari Ini' : 'Calories Eaten'}:</span>
+              <span className="text-slate-400">{t('dash_calories_eaten', 'Kalori Masuk Hari Ini')}:</span>
               <span className="font-bold text-amber-400">{totalCaloriesToday} kcal</span>
             </div>
           </div>
@@ -513,10 +514,10 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Droplets className="w-4 h-4 text-cyan-400" />
-              <h4 className="font-bold text-xs text-slate-200">{lang === 'id' ? 'Hidrasi Air' : 'Water Hydration'}</h4>
+              <h4 className="font-bold text-xs text-slate-200">{t('dash_water_hydration', 'Hidrasi Air')}</h4>
             </div>
             <button onClick={() => navigate('nutrition')} className="text-[11px] text-cyan-400 font-semibold hover:underline">
-              {lang === 'id' ? 'Buka' : 'Open'}
+              {t('dash_open', 'Buka')}
             </button>
           </div>
           <div className="space-y-2 text-xs">

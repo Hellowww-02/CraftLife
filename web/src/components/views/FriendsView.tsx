@@ -408,22 +408,125 @@ export const FriendsView: React.FC = () => {
         </div>
       )}
 
-      {/* ── FriendProfileDialog parity ── */}
+      {/* ── FriendProfileDialog parity (PyQt MainPyQt6.py:12726) ── */}
       {profile && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-2">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-100">{profile.displayName} <span className="text-slate-500">@{profile.username}</span></h3>
+              <h3 className="text-sm font-black text-slate-100">{tr('friend_profile_title')}</h3>
               <button type="button" onClick={() => setProfile(null)} className="text-slate-400 text-lg leading-none">×</button>
             </div>
-            <div className="text-xs text-slate-300 space-y-1">
-              <p>{tr('level_abbr', { level: profile.level ?? 1 })} · {profile.avatarClass} · {profile.title || ''}</p>
-              <p className="text-slate-500">{profile.bio || ''}</p>
-              <p>XP: {profile.xp}/{profile.xpNeeded} · Total XP: {profile.totalXp}</p>
-              <p>{lang === 'id' ? 'Prestasi' : 'Achievements'}: {profile.achievementsDone}/{profile.achievementsTotal}</p>
-              <p>{lang === 'id' ? 'Guild' : 'Guild'}: {profile.guildName || '—'}</p>
-              <p>{lang === 'id' ? 'Bergabung' : 'Joined'}: {(profile.joinDate || '').slice(0, 10)}</p>
-              <p>{lang === 'id' ? 'Tugas selesai' : 'Tasks done'}: {profile.tasksDone} · 🍅 {profile.pomodoroMinutes}m</p>
+
+            {/* Header: avatar + identitas */}
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-24 h-24 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center text-5xl overflow-hidden">
+                {profile.avatarEmoji ? <span className="text-5xl">{profile.avatarEmoji}</span> :
+                  <span className="text-4xl text-slate-400">⚔️</span>}
+              </div>
+              <div className="text-base font-bold text-slate-100 text-center">{profile.displayName}</div>
+              <div className="text-xs text-slate-500 text-center">@{profile.username}</div>
+              {(profile.relation === 'accepted' || profile.relation === 'pending') && (
+                <div className="text-[10px] px-2 py-0.5 rounded-full border"
+                  style={{ color: '#4dd9e0', borderColor: 'rgba(77,217,224,.4)' }}>
+                  {tr(profile.relation === 'accepted' ? 'couple_status_couple' : 'couple_status_pending')}
+                </div>
+              )}
+            </div>
+
+            {/* Chips: level + kelas + title */}
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="text-xs font-bold px-2.5 py-[3px] rounded-[10px] border"
+                style={{ color: '#f0c040', borderColor: 'rgba(240,192,64,.4)', background: 'rgba(240,192,64,.08)' }}>
+                ⚔️ Lv {profile.level ?? 1}
+              </span>
+              {profile.avatarClass && (
+                <span className="text-xs px-2.5 py-[3px] rounded-[10px] border"
+                  style={{ color: '#e2e8f0', borderColor: 'rgba(148,163,184,.3)', background: 'rgba(148,163,184,.08)' }}>
+                  🎭 {tr(`class_${profile.avatarClass}_name`)}
+                </span>
+              )}
+              {profile.title && (
+                <span className="text-xs font-bold px-2.5 py-[3px] rounded-[10px] border"
+                  style={{ color: '#4dd9e0', borderColor: 'rgba(77,217,224,.35)', background: 'rgba(77,217,224,.08)' }}>
+                  🏅 {profile.title}
+                </span>
+              )}
+            </div>
+
+            {/* Info ringkas: bio, guild, sport/rebirth/join */}
+            <div className="rounded-xl bg-slate-800/50 border border-slate-700 px-3 py-2 space-y-1">
+              {profile.bio && (
+                <p className="text-xs italic text-slate-500">💬 {profile.bio}</p>
+              )}
+              {profile.guildName && (
+                <p className="text-xs text-slate-300">{tr('friend_guild', { name: profile.guildName })}</p>
+              )}
+              {(() => {
+                const mini: string[] = [];
+                mini.push(tr('friend_sport_level', { lvl: profile.sportLevel ?? 0 }));
+                mini.push(tr('friend_rebirth', { count: profile.rebirthCount ?? 0 }));
+                if (profile.joinDate) mini.push(tr('friend_joined', { date: String(profile.joinDate).slice(0, 10) }));
+                return <p className="text-[11px] text-slate-500">{mini.join('   ·   ')}</p>;
+              })()}
+            </div>
+
+            {/* Progres XP */}
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-500">{tr('friend_xp_progress')}</div>
+              <div className="h-[18px] rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+                <div className="h-full bg-gradient-to-r from-amber-600/80 to-amber-500/80 transition-all"
+                  style={{ width: `${Math.min(100, ((profile.xp ?? 0) / Math.max(1, profile.xpNeeded ?? 1)) * 100)}%` }} />
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {profile.xp ?? 0}/{profile.xpNeeded ?? 1} XP ({tr('friend_total_xp')}: {Math.round(profile.totalXp ?? 0)})
+              </div>
+            </div>
+
+            {/* Progres achievement */}
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-500">{tr('friend_achievements_progress', { done: profile.achievementsDone ?? 0, total: profile.achievementsTotal ?? 0 })}</div>
+              <div className="h-[18px] rounded-full bg-slate-800 overflow-hidden border border-slate-700">
+                <div className="h-full bg-gradient-to-r from-purple-600/80 to-purple-500/80 transition-all"
+                  style={{ width: `${Math.min(100, ((profile.achievementsDone ?? 0) / Math.max(1, profile.achievementsTotal ?? 1)) * 100)}%` }} />
+              </div>
+              <div className="text-[11px] text-slate-400">{profile.achievementsDone ?? 0}/{profile.achievementsTotal ?? 0}</div>
+            </div>
+
+            {/* 6 achievement terbaru (2 kolom) */}
+            {Array.isArray(profile.latestAchievements) && profile.latestAchievements.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[11px] text-slate-500">{tr('friend_latest_achievements')}</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {profile.latestAchievements.map((ach: any, i: number) => (
+                    <div key={i} className="rounded-lg bg-slate-800/60 border border-slate-700 px-2 py-1 flex items-center gap-1.5 min-h-0">
+                      <span className="text-base shrink-0">{ach.icon || '🏆'}</span>
+                      <span className="text-[11px] text-slate-300 leading-tight">{ach.name || ach.category || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Statistik detail (2 kolom, 8 sel) */}
+            <div className="space-y-1">
+              <div className="text-[11px] text-slate-500">{tr('friend_stats_title')}</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  [tr('stats_habit_today'), `${profile.stats?.habits_done_today ?? 0}/${profile.stats?.habits_total ?? 0}`],
+                  [tr('stats_daily_today'), `${profile.stats?.dailies_done_today ?? 0}/${profile.stats?.dailies_total ?? 0}`],
+                  [tr('stats_quest_done'), `${profile.stats?.todos_done ?? 0}/${profile.stats?.todos_total ?? 0}`],
+                  [tr('friend_tasks_done'), String(profile.tasksDone ?? 0)],
+                  [tr('stats_max_streak'), String(profile.stats?.max_streak ?? 0)],
+                  [tr('stats_boss_killed'), String(profile.stats?.bosses_killed ?? 0)],
+                  [tr('stats_pets'), String(profile.stats?.pet_count ?? 0)],
+                  [tr('friend_pomodoro'), `${profile.pomodoroMinutes ?? 0} min`],
+                ].map(([label, value], i) => (
+                  <div key={i} className="rounded-lg bg-slate-800/60 border border-slate-700 px-2.5 py-1.5 flex flex-col gap-0.5">
+                    <div className="text-sm font-bold text-slate-200">{value}</div>
+                    <div className="text-[10px] text-slate-500 leading-tight">{label}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

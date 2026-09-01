@@ -284,7 +284,7 @@ export const SettingsView: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 w-full mx-auto max-w-4xl">
       <div>
         <div className="flex items-center gap-2">
           <Settings className="w-6 h-6 text-slate-400" />

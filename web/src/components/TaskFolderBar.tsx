@@ -5,6 +5,12 @@ import { TaskFolder } from '../types';
 
 type Mode = 'habit' | 'daily' | 'todo' | 'sport' | 'economy';
 
+/** Mode yang memang punya template di PyQt (TaskPage/AddTask & SportTrack).
+ *  Economy TIDAK punya template (MainPyQt6 hanya _open_templates untuk task/sport).
+ *  Dulu `get_templates_by_mode('economy')` fallback ke HABIT_TEMPLATES sehingga
+ *  taskbar Economy menampilkan template habit — kontrol mati & tidak sesuai PyQt. */
+const TEMPLATE_MODES: Mode[] = ['habit', 'daily', 'todo', 'sport'];
+
 export function useModeFolders(mode: Mode): TaskFolder[] {
   const { taskFolders } = useGame();
   return taskFolders.filter((f) => !f.mode || f.mode === mode);
@@ -73,7 +79,7 @@ export const TaskFolderBar: React.FC<{
       >
         {lang === 'id' ? 'Tanpa folder' : 'Ungrouped'}
       </button>
-      {templates.slice(0, 4).map((tpl) => (
+      {TEMPLATE_MODES.includes(mode) && templates.slice(0, 4).map((tpl) => (
         <button
           key={tpl.key}
           type="button"

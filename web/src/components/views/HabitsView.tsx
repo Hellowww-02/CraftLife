@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
+import { t } from '../../i18n';
 import { Zap, Plus, Trash2, Edit3, Folder, Flame, TrendingUp, TrendingDown, Check, X } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
@@ -96,36 +97,38 @@ export const HabitsView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <Zap className="w-6 h-6 text-amber-400" />
-            <h2 className="text-xl font-black text-slate-100">{lang === 'id' ? 'Pelacak Kebiasaan (Habits)' : 'Habit Tracker'}</h2>
+            <h2 className="text-xl font-black text-slate-100">{t('habit_habit_tracker', 'Habit Tracker')}</h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            {lang === 'id'
-              ? 'Tingkatkan habit positif (+) untuk mendapatkan XP/Gold & melukai Boss, atau hindari habit negatif (-) agar tidak kehilangan HP.'
-              : 'Execute positive habits (+) to gain XP/Gold and damage Bosses, and eliminate negative habits (-) to safeguard your HP.'}
+            {t('habit_subtitle', 'Execute positive habits (+) to gain XP/Gold and damage Bosses, and eliminate negative habits (-) to safeguard your HP.')}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsTemplateOpen(true)}
-          className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
-        >
-          {lang === 'id' ? '📋 Template' : '📋 Templates'}
-        </button>
-        <button
-          id="btn-create-habit"
-          onClick={openCreateModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all shrink-0"
-        >
-          <Plus className="w-4 h-4" /> {lang === 'id' ? 'Buat Habit Baru' : 'New Habit'}
-        </button>
+        {/* Group aksi kanan: Template + New Habit berdampingan (parity TaskPage header).
+            Sebelumnya justify-between menyebar keduanya jauh terpisah. */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsTemplateOpen(true)}
+            className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
+          >
+            {t('habit_templates', '📋 Templates')}
+          </button>
+          <button
+            id="btn-create-habit"
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" /> {t('habit_new_habit', 'New Habit')}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={lang === 'id' ? 'Cari habit…' : 'Search habits…'}
+          placeholder={t('habit_search_habits', 'Search habits…')}
           className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 w-48"
         />
         <select
@@ -133,7 +136,7 @@ export const HabitsView: React.FC = () => {
           onChange={(e) => setDiffFilter(e.target.value)}
           className="px-2 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200"
         >
-          <option value="all">{lang === 'id' ? 'Semua kesulitan' : 'All difficulty'}</option>
+          <option value="all">{t('habit_all_difficulty', 'All difficulty')}</option>
           <option value="easy">Easy</option>
           <option value="medium">Medium</option>
           <option value="hard">Hard</option>
@@ -146,7 +149,7 @@ export const HabitsView: React.FC = () => {
         selected={selectedFolderFilter}
         onSelect={setSelectedFolderFilter}
         accent="bg-amber-500/20 text-amber-300 border border-amber-500/40"
-        allLabel={lang === 'id' ? 'Semua Habit' : 'All Habits'}
+        allLabel={t('habit_all_habits', 'All Habits')}
         allCount={habits.length}
         onDropInto={(fid) => {
           const idx = drag.dragIndex;
@@ -189,7 +192,7 @@ export const HabitsView: React.FC = () => {
                     <button
                       onClick={() => duplicateHabit(habit.id)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-                      title={lang === 'id' ? 'Duplikasi' : 'Duplicate'}
+                      title={t('habit_duplicate', 'Duplicate')}
                     >
                       <Folder className="w-3.5 h-3.5" />
                     </button>
@@ -256,12 +259,12 @@ export const HabitsView: React.FC = () => {
       {filteredHabits.length === 0 && (
         <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
           <Zap className="w-8 h-8 text-amber-500/40 mx-auto mb-2" />
-          <p className="text-sm font-semibold">{lang === 'id' ? 'Belum ada habit di kategori ini.' : 'No habits in this category.'}</p>
+          <p className="text-sm font-semibold">{t('habit_no_habits_in_this_category', 'No habits in this category.')}</p>
           <button
             onClick={openCreateModal}
             className="mt-3 px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold hover:bg-amber-400"
           >
-            {lang === 'id' ? 'Buat Habit Pertama' : 'Create First Habit'}
+            {t('habit_create_first_habit', 'Create First Habit')}
           </button>
         </div>
       )}
@@ -271,12 +274,12 @@ export const HabitsView: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-black text-slate-100">
-              {editingId ? (lang === 'id' ? 'Edit Habit' : 'Edit Habit') : (lang === 'id' ? 'Buat Habit Baru' : 'New Habit')}
+              {editingId ? (t('habit_edit_habit', 'Edit Habit')) : (t('habit_new_habit', 'New Habit'))}
             </h3>
 
             <form onSubmit={handleSave} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Judul Kebiasaan' : 'Habit Title'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('habit_habit_title', 'Habit Title')}</label>
                 <input
                   type="text"
                   required
@@ -289,7 +292,7 @@ export const HabitsView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Tingkat Kesulitan' : 'Difficulty'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{t('habit_difficulty', 'Difficulty')}</label>
                   <select
                     value={difficulty}
                     onChange={(e) => setDifficulty(e.target.value as TaskDifficulty)}
@@ -304,13 +307,13 @@ export const HabitsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Folder / Kategori' : 'Folder'}</label>
+                  <label className="block text-slate-300 font-semibold mb-1">{t('habit_folder', 'Folder')}</label>
                   <select
                     value={folderId}
                     onChange={(e) => setFolderId(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500"
                   >
-                    <option value="">{lang === 'id' ? 'Tanpa Folder' : 'No Folder'}</option>
+                    <option value="">{t('habit_no_folder', 'No Folder')}</option>
                     {habitFolders.map((f) => (
                       <option key={f.id} value={f.id}>
                         {f.icon} {f.name}
@@ -321,7 +324,7 @@ export const HabitsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Arah Kebiasaan' : 'Habit Nature'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('habit_habit_nature', 'Habit Nature')}</label>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-800 border border-slate-700 cursor-pointer">
                     <input
@@ -345,7 +348,7 @@ export const HabitsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? 'Catatan Tambahan' : 'Notes'}</label>
+                <label className="block text-slate-300 font-semibold mb-1">{t('habit_notes', 'Notes')}</label>
                 <textarea
                   rows={2}
                   value={notes}
@@ -361,13 +364,13 @@ export const HabitsView: React.FC = () => {
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
                 >
-                  {lang === 'id' ? 'Batal' : 'Cancel'}
+                  {t('habit_cancel', 'Cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold"
                 >
-                  {lang === 'id' ? 'Simpan' : 'Save'}
+                  {t('habit_save', 'Save')}
                 </button>
               </div>
             </form>

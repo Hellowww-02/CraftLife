@@ -1449,6 +1449,21 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     studio.lovePrompt({ id: promptId, answer }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
+  const refreshSocial = useCallback(() => {
+    Promise.all([studio.friends(), studio.guild(), studio.pvp(), studio.love()])
+      .then(([f, g, p, l]) => {
+        applyLive({
+          ok: true,
+          friends: f.friends,
+          friendRequests: f.friendRequests,
+          guild: g.guild,
+          pvpChallenges: p.pvpChallenges,
+          loveSpace: l.loveSpace,
+        });
+      })
+      .catch(() => undefined);
+  }, [applyLive]);
+
   // Social & Guild Actions
   const sendChatMessage = useCallback((text: string, otherId?: string) => {
     studio.sendChat(text, otherId).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
@@ -1459,12 +1474,23 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive, showToast]);
 
   const acceptFriendRequest = useCallback((id: string) => {
-    studio.acceptFriend(id).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
-  }, [applyLive, showToast]);
+    studio.acceptFriend(id).then((res) => {
+      if (res?.ok) {
+        // P26: backend telah mencatat friendship di kedua sisi (tersimpan sekali,
+        // status accepted). Refresh state sosial agar list teman/permintaan
+        // langsung sinkron tanpa harus refresh manual.
+        refreshSocial();
+      }
+      applyLive(res);
+    }).catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [applyLive, showToast, refreshSocial]);
 
   const rejectFriendRequest = useCallback((id: string) => {
-    studio.rejectFriend(id).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
-  }, [applyLive, showToast]);
+    studio.rejectFriend(id).then((res) => {
+      if (res?.ok) refreshSocial();
+      applyLive(res);
+    }).catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [applyLive, showToast, refreshSocial]);
 
   const respondPvpChallenge = useCallback((id: string, accept: boolean) => {
     studio.respondPvp(id, accept).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
@@ -1531,21 +1557,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loveAlbumAddPhoto = useCallback((albumId: string, photoId: string) => loveOp(studio.loveAlbumAddPhoto(albumId, photoId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
   const loveAlbumMovePhoto = useCallback((albumId: string, photoId: string, sourceAlbumId?: string | null) => loveOp(studio.loveAlbumMovePhoto(albumId, photoId, sourceAlbumId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
   const loveAlbumRemovePhoto = useCallback((albumId: string, photoId: string) => loveOp(studio.loveAlbumRemovePhoto(albumId, photoId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
-
-  const refreshSocial = useCallback(() => {
-    Promise.all([studio.friends(), studio.guild(), studio.pvp(), studio.love()])
-      .then(([f, g, p, l]) => {
-        applyLive({
-          ok: true,
-          friends: f.friends,
-          friendRequests: f.friendRequests,
-          guild: g.guild,
-          pvpChallenges: p.pvpChallenges,
-          loveSpace: l.loveSpace,
-        });
-      })
-      .catch(() => undefined);
-  }, [applyLive]);
 
   const attackGuildBoss = useCallback((action: 'light' | 'heavy' | 'block' | 'ultimate' = 'light') => {
     studio.attackGuildBoss(action).then((res) => applyLive(res)).catch(notifyApiErr);

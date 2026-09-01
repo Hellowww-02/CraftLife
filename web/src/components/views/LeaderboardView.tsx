@@ -96,7 +96,7 @@ export const LeaderboardView: React.FC = () => {
          t('cloud_leaderboard_points', 'Points'), t('cloud_leaderboard_events', 'Events')];
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="space-y-4 w-full mx-auto max-w-5xl">
       <div className="flex items-center gap-2">
         <Trophy className="w-6 h-6 text-amber-400" />
         <h2 className="text-xl font-black text-slate-100">{t('leaderboard_title', '🏆  Leaderboard')}</h2>
