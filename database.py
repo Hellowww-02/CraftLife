@@ -6023,15 +6023,23 @@ def set_avatar(user_id, avatar_class=None, color=None,
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_avatar_updated")}
 
 def change_class(user_id, new_class):
-    """Ganti class avatar — maksimal sekali sehari."""
+    """Ganti class avatar — maksimal sekali per 7 hari (P31: weekly cooldown)."""
     if new_class not in AVATAR_CLASSES:
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_class_unknown")}
     u = get_user(user_id)
     last_change = u.get("last_class_change", "")
-    today = date.today().isoformat()
-    if last_change == today:
-        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_class_change_cooldown")}
-    update_user(user_id, avatar_class=new_class, last_class_change=today)
+    today = date.today()
+    if last_change:
+        try:
+            last_dt = date.fromisoformat(str(last_change)[:10])
+        except ValueError:
+            last_dt = None
+        if last_dt is not None and (today - last_dt).days < 7:
+            remaining = 7 - (today - last_dt).days
+            if remaining <= 0:
+                remaining = 1
+            return {"ok": False, "msg": tr_db(user_id=user_id, key="db_class_change_cooldown_days", days=remaining)}
+    update_user(user_id, avatar_class=new_class, last_class_change=today.isoformat())
     update_class_passive_buffs(user_id)
     recalculate_all_buffs(user_id)
     apply_hp_multiplier(user_id)
@@ -10936,6 +10944,113 @@ def get_all_active_buffs(user_id):
         buffs.append(f"🌀 Rebirth Bonus: +{rebirth_count*10}% XP, +{rebirth_count*5}% Gold")
     
     return buffs
+
+
+def get_active_buffs_structured(user_id):
+    """Buff aktif user dalam bentuk terstruktur (key + params) untuk i18n React.
+
+    Parity dengan get_all_active_buffs() (string Indonesia, dipakai PyQt), tapi
+    mengembalikan list dict {"key": ..., **params} supaya React bisa merender
+    label lewat translation key id/en (P30: navbar menampilkan SELURUH buff aktif).
+    """
+    u = get_user(user_id)
+    if not u:
+        return []
+    items = []
+
+    def add(key, **params):
+        items.append({"key": key, **params})
+
+    # 1. XP Multiplier
+    if u.get("xp_multiplier", 1.0) > 1.001:
+        add("buff_xp_multiplier", value=f"{u['xp_multiplier']:.2f}")
+    # 2. Gold Multiplier
+    if u.get("gold_multiplier", 1.0) > 1.001:
+        add("buff_gold_multiplier", value=f"{u['gold_multiplier']:.2f}")
+    # 3. Boss Damage Bonus
+    if u.get("boss_damage_bonus", 0) > 0:
+        add("buff_boss_damage", value=int(u["boss_damage_bonus"]))
+    # 4. HP Damage Reduction
+    if u.get("hp_damage_reduction", 0) > 0:
+        add("buff_hp_reduction", value=int(u["hp_damage_reduction"]))
+    # 5. MP Bonus
+    if u.get("mp_bonus", 0) > 0:
+        add("buff_mp_bonus", value=int(u["mp_bonus"]))
+    # 6. Revive
+    if u.get("has_revive", 0):
+        add("buff_revive")
+    # 7. Critical Chance
+    if u.get("crit_chance", 10) > 10:
+        add("buff_crit_chance", value=int(u["crit_chance"] - 10))
+    # 8. Block Chance
+    if u.get("block_chance", 20) > 20:
+        add("buff_block_chance", value=int(u["block_chance"] - 20))
+    # 9. Block Strength
+    if u.get("block_strength", 10) > 10:
+        add("buff_block_strength", value=int(u["block_strength"] - 10))
+    # 10. Spyglass
+    if u.get("has_spyglass", 0):
+        add("buff_spyglass")
+
+    # 11. Guild buffs
+    guild_id = u.get("guild_id")
+    if guild_id:
+        conn = get_conn()
+        g = conn.execute(
+            "SELECT buff_xp, buff_gold, buff_damage, crit_chance FROM guilds WHERE id=?",
+            (guild_id,),
+        ).fetchone()
+        conn.close()
+        if g:
+            if g["buff_xp"] > 0:
+                add("buff_guild_xp", value=int(g["buff_xp"]))
+            if g["buff_gold"] > 0:
+                add("buff_guild_gold", value=int(g["buff_gold"]))
+            if g["buff_damage"] > 0:
+                add("buff_guild_damage", value=int(g["buff_damage"]))
+            if g["crit_chance"] > 0:
+                add("buff_guild_crit", value=int(g["crit_chance"]))
+
+    # 12. Pet aktif
+    conn = get_conn()
+    active_pet = conn.execute(
+        "SELECT pet_id, level FROM user_pets WHERE user_id=? AND is_active=1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    if active_pet:
+        pet = PETS_DATA.get(active_pet["pet_id"], {})
+        add(
+            "buff_pet",
+            name=pet.get("name", active_pet["pet_id"]),
+            level=int(active_pet["level"]),
+            bonus=pet.get("bonus", ""),
+        )
+
+    # 13. Class passive
+    class_buffs = get_class_passive_buffs(user_id)
+    if class_buffs.get("hp_multiplier", 1.0) > 1.001:
+        add("buff_class_hp", value=int((class_buffs["hp_multiplier"] - 1) * 100))
+    if class_buffs.get("streak_bonus", 0):
+        add("buff_class_streak")
+
+    # 14. Skill buffs aktif
+    skill_buffs = get_skill_buffs(user_id)
+    if skill_buffs.get("shield_active"):
+        add("buff_skill_shield")
+    if skill_buffs.get("xp_multiplier") and skill_buffs.get("xp_remaining", 0) > 0:
+        add("buff_skill_arcane", value=int(skill_buffs["xp_remaining"]))
+    if skill_buffs.get("gold_multiplier") and skill_buffs.get("gold_remaining", 0) > 0:
+        add("buff_skill_goldshot", value=int(skill_buffs["gold_remaining"]))
+    if skill_buffs.get("double_streak"):
+        add("buff_skill_shadow")
+
+    # 15. Rebirth buff
+    rebirth_count = u.get("rebirth_count", 0)
+    if rebirth_count > 0:
+        add("buff_rebirth", xp=rebirth_count * 10, gold=rebirth_count * 5)
+
+    return items
 
 # ========== PLAYLIST FUNCTIONS ==========
 def save_playlist(user_id, name, files):
