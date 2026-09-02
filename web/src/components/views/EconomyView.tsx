@@ -4,6 +4,7 @@ import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign,
 import { DualLineChart, DonutChart } from '../charts';
 import { t } from '../../i18n';
 import { formatMoney as fmtMoney } from '../../utils/currency';
+import { MoneyInput } from '../MoneyInput';
 // TaskFolderBar dihapus dari Economy (bukan elemen PyQt EconomyPage — lihat komentar di atas).
 import { life } from '../../api/life';
 import { fmtYmd, addDays } from '../../utils/serverTime';
@@ -491,14 +492,12 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
                     {!debt.isPaid && (
                       <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          step="10000"
+                        <MoneyInput
                           value={currentInput}
-                          onChange={(e) =>
-                            setPayAmountInput({ ...payAmountInput, [debt.id]: Number(e.target.value) })
-                          }
-                          className="w-24 px-2 py-1 text-xs rounded-lg bg-slate-800 border border-slate-700 text-slate-100"
+                          onValueChange={(n) => setPayAmountInput({ ...payAmountInput, [debt.id]: n })}
+                          currency={currency}
+                          className="w-28"
+                          inputClassName="py-1 text-xs rounded-lg"
                         />
                         <button
                           onClick={() => payDebtInstallment(debt.id, currentInput)}
@@ -534,7 +533,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
         <div className="space-y-3">
           <div className="flex gap-2">
             <input value={svName} onChange={(e) => setSvName(e.target.value)} placeholder={lang === 'id' ? 'Nama tabungan' : 'Saving name'} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1" />
-            <input type="number" value={svTarget} onChange={(e) => setSvTarget(Number(e.target.value))} className="w-32 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
+            <MoneyInput value={svTarget} onValueChange={(n) => setSvTarget(n)} currency={currency} className="w-36" inputClassName="py-2 text-xs rounded-xl" />
             <button onClick={() => { if (svName.trim()) { addSaving(svName.trim(), svTarget); setSvName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
           </div>
           {savings.map((s) => (
@@ -556,7 +555,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
         <div className="space-y-3">
           <div className="flex gap-2">
             <input value={invName} onChange={(e) => setInvName(e.target.value)} placeholder={lang === 'id' ? 'Nama investasi' : 'Investment'} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1" />
-            <input type="number" value={invAmt} onChange={(e) => setInvAmt(Number(e.target.value))} className="w-32 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
+            <MoneyInput value={invAmt} onValueChange={(n) => setInvAmt(n)} currency={currency} className="w-36" inputClassName="py-2 text-xs rounded-xl" />
             <button onClick={() => { if (invName.trim()) { addInvestment(invName.trim(), invAmt); setInvName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
           </div>
           {investments.map((i) => (
@@ -574,7 +573,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
         <div className="space-y-3">
           <div className="flex gap-2 flex-wrap items-center">
             <input value={subName} onChange={(e) => setSubName(e.target.value)} placeholder={lang === 'id' ? 'Langganan' : 'Subscription'} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1 min-w-[8rem]" />
-            <input type="number" value={subAmt} onChange={(e) => setSubAmt(Number(e.target.value))} className="w-28 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
+            <MoneyInput value={subAmt} onValueChange={(n) => setSubAmt(n)} currency={currency} className="w-32" inputClassName="py-2 text-xs rounded-xl" />
             <input type="date" value={subDue} onChange={(e) => setSubDue(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
             {editingSub ? (
               <>
@@ -607,7 +606,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
         <div className="space-y-3">
           <div className="flex gap-2">
             <input value={dnName} onChange={(e) => setDnName(e.target.value)} placeholder={lang === 'id' ? 'Nama orang' : 'Person'} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1" />
-            <input type="number" value={dnAmt} onChange={(e) => setDnAmt(Number(e.target.value))} className="w-32 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs" />
+            <MoneyInput value={dnAmt} onValueChange={(n) => setDnAmt(n)} currency={currency} className="w-36" inputClassName="py-2 text-xs rounded-xl" />
             <button onClick={() => { if (dnName.trim()) { addDebtNote(dnName.trim(), dnAmt); setDnName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
           </div>
           {debtNotes.map((n) => (
@@ -696,13 +695,11 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? `Nominal (${currency})` : `Amount (${currency})`}</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
+                <MoneyInput
                   value={txAmount}
-                  onChange={(e) => setTxAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  onValueChange={(n) => setTxAmount(n)}
+                  currency={currency}
+                  className="w-full"
                 />
               </div>
 
@@ -768,13 +765,11 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">{lang === 'id' ? `Total Jumlah (${currency})` : `Total (${currency})`}</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
+                  <MoneyInput
                     value={debtTotal}
-                    onChange={(e) => setDebtTotal(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                    onValueChange={(n) => setDebtTotal(n)}
+                    currency={currency}
+                    className="w-full"
                   />
                 </div>
                 <div>

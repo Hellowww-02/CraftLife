@@ -330,6 +330,7 @@ interface GameContextType {
 
   // Calculated Stats
   activeBuffs: string[];
+  activeBuffsDetail: { key: string; [k: string]: string | number }[];
   totalBuffs: {
     xp_pct: number;
     gold_pct: number;
@@ -482,6 +483,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [userPets, setUserPets] = useState<UserPet[]>([]);
   const [activeBuffs, setActiveBuffs] = useState<string[]>([]);
+  const [activeBuffsDetail, setActiveBuffsDetail] = useState<{ key: string; [k: string]: string | number }[]>([]);
   const [activeBoss, setActiveBoss] = useState<Boss | null>(null);
   const [activeBossHp, setActiveBossHp] = useState<number>(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -545,6 +547,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (Array.isArray(data.inventory)) setInventory(data.inventory);
       if (Array.isArray(data.userPets)) setUserPets(data.userPets);
       if (Array.isArray(data.achievements)) setAchievements(data.achievements);
+      if (Array.isArray(data.activeBuffs)) setActiveBuffs(data.activeBuffs);
+      if (Array.isArray(data.activeBuffsDetail)) setActiveBuffsDetail(data.activeBuffsDetail);
       if (Array.isArray(data.sportLogs)) setSportLogs(data.sportLogs);
       if (Array.isArray(data.mealLogs)) setMealLogs(data.mealLogs);
       if (data.waterLog) setWaterLog(data.waterLog);
@@ -671,6 +675,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (Array.isArray(res.inventory)) setInventory(res.inventory);
     if (Array.isArray(res.userPets)) setUserPets(res.userPets);
     if (Array.isArray(res.activeBuffs)) setActiveBuffs(res.activeBuffs);
+    if (Array.isArray(res.activeBuffsDetail)) setActiveBuffsDetail(res.activeBuffsDetail);
     if (Array.isArray(res.achievements) && res.achievements.length) setAchievements(res.achievements);
     if (Array.isArray(res.sportLogs)) setSportLogs(res.sportLogs);
     if (Array.isArray(res.mealLogs)) setMealLogs(res.mealLogs);
@@ -1912,6 +1917,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         removeToast,
         showToast,
         activeBuffs,
+        activeBuffsDetail,
         totalBuffs,
         exportDataJson,
         importDataJson,

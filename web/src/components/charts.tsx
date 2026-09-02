@@ -9,8 +9,12 @@
  * All components are pure SVG + Tailwind-friendly inline props and are
  * deliberately "dumb": they render data and call callbacks; no game logic here.
  * (No charts for trivial single-value data — ProgressRing covers that.)
+ *
+ * P30: LineChart / DualLineChart / BarChart / Sparkline are now RESPONSIVE —
+ * they measure their container width (ResizeObserver) and stretch edge-to-edge
+ * instead of being pinned to the fixed `width` prop (fix "chart mentok kiri").
  */
-import React, { useId } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 
 /* ------------------------------------------------------------------ types */
 
@@ -22,6 +26,31 @@ interface ChartPoint {
 interface BaseSeries {
   /** CSS color-string, e.g. '#34d399' or 'class="text-emerald-400"' resolves via `color` */
   color: string;
+}
+
+/* ------------------------------------------------------ responsive helper */
+
+/**
+ * Ukur lebar container (clientWidth) dan pantau perubahan ukurannya.
+ * Fallback ke 0 sampai pengukuran pertama selesai.
+ */
+function useMeasuredWidth(): [React.RefObject<HTMLDivElement>, number] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setW(el.clientWidth);
+    update();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => update());
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  return [ref, w];
 }
 
 /* ---------------------------------------------------------- ProgressRing */
@@ -99,24 +128,29 @@ interface SparklineProps {
 
 /** Tiny trend line for compact cards (income/expense/XP etc.). */
 export function Sparkline({ data, width = 120, height = 36, color = '#34d399', className }: SparklineProps) {
-  if (!data || data.length === 0) {
-    return <svg width={width} height={height} className={className} aria-hidden="true" />;
-  }
-  const min = Math.min(...data);
-  const max = Math.max(...data);
+  const [ref, measured] = useMeasuredWidth();
+  const resolved = measured > 0 ? measured : width;
+  const min = data && data.length ? Math.min(...data) : 0;
+  const max = data && data.length ? Math.max(...data) : 1;
   const range = max - min || 1;
-  const stepX = data.length > 1 ? width / (data.length - 1) : width;
-  const pts = data.map((v, i) => {
+  const stepX = data && data.length > 1 ? resolved / (data.length - 1) : resolved;
+  const pts = (data || []).map((v, i) => {
     const x = i * stepX;
     const y = height - ((v - min) / range) * (height - 4) - 2;
     return `${x.toFixed(2)},${y.toFixed(2)}`;
   });
-  const area = `0,${height} ${pts.join(' ')} ${width},${height}`;
+  const area = `0,${height} ${pts.join(' ')} ${resolved},${height}`;
   return (
-    <svg width={width} height={height} className={className} aria-hidden="true" viewBox={`0 0 ${width} ${height}`}>
-      <polygon points={area} fill={color} opacity="0.12" />
-      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div ref={ref} className={`w-full ${className ?? ''}`}>
+      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+        {data && data.length > 0 && (
+          <>
+            <polygon points={area} fill={color} opacity="0.12" />
+            <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -134,22 +168,17 @@ interface LineChartProps {
 
 /** Simple multi-purpose line/area chart. Data should be ordered by x (index). */
 export function LineChart({ data, width = 320, height = 160, color = '#34d399', showGrid = true, labels = true, className }: LineChartProps) {
+  const [ref, measured] = useMeasuredWidth();
+  const resolved = measured > 0 ? measured : width;
   const pad = 8;
-  const innerW = width - pad * 2;
+  const innerW = Math.max(1, resolved - pad * 2);
   const innerH = height - (labels ? 24 : pad);
-  if (!data || data.length === 0) {
-    return (
-      <svg width={width} height={height} className={className} aria-hidden="true">
-        <rect x={0} y={0} width={width} height={height} fill="transparent" />
-      </svg>
-    );
-  }
-  const values = data.map((d) => d.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const values = (data || []).map((d) => d.value);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
   const range = max - min || 1;
-  const stepX = data.length > 1 ? innerW / (data.length - 1) : innerW;
-  const pts = data.map((d, i) => {
+  const stepX = data && data.length > 1 ? innerW / (data.length - 1) : innerW;
+  const pts = (data || []).map((d, i) => {
     const x = pad + i * stepX;
     const y = pad + (1 - (d.value - min) / range) * innerH;
     return { x, y, point: d };
@@ -158,22 +187,28 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
   const area = `${pad},${pad + innerH} ${line} ${pad + innerW},${pad + innerH}`;
   const gridLines = showGrid ? [0.25, 0.5, 0.75].map((t) => pad + t * innerH) : [];
   return (
-    <svg width={width} height={height} className={className} aria-hidden="true" viewBox={`0 0 ${width} ${height}`}>
-      {gridLines.map((y, i) => (
-        <line key={`gl-${i}`} x1={pad} y1={y} x2={width - pad} y2={y} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
-      ))}
-      <polygon points={area} fill={color} opacity="0.1" />
-      <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      {pts.map((p, i) => (
-        <circle key={`pt-${i}`} cx={p.x} cy={p.y} r="2.5" fill={color} />
-      ))}
-      {labels &&
-        pts.map((p, i) => (
-          <text key={`tx-${i}`} x={p.x} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
-            {p.point.label}
-          </text>
-        ))}
-    </svg>
+    <div ref={ref} className={`w-full ${className ?? ''}`}>
+      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+        {data && data.length > 0 && (
+          <>
+            {gridLines.map((y, i) => (
+              <line key={`gl-${i}`} x1={pad} y1={y} x2={resolved - pad} y2={y} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+            ))}
+            <polygon points={area} fill={color} opacity="0.1" />
+            <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            {pts.map((p, i) => (
+              <circle key={`pt-${i}`} cx={p.x} cy={p.y} r="2.5" fill={color} />
+            ))}
+            {labels &&
+              pts.map((p, i) => (
+                <text key={`tx-${i}`} x={p.x} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
+                  {p.point.label}
+                </text>
+              ))}
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -212,16 +247,15 @@ export function DualLineChart({
   colorB = '#f43f5e',
   className,
 }: DualLineChartProps) {
+  const [ref, measured] = useMeasuredWidth();
+  const resolved = measured > 0 ? measured : width;
   const pad = 8;
-  const innerW = width - pad * 2;
+  const innerW = Math.max(1, resolved - pad * 2);
   const innerH = height - 28;
   const n = Math.max(a.length, b.length);
-  if (n === 0) {
-    return <svg width={width} height={height} className={className} aria-hidden="true" />;
-  }
   const values = [...a.map((d) => d.value), ...b.map((d) => d.value)];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
   const range = max - min || 1;
   const stepX = n > 1 ? innerW / (n - 1) : innerW;
   const toXY = (series: DualSeries[]) =>
@@ -240,30 +274,36 @@ export function DualLineChart({
   const lbl = (i: number) => labels[i] ?? '';
   const labelCount = Math.max(a.length, b.length, labels.length);
   return (
-    <svg width={width} height={height} className={className} aria-hidden="true" viewBox={`0 0 ${width} ${height}`}>
-      {gridLines.map((y, i) => (
-        <line key={`gl-${i}`} x1={pad} y1={y} x2={width - pad} y2={y} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
-      ))}
-      {areaA !== `${pad},${pad + innerH} ${pad + innerW},${pad + innerH}` && (
-        <polygon points={areaA} fill={colorA} opacity="0.08" />
-      )}
-      {areaB !== `${pad},${pad + innerH} ${pad + innerW},${pad + innerH}` && (
-        <polygon points={areaB} fill={colorB} opacity="0.08" />
-      )}
-      {lineA && <polyline points={lineA} fill="none" stroke={colorA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-      {lineB && <polyline points={lineB} fill="none" stroke={colorB} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-      {ptsA.map((p, i) => (
-        <circle key={`pa-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorA} />
-      ))}
-      {ptsB.map((p, i) => (
-        <circle key={`pb-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorB} />
-      ))}
-      {Array.from({ length: labelCount }).map((_, i) => (
-        <text key={`lb-${i}`} x={pad + (i * innerW) / Math.max(1, n - 1)} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
-          {lbl(i)}
-        </text>
-      ))}
-    </svg>
+    <div ref={ref} className={`w-full ${className ?? ''}`}>
+      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+        {n > 0 && (
+          <>
+            {gridLines.map((y, i) => (
+              <line key={`gl-${i}`} x1={pad} y1={y} x2={resolved - pad} y2={y} stroke="rgba(148,163,184,0.12)" strokeWidth="1" />
+            ))}
+            {areaA !== `${pad},${pad + innerH} ${pad + innerW},${pad + innerH}` && (
+              <polygon points={areaA} fill={colorA} opacity="0.08" />
+            )}
+            {areaB !== `${pad},${pad + innerH} ${pad + innerW},${pad + innerH}` && (
+              <polygon points={areaB} fill={colorB} opacity="0.08" />
+            )}
+            {lineA && <polyline points={lineA} fill="none" stroke={colorA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+            {lineB && <polyline points={lineB} fill="none" stroke={colorB} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+            {ptsA.map((p, i) => (
+              <circle key={`pa-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorA} />
+            ))}
+            {ptsB.map((p, i) => (
+              <circle key={`pb-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorB} />
+            ))}
+            {Array.from({ length: labelCount }).map((_, i) => (
+              <text key={`lb-${i}`} x={pad + (i * innerW) / Math.max(1, n - 1)} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
+                {lbl(i)}
+              </text>
+            ))}
+          </>
+        )}
+      </svg>
+    </div>
   );
 }
 
@@ -280,35 +320,34 @@ interface BarChartProps {
 
 /** Vertical bar chart for categories (e.g. calories per day, spending split). */
 export function BarChart({ data, width = 320, height = 160, color = '#34d399', labels = true, className }: BarChartProps) {
+  const [ref, measured] = useMeasuredWidth();
+  const resolved = measured > 0 ? measured : width;
   const pad = 8;
   const innerH = height - (labels ? 24 : pad * 2);
-  if (!data || data.length === 0) {
-    return (
-      <svg width={width} height={height} className={className} aria-hidden="true" />
-    );
-  }
-  const values = data.map((d) => d.value);
+  const values = (data || []).map((d) => d.value);
   const max = Math.max(...values, 1);
   const barGap = 6;
-  const barW = Math.max(2, (width - pad * 2 - barGap * (data.length - 1)) / data.length);
+  const barW = data && data.length ? Math.max(2, (resolved - pad * 2 - barGap * (data.length - 1)) / data.length) : 0;
   return (
-    <svg width={width} height={height} className={className} aria-hidden="true" viewBox={`0 0 ${width} ${height}`}>
-      {data.map((d, i) => {
-        const h = (d.value / max) * (innerH - pad);
-        const x = pad + i * (barW + barGap);
-        const y = height - (labels ? 24 : pad) - h;
-        return (
-          <g key={`bar-${i}`}>
-            <rect x={x} y={y} width={barW} height={h} rx="3" fill={color} opacity="0.85" />
-            {labels && (
-              <text x={x + barW / 2} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
-                {d.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg>
+    <div ref={ref} className={`w-full ${className ?? ''}`}>
+      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+        {(data || []).map((d, i) => {
+          const h = (d.value / max) * (innerH - pad);
+          const x = pad + i * (barW + barGap);
+          const y = height - (labels ? 24 : pad) - h;
+          return (
+            <g key={`bar-${i}`}>
+              <rect x={x} y={y} width={barW} height={h} rx="3" fill={color} opacity="0.85" />
+              {labels && (
+                <text x={x + barW / 2} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
+                  {d.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 

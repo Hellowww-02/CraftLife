@@ -46,6 +46,7 @@ export interface UserProfile {
   bio: string;
   avatarClass: AvatarClass;
   heroClass?: string;
+  lastClassChange?: string;
   avatarEmoji: string;
   avatar?: string;
   avatarColor: string;

@@ -77,15 +77,15 @@ export const QuestsView: React.FC = () => {
   const getDifficultyBadge = (diff: TaskDifficulty) => {
     switch (diff) {
       case 'trivial':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-slate-300">Trivial</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-slate-300">{t('task_difficulty_trivial', 'Trivial')}</span>;
       case 'easy':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Easy</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">{t('task_difficulty_easy', 'Easy')}</span>;
       case 'medium':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">Medium</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">{t('task_difficulty_medium', 'Medium')}</span>;
       case 'hard':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Hard</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">{t('task_difficulty_hard', 'Hard')}</span>;
       case 'epic':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Epic</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">{t('task_difficulty_epic', 'Epic')}</span>;
     }
   };
 
@@ -135,11 +135,11 @@ export const QuestsView: React.FC = () => {
           className="px-2 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200"
         >
           <option value="all">{t('quest_all_priorities', 'All priorities')}</option>
-          <option value="trivial">Trivial</option>
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-          <option value="epic">Epic</option>
+          <option value="trivial">{t('task_difficulty_trivial', 'Trivial')}</option>
+          <option value="easy">{t('task_difficulty_easy', 'Easy')}</option>
+          <option value="medium">{t('task_difficulty_medium', 'Medium')}</option>
+          <option value="hard">{t('task_difficulty_hard', 'Hard')}</option>
+          <option value="epic">{t('task_difficulty_epic', 'Epic')}</option>
         </select>
       </div>
 
@@ -266,14 +266,14 @@ export const QuestsView: React.FC = () => {
                 <button
                   onClick={() => openEditModal(quest)}
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-                  title="Edit Quest"
+                  title={t('quest_edit_quest', 'Edit Quest')}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => deleteQuest(quest.id)}
                   className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
-                  title="Delete Quest"
+                  title={t('task_delete_title', 'Delete')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -306,7 +306,7 @@ export const QuestsView: React.FC = () => {
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Selesaikan Laporan Keuangan Q3"
+                  placeholder={t('ph_e_g_selesaikan_laporan_keuangan_q3', 'e.g. Selesaikan Laporan Keuangan Q3')}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -319,11 +319,11 @@ export const QuestsView: React.FC = () => {
                     onChange={(e) => setDifficulty(e.target.value as TaskDifficulty)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
                   >
-                    <option value="trivial">Trivial</option>
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                    <option value="epic">Epic</option>
+                    <option value="trivial">{t('task_difficulty_trivial', 'Trivial')}</option>
+                    <option value="easy">{t('task_difficulty_easy', 'Easy')}</option>
+                    <option value="medium">{t('task_difficulty_medium', 'Medium')}</option>
+                    <option value="hard">{t('task_difficulty_hard', 'Hard')}</option>
+                    <option value="epic">{t('task_difficulty_epic', 'Epic')}</option>
                   </select>
                 </div>
 
@@ -360,7 +360,7 @@ export const QuestsView: React.FC = () => {
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Task details and deliverables..."
+                  placeholder={t('ph_task_details_and_deliverables', 'Task details and deliverables...')}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
                 />
               </div>

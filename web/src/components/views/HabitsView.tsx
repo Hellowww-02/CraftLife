@@ -78,15 +78,15 @@ export const HabitsView: React.FC = () => {
   const getDifficultyBadge = (diff: TaskDifficulty) => {
     switch (diff) {
       case 'trivial':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-slate-300">Trivial</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-slate-300">{t('task_difficulty_trivial', 'Trivial')}</span>;
       case 'easy':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Easy</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">{t('task_difficulty_easy', 'Easy')}</span>;
       case 'medium':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">Medium</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">{t('task_difficulty_medium', 'Medium')}</span>;
       case 'hard':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Hard</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">{t('task_difficulty_hard', 'Hard')}</span>;
       case 'epic':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Epic</span>;
+        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">{t('task_difficulty_epic', 'Epic')}</span>;
     }
   };
 
@@ -137,10 +137,10 @@ export const HabitsView: React.FC = () => {
           className="px-2 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200"
         >
           <option value="all">{t('habit_all_difficulty', 'All difficulty')}</option>
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-          <option value="epic">Epic</option>
+          <option value="easy">{t('task_difficulty_easy', 'Easy')}</option>
+          <option value="medium">{t('task_difficulty_medium', 'Medium')}</option>
+          <option value="hard">{t('task_difficulty_hard', 'Hard')}</option>
+          <option value="epic">{t('task_difficulty_epic', 'Epic')}</option>
         </select>
       </div>
 
@@ -199,14 +199,14 @@ export const HabitsView: React.FC = () => {
                     <button
                       onClick={() => openEditModal(habit)}
                       className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-                      title="Edit Habit"
+                      title={t('habit_edit_habit', 'Edit Habit')}
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => deleteHabit(habit.id)}
                       className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
-                      title="Delete Habit"
+                      title={t('task_delete_title', 'Delete')}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -237,7 +237,7 @@ export const HabitsView: React.FC = () => {
                       onClick={() => triggerHabit(habit.id, true)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-extrabold text-xs border border-emerald-500/40 active:scale-95 transition-all shadow-sm"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Good
+                      <Plus className="w-3.5 h-3.5" /> {t('habit_good', 'Good')}
                     </button>
                   )}
                   {habit.isNegative && (
@@ -246,7 +246,7 @@ export const HabitsView: React.FC = () => {
                       onClick={() => triggerHabit(habit.id, false)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold text-xs border border-rose-500/40 active:scale-95 transition-all shadow-sm"
                     >
-                      <X className="w-3.5 h-3.5" /> Bad
+                      <X className="w-3.5 h-3.5" /> {t('habit_bad', 'Bad')}
                     </button>
                   )}
                 </div>
@@ -285,7 +285,7 @@ export const HabitsView: React.FC = () => {
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Minum 2L Air / Read 15 mins"
+                  placeholder={t('ph_e_g_minum_2l_air_read_15_mins', 'e.g. Minum 2L Air / Read 15 mins')}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -298,11 +298,11 @@ export const HabitsView: React.FC = () => {
                     onChange={(e) => setDifficulty(e.target.value as TaskDifficulty)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500"
                   >
-                    <option value="trivial">Trivial</option>
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                    <option value="epic">Epic</option>
+                    <option value="trivial">{t('task_difficulty_trivial', 'Trivial')}</option>
+                    <option value="easy">{t('task_difficulty_easy', 'Easy')}</option>
+                    <option value="medium">{t('task_difficulty_medium', 'Medium')}</option>
+                    <option value="hard">{t('task_difficulty_hard', 'Hard')}</option>
+                    <option value="epic">{t('task_difficulty_epic', 'Epic')}</option>
                   </select>
                 </div>
 
@@ -333,7 +333,7 @@ export const HabitsView: React.FC = () => {
                       onChange={(e) => setIsPositive(e.target.checked)}
                       className="rounded text-emerald-500 focus:ring-0"
                     />
-                    <span className="text-emerald-400 font-bold">+ Positive</span>
+                    <span className="text-emerald-400 font-bold">{t('habit_positive', '+ Positive')}</span>
                   </label>
                   <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-800 border border-slate-700 cursor-pointer">
                     <input
@@ -342,7 +342,7 @@ export const HabitsView: React.FC = () => {
                       onChange={(e) => setIsNegative(e.target.checked)}
                       className="rounded text-rose-500 focus:ring-0"
                     />
-                    <span className="text-rose-400 font-bold">- Negative</span>
+                    <span className="text-rose-400 font-bold">{t('habit_negative', '- Negative')}</span>
                   </label>
                 </div>
               </div>
@@ -353,7 +353,7 @@ export const HabitsView: React.FC = () => {
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Tips or motivations..."
+                  placeholder={t('ph_tips_or_motivations', 'Tips or motivations...')}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>

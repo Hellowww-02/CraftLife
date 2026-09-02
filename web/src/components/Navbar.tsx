@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { studio } from '../api/studio';
-import { AVATAR_CLASSES, PETS_DATA } from '../data/gameData';
+import { AVATAR_CLASSES } from '../data/gameData';
 import { t as i18nT } from '../i18n';
 import { Heart, Sparkles, Coins, Menu, Settings, Trophy, Globe, Bell, Clock } from 'lucide-react';
 
@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAchievements,
   onOpenPalette,
 }) => {
-  const { user, lang, setLang, userPets, totalBuffs, achievements, clockNow, today, serverNow } = useGame();
+  const { user, lang, setLang, achievements, clockNow, today, serverNow, activeBuffs, activeBuffsDetail } = useGame();
   const [notifOpen, setNotifOpen] = useState(false);
 
   // ── Digital clock (parity TopBar._update_time + TimeSync): jam berjalan maju
@@ -62,8 +62,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
   const unread = notifs.filter((n) => !n.isRead).length;
   const currentClass = AVATAR_CLASSES[user.avatarClass] || AVATAR_CLASSES.warrior;
-  const activePet = userPets.find((p) => p.isEquipped);
-  const petMeta = activePet ? PETS_DATA[activePet.petId] : null;
   const unclaimedAchievements = achievements.filter((a) => a.isUnlocked && !a.isClaimed).length;
 
   const hpPercentage = Math.max(0, Math.min(100, Math.round((user.hp / user.maxHp) * 100)));
@@ -155,23 +153,28 @@ export const Navbar: React.FC<NavbarProps> = ({
             />
           </div>
 
-          {/* Active Pet / Buffs badge */}
-          <div className="flex items-center gap-2 mt-1">
-            {activePet && petMeta && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-950/80 border border-indigo-700/60 text-indigo-300">
-                <span>{petMeta.icon}</span> {activePet.nickname || petMeta.name} (Lv.{activePet.level})
-              </span>
-            )}
-            {totalBuffs.boss_dmg > 0 && (
-              <span className="text-[10px] font-bold text-rose-400">
-                🗡️+{totalBuffs.boss_dmg}
-              </span>
-            )}
-            {totalBuffs.crit_chance > 0 && (
-              <span className="text-[10px] font-bold text-amber-400">
-                ⚡{totalBuffs.crit_chance}%
-              </span>
-            )}
+          {/* Active Buffs (P30 parity ShopPage._buff_bar: seluruh buff aktif user) */}
+          <div className="flex flex-wrap items-center justify-center gap-1 mt-1 max-w-2xl">
+            {activeBuffsDetail.length > 0 ? (
+              activeBuffsDetail.map((b, i) => (
+                <span
+                  key={`buff-${i}`}
+                  title={tr(b.key, b)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap"
+                >
+                  {tr(b.key, b)}
+                </span>
+              ))
+            ) : activeBuffs.length > 0 ? (
+              activeBuffs.map((s, i) => (
+                <span
+                  key={`buffs-${i}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap"
+                >
+                  {s}
+                </span>
+              ))
+            ) : null}
           </div>
         </div>
 
@@ -183,6 +186,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Coins className="w-3.5 h-3.5 text-amber-400" />
             <span>{(user.gold ?? 0).toLocaleString()}</span>
           </div>
+
+          {/* Buff count (mobile-only; daftar lengkap tampil di center pada desktop) */}
+          <span
+            className="lg:hidden px-2 py-1 rounded-xl bg-slate-800 text-[10px] font-bold text-slate-300 border border-slate-700/60"
+            title={(activeBuffsDetail.length ? activeBuffsDetail.map((b) => tr(b.key, b)) : activeBuffs).join(' · ') || t('buff_bar_empty', 'No active buffs.')}
+          >
+            ⚡{activeBuffsDetail.length || activeBuffs.length}
+          </span>
 
           {/* Digital clock + date (parity TimeSync / TopBar chip_time) */}
           <div

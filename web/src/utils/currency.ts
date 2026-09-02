@@ -36,7 +36,10 @@ export function getCurrencyRates(): Record<string, number> {
 }
 
 export function currencySymbol(currency: CurrencyCode): string {
-  const symbols: Record<string, string> = { IDR: 'Rp', USD: '$', EUR: '€' };
+  const symbols: Record<string, string> = {
+    IDR: 'Rp', USD: '$', EUR: '€', SGD: 'S$', JPY: '¥',
+    GBP: '£', AUD: 'A$', MYR: 'RM', CNY: '¥', KRW: '₩',
+  };
   return symbols[currency] || currency || 'Rp';
 }
 
@@ -68,4 +71,51 @@ export function parseAmount(text: string): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * P30: parse input nominal uang yang sedang diketik user (mata uang apa pun).
+ * Menangani pemisah ribuan & desimal gaya EN ("1,234,567.89") maupun ID ("1.234.567,89")
+ * sehingga input tetap benar walau currency aktif bukan IDR.
+ * Return number, atau null bila kosong/tidak valid.
+ */
+export function parseMoneyInput(text: string): number | null {
+  const raw = String(text ?? '').trim().replace(/[^\d.,\-]/g, '');
+  if (!raw || raw === '-' || raw === '.' || raw === ',') return null;
+  const hasDot = raw.includes('.');
+  const hasComma = raw.includes(',');
+  let normalized = raw;
+  if (hasDot && hasComma) {
+    // Pemisah terakhir dianggap desimal; pemisah lain = ribuan.
+    if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) {
+      normalized = raw.replace(/\./g, '').replace(/,/g, '.');
+    } else {
+      normalized = raw.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    // Koma sebagai desimal bila diikuti 1-2 digit di akhir; selain itu ribuan.
+    if (/,\d{1,2}$/.test(raw)) normalized = raw.replace(/,/g, '.');
+    else normalized = raw.replace(/,/g, '');
+  } else if (hasDot) {
+    // Titik desimal hanya bila tunggal & diikuti 1-2 digit; selain itu ribuan.
+    const dots = (raw.match(/\./g) || []).length;
+    if (dots === 1 && /\.\d{1,2}$/.test(raw)) {
+      normalized = raw;
+    } else {
+      normalized = raw.replace(/\./g, '');
+    }
+  }
+  const val = parseFloat(normalized);
+  return Number.isFinite(val) ? val : null;
+}
+
+/**
+ * P30: format nilai untuk ditampilkan di dalam input uang (pemisah ribuan,
+ * maks 2 desimal). Menerima number ataupun string.
+ */
+export function maskMoney(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  const n = typeof value === 'number' ? value : parseMoneyInput(String(value));
+  if (n === null) return '';
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }

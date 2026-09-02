@@ -1,15 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { life } from '../api/life';
 import { TaskFolder } from '../types';
+import { t } from '../i18n';
 
 type Mode = 'habit' | 'daily' | 'todo' | 'sport' | 'economy';
-
-/** Mode yang memang punya template di PyQt (TaskPage/AddTask & SportTrack).
- *  Economy TIDAK punya template (MainPyQt6 hanya _open_templates untuk task/sport).
- *  Dulu `get_templates_by_mode('economy')` fallback ke HABIT_TEMPLATES sehingga
- *  taskbar Economy menampilkan template habit — kontrol mati & tidak sesuai PyQt. */
-const TEMPLATE_MODES: Mode[] = ['habit', 'daily', 'todo', 'sport'];
 
 export function useModeFolders(mode: Mode): TaskFolder[] {
   const { taskFolders } = useGame();
@@ -32,23 +26,13 @@ export const TaskFolderBar: React.FC<{
   allCount: number;
   onDropInto?: (folderId: string) => void;
 }> = ({ mode, selected, onSelect, accent, allLabel, allCount, onDropInto }) => {
-  const { addTaskFolder, renameTaskFolder, duplicateTaskFolder, deleteTaskFolder, applyTaskTemplate, lang } = useGame();
+  const { addTaskFolder, renameTaskFolder, duplicateTaskFolder, deleteTaskFolder } = useGame();
   const folders = useModeFolders(mode);
   const [name, setName] = useState('');
-  const [templates, setTemplates] = useState<{ key: string; name: string; icon: string }[]>([]);
   const [dragOver, setDragOver] = useState<string | null>(null);
 
-  useEffect(() => {
-    life
-      .listTemplates(mode)
-      .then((r) => {
-        if (Array.isArray(r?.templates)) setTemplates(r.templates);
-      })
-      .catch(() => {});
-  }, [mode]);
-
   const rename = (f: TaskFolder) => {
-    const next = window.prompt(lang === 'id' ? 'Nama folder:' : 'Folder name:', f.name);
+    const next = window.prompt(t('folder_rename_prompt', 'Folder name:'), f.name);
     if (next === null) return;
     const trimmed = next.trim();
     if (!trimmed || trimmed === f.name) return;
@@ -77,24 +61,13 @@ export const TaskFolderBar: React.FC<{
           selected === 'unorganized' ? accent : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
         }`}
       >
-        {lang === 'id' ? 'Tanpa folder' : 'Ungrouped'}
+        {t('ungrouped', 'Ungrouped')}
       </button>
-      {TEMPLATE_MODES.includes(mode) && templates.slice(0, 4).map((tpl) => (
-        <button
-          key={tpl.key}
-          type="button"
-          onClick={() => applyTaskTemplate(mode, tpl.key)}
-          className="px-2 py-1.5 rounded-xl bg-slate-800/80 text-slate-300 text-[11px] font-semibold hover:text-slate-100 shrink-0"
-          title={tpl.name}
-        >
-          {tpl.icon} {tpl.name}
-        </button>
-      ))}
       <div className="flex items-center gap-1 shrink-0">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={lang === 'id' ? 'Folder baru' : 'New folder'}
+          placeholder={t('folder_new_placeholder', 'New folder')}
           className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[11px] w-28"
         />
         <button
@@ -134,7 +107,7 @@ export const TaskFolderBar: React.FC<{
             type="button"
             onClick={() => rename(f)}
             className="px-1.5 py-1.5 bg-slate-800/80 text-sky-400 hover:bg-sky-500/20"
-            title={lang === 'id' ? 'Rename folder' : 'Rename folder'}
+            title={t('folder_tooltip_edit', 'Edit folder')}
           >
             ✎
           </button>
@@ -142,7 +115,7 @@ export const TaskFolderBar: React.FC<{
             type="button"
             onClick={() => duplicate(f)}
             className="px-1.5 py-1.5 bg-slate-800/80 text-emerald-400 hover:bg-emerald-500/20"
-            title={lang === 'id' ? 'Duplikasi folder' : 'Duplicate folder'}
+            title={t('folder_tooltip_dup', 'Duplicate folder')}
           >
             ⧉
           </button>
@@ -150,7 +123,7 @@ export const TaskFolderBar: React.FC<{
             type="button"
             onClick={() => deleteTaskFolder(f.id, mode)}
             className="px-1.5 py-1.5 rounded-r-xl bg-slate-800/80 text-rose-400 hover:bg-rose-500/20"
-            title={lang === 'id' ? 'Hapus folder' : 'Delete folder'}
+            title={t('folder_tooltip_del', 'Delete folder')}
           >
             ×
           </button>

@@ -16,7 +16,7 @@ import {
   type CloudStatus,
 } from '../../api/cloud';
 import { t } from '../../i18n';
-import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Check, Cloud, RefreshCw, LogOut, Smartphone, Palette, Database, Save, RefreshCcw } from 'lucide-react';
+import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Cloud, RefreshCw, LogOut, Smartphone, Palette, Database, RefreshCcw } from 'lucide-react';
 
 // ===== Parity SettingsPage: panel admin (debug cheats, gated is_admin) =====
 const AdminDebugPanel: React.FC = () => {
@@ -48,16 +48,9 @@ const AdminDebugPanel: React.FC = () => {
 };
 
 interface ThemeRow { key: string; label: string; primary: string; glow: string; }
-interface ClassRow { key: string; name: string; icon: string; bonus: string; }
 
 export const SettingsView: React.FC = () => {
-  const { user, updateUserProfile, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast, today, activeTheme, setActiveTheme } = useGame();
-
-  const [name, setName] = useState(user.name);
-  const [avatar, setAvatar] = useState(user.avatar);
-  const [heroClass, setHeroClass] = useState(user.heroClass);
-  const [bio, setBio] = useState(user.bio || '');
-  const [isSaved, setIsSaved] = useState(false);
+  const { user, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast, today, activeTheme, setActiveTheme } = useGame();
 
   const [cloud, setCloud] = useState<CloudStatus | null>(null);
   const [cloudBusy, setCloudBusy] = useState(false);
@@ -72,13 +65,10 @@ export const SettingsView: React.FC = () => {
   const [currency, setCurrency] = useState(String(user.currency || 'IDR'));
   const [fontScale, setFontScale] = useState(Number(user.fontScale || 100));
   const [highContrast, setHighContrast] = useState(Boolean((user as any).highContrast));
-  const [classes, setClasses] = useState<ClassRow[]>([]);
   const [dbPath, setDbPath] = useState('');
   const [appVersion, setAppVersion] = useState('');
 
   const isAdmin = Boolean((user as any).isAdmin);
-
-  const AVATAR_OPTIONS = ['🧙‍♂️', '🧝‍♀️', '⚔️', '🛡️', '🏹', '🥷', '🧙‍♀️', '👑', '🐉', '🐺', '🦊', '🦅'];
 
   const loadCloud = async () => {
     try {
@@ -95,10 +85,6 @@ export const SettingsView: React.FC = () => {
     apiGet<any>('/api/catalog/themes')
       .then((d) => setThemes(d.themes || []))
       .catch(() => setThemes([]));
-    // Katalog kelas (parity db.AVATAR_CLASSES) — jika route tidak ada, fallback lokal
-    apiGet<any>('/api/catalog/avatar-classes')
-      .then((d) => setClasses(d.classes || d.items || []))
-      .catch(() => setClasses([]));
     // Versi app + path DB (parity update_version + settings_db_path)
     apiGet<any>('/api/version')
       .then((d) => {
@@ -126,14 +112,6 @@ export const SettingsView: React.FC = () => {
         }
       })
       .catch(() => undefined);
-  };
-
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateUserProfile({ name, avatar, heroClass, bio });
-    apiPost('/api/settings', { displayName: name, avatar, heroClass, bio }).catch(() => undefined);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
   };
 
   const handleExportData = async () => {
@@ -395,96 +373,6 @@ export const SettingsView: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
-
-      {/* ===== Kustomisasi Karakter (web: hero profile; kelas parity db.AVATAR_CLASSES) ===== */}
-      <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-6">
-        <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-          <User className="w-4 h-4 text-yellow-400" />
-          <span>{t('web_hero_custom', 'Kustomisasi Karakter & Kelas')}</span>
-        </h3>
-
-        <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
-          <div>
-            <label className="block text-slate-300 font-semibold mb-2">{t('web_hero_avatar', 'Avatar')}</label>
-            <div className="flex items-center gap-2 flex-wrap">
-              {AVATAR_OPTIONS.map((av) => (
-                <button
-                  key={av}
-                  type="button"
-                  onClick={() => setAvatar(av)}
-                  className={`w-11 h-11 rounded-2xl text-2xl flex items-center justify-center transition-all ${
-                    avatar === av
-                      ? 'bg-yellow-500/20 border-2 border-yellow-400 scale-105 shadow-md shadow-yellow-500/20'
-                      : 'bg-slate-800 border border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  {av}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">{t('web_hero_name', 'Nama Pahlawan')}</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">{t('web_hero_class', 'Kelas Karakter')}</label>
-              <select
-                value={heroClass}
-                onChange={(e) => setHeroClass(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
-              >
-                {(classes.length ? classes : [
-                  { key: 'warrior', name: 'Warrior', icon: '⚔️', bonus: 'HP+20%, Skill: Shield Bash (10 MP)' },
-                  { key: 'mage', name: 'Mage', icon: '🧙', bonus: 'XP+15%, Skill: Arcane Surge (15 MP)' },
-                  { key: 'archer', name: 'Archer', icon: '🏹', bonus: 'Gold+10%, Skill: Gold Shot (10 MP)' },
-                  { key: 'healer', name: 'Healer', icon: '💊', bonus: 'Skill: Regenerate +30 HP (20 MP)' },
-                  { key: 'rogue', name: 'Rogue', icon: '🗡️', bonus: 'Streak bonus, Skill: Shadow Step (15 MP)' },
-                ]).map((c: any) => (
-                  <option key={c.key} value={c.key}>
-                    {c.icon ? `${c.icon} ` : ''}{c.name}{c.bonus ? ` — ${c.bonus}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-slate-300 font-semibold mb-1">{t('web_hero_bio', 'Bio / Motto')}</label>
-            <input
-              type="text"
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              placeholder="e.g. Master of habits, conqueror of procrastination."
-              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            {isSaved ? (
-              <span className="text-emerald-400 font-bold text-xs flex items-center gap-1">
-                <Check className="w-4 h-4" /> {t('web_profile_saved', 'Profil tersimpan!')}
-              </span>
-            ) : <div />}
-
-            <button
-              type="submit"
-              className="px-5 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black text-xs shadow-lg shadow-yellow-500/20 active:scale-95 transition-all inline-flex items-center gap-1"
-            >
-              <Save className="w-3.5 h-3.5" /> {t('web_profile_save', 'Simpan Perubahan')}
-            </button>
-          </div>
-        </form>
       </div>
 
       {/* ===== Parity SettingsPage: THEME group — radio semua db.THEMES + glow preview dot ===== */}

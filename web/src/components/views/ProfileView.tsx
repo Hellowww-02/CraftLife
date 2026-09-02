@@ -1,9 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost, apiUploadFile, apiBase } from '../../api/client';
 import { life } from '../../api/life';
 import { t } from '../../i18n';
-import { User, Camera, Trash2 } from 'lucide-react';
+import { User, Camera, Trash2, Save } from 'lucide-react';
+
+/** Daftar class (parity db.AVATAR_CLASSES) sebagai fallback bila katalog gagal dimuat. */
+const CLASS_KEYS = ['warrior', 'mage', 'archer', 'healer', 'rogue'];
+const DEFAULT_CLASSES = [
+  { key: 'warrior', name: 'Warrior', icon: '⚔️', bonus: 'HP+20%, Skill: Shield Bash (10 MP)' },
+  { key: 'mage', name: 'Mage', icon: '🧙', bonus: 'XP+15%, Skill: Arcane Surge (15 MP)' },
+  { key: 'archer', name: 'Archer', icon: '🏹', bonus: 'Gold+10%, Skill: Gold Shot (10 MP)' },
+  { key: 'healer', name: 'Healer', icon: '💊', bonus: 'Skill: Regenerate +30 HP (20 MP)' },
+  { key: 'rogue', name: 'Rogue', icon: '🗡️', bonus: 'Streak bonus, Skill: Shadow Step (15 MP)' },
+];
+const AVATAR_OPTIONS = ['🧙‍♂️', '🧝‍♀️', '⚔️', '🛡️', '🏹', '🥷', '🧙‍♀️', '👑', '🐉', '🐺', '🦊', '🦅'];
 
 /** Panel foto profil (parity _ImagePickerDialog PyQt: PNG/JPEG → server
  * normalisasi via Pillow; hapus = kembali ke avatar emoji). */
@@ -293,11 +304,12 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
 
 /** Mirror ProfilePage: identitas, class, rebirth, redeem — bukan Settings. */
 export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenSettings }) => {
-  const { user, lang, inventory, userPets, habits, dailies, quests, updateUserProfile, showToast } = useGame();
+  const { user, lang, inventory, userPets, habits, dailies, quests, updateUserProfile, showToast, today } = useGame();
   const [name, setName] = useState(user.displayName || user.name || '');
   const [bio, setBio] = useState(user.bio || '');
   const [emoji, setEmoji] = useState(user.avatarEmoji || user.avatar || '⚔️');
-  const [heroClass, setHeroClass] = useState(String(user.avatarClass || user.heroClass || 'warrior').toLowerCase());
+  const [heroClass, setHeroClass] = useState(CLASS_KEYS.includes(String(user.heroClass || user.avatarClass || 'warrior').toLowerCase()) ? String(user.heroClass || user.avatarClass || 'warrior').toLowerCase() : 'warrior');
+  const [classes, setClasses] = useState<any[]>([]);
   const [code, setCode] = useState('');
   const [oldPw, setOldPw] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -311,60 +323,175 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
   // lock/unlock di tempat lain, atau pindah akun).
   useEffect(() => { setLocked(Boolean(user.locked)); }, [user.locked]);
 
-  // P24: class kini diubah lewat /api/profile/class (db.change_class → cooldown ter-enforce).
+  // Katalog kelas (parity db.AVATAR_CLASSES) untuk select hero class.
+  useEffect(() => {
+    apiGet<any>('/api/catalog/avatar-classes')
+      .then((d) => setClasses(d.classes || d.items || []))
+      .catch(() => setClasses([]));
+  }, []);
+
+  // Sisa hari cooldown ganti class (parity db.change_class: 7 hari).
+  const classCooldownDays = useMemo(() => {
+    const lc = String((user as any).lastClassChange || '').slice(0, 10);
+    const todayStr = String(today || '').slice(0, 10);
+    if (!lc || !todayStr) return 0;
+    const a = new Date(`${lc}T00:00:00`).getTime();
+    const b = new Date(`${todayStr}T00:00:00`).getTime();
+    if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+    const days = Math.floor((b - a) / 86400000);
+    const remaining = 7 - days;
+    return remaining > 0 ? remaining : 0;
+  }, [user, today]);
+
+  // Class kunci aktual yang tersimpan (untuk rollback UI saat cooldown menolak).
+  const currentClassKey = CLASS_KEYS.includes(String(user.heroClass || '').toLowerCase())
+    ? String(user.heroClass).toLowerCase()
+    : 'warrior';
+
+  // P24: class diubah lewat /api/profile/class (db.change_class → cooldown 7 hari ter-enforce).
   // Simpan identitas lewat /api/settings TANPA heroClass, agar class tidak bypass cooldown.
   const save = () => {
     updateUserProfile({ displayName: name, name, bio, avatarEmoji: emoji, avatar: emoji });
     apiPost('/api/settings', { displayName: name, bio, avatar: emoji }).catch(() => undefined);
+    showToast('success', t('web_profile_saved', 'Profil tersimpan!'), '');
   };
 
   const changeClass = (cls: string) => {
     setHeroClass(cls);
     apiPost<any>('/api/profile/class', { class: cls })
       .then((r) => {
-        if (r?.ok === false) {
-          showToast('info', r?.result?.msg || r?.error || 'class_change_failed', '');
-          // kembalikan ke class yang sebenarnya tersimpan di backend
-          setHeroClass(String(user.avatarClass || user.heroClass || 'warrior').toLowerCase());
+        const inner = r?.result || {};
+        // Backend _ok_payload: ok top-level selalu true; keberhasilan sebenarnya di result.ok
+        if (r?.ok === false || inner.ok === false) {
+          showToast('info', inner.msg || r?.error || 'class_change_failed', '');
+          setHeroClass(currentClassKey);
           return;
         }
-        updateUserProfile({ heroClass: cls, avatarClass: cls as any });
-        showToast('success', r?.result?.msg || cls, '');
+        updateUserProfile({ heroClass: cls, avatarClass: cls as any, lastClassChange: today });
+        showToast('success', inner.msg || cls, '');
       })
       .catch((e) => {
         showToast('info', String(e?.error || e?.message || e), '');
-        setHeroClass(String(user.avatarClass || user.heroClass || 'warrior').toLowerCase());
+        setHeroClass(currentClassKey);
       });
   };
 
   return (
     <div className="space-y-6 w-full mx-auto max-w-2xl">
-      <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-slate-800 text-4xl flex items-center justify-center">{emoji}</div>
-          <div className="flex-1">
-            <h2 className="text-xl font-black">{user.displayName || user.name}</h2>
-            <p className="text-xs text-slate-400">
-              @{user.username} · {heroClass} · Lv {user.level}
-            </p>
+      {/* ===== P31: Hero Customization & Class (dipindah dari Settings — parity ProfilePage) ===== */}
+      <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-5">
+        <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
+          <User className="w-4 h-4 text-yellow-400" />
+          <span className="font-bold text-sm text-slate-200">{t('web_hero_custom', 'Kustomisasi Karakter & Kelas')}</span>
+        </div>
+
+        {/* Identitas ringkas */}
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-slate-800 text-3xl flex items-center justify-center">{emoji}</div>
+          <div className="min-w-0">
+            <div className="text-base font-black truncate">{user.displayName || user.name || user.username}</div>
+            <div className="text-[11px] text-slate-400">@{user.username} · Lv {user.level}</div>
           </div>
-          <button type="button" onClick={onOpenSettings} className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold">
-            {t('nav_settings', lang === 'id' ? 'Pengaturan' : 'Settings')}
+          {onOpenSettings && (
+            <button type="button" onClick={onOpenSettings} className="ml-auto px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-300 hover:text-slate-100">
+              {t('nav_settings', lang === 'id' ? 'Pengaturan' : 'Settings')}
+            </button>
+          )}
+        </div>
+
+        {/* Avatar emoji */}
+        <div>
+          <label className="block text-slate-300 font-semibold mb-2 text-xs">{t('web_hero_avatar', 'Avatar')}</label>
+          <div className="flex items-center gap-2 flex-wrap">
+            {AVATAR_OPTIONS.map((av) => (
+              <button
+                key={av}
+                type="button"
+                onClick={() => setEmoji(av)}
+                className={`w-11 h-11 rounded-2xl text-2xl flex items-center justify-center transition-all ${
+                  emoji === av
+                    ? 'bg-yellow-500/20 border-2 border-yellow-400 scale-105 shadow-md shadow-yellow-500/20'
+                    : 'bg-slate-800 border border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                {av}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Warna avatar (parity profile_color) */}
+        <div>
+          <label className="block text-slate-300 font-semibold mb-2 text-xs">{t('profile_color', '🎨 Warna Avatar')}</label>
+          <div className="flex flex-wrap gap-2">
+            {['#5a8a2e', '#d04020', '#4da6ff', '#f0a800', '#9a50e0', '#4dd9e0', '#e8e8e8', '#ff6a00'].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => {
+                  apiPost('/api/settings', { avatarColor: c }).catch(() => undefined);
+                  updateUserProfile({ avatarColor: c });
+                  showToast('success', c, '');
+                }}
+                className={`w-8 h-8 rounded-lg border ${user.avatarColor === c ? 'border-yellow-400 ring-2 ring-yellow-400/40' : 'border-slate-700'}`}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-slate-300 font-semibold mb-1 text-xs">{t('web_hero_name', 'Nama Pahlawan')}</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-300 font-semibold mb-1 text-xs">{t('web_hero_class', 'Kelas Karakter')}</label>
+            <select
+              value={heroClass}
+              onChange={(e) => changeClass(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
+            >
+              {(classes.length ? classes : DEFAULT_CLASSES).map((c: any) => (
+                <option key={c.key} value={c.key}>
+                  {c.icon ? `${c.icon} ` : ''}{c.name}{c.bonus ? ` — ${c.bonus}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {classCooldownDays > 0 && (
+          <p className="text-[11px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
+            {t('profile_class_cooldown_hint', '⏳ Ganti class berikutnya tersedia dalam {days} hari.').replace('{days}', String(classCooldownDays))}
+          </p>
+        )}
+
+        <div>
+          <label className="block text-slate-300 font-semibold mb-1 text-xs">{t('web_hero_bio', 'Bio / Motto')}</label>
+          <input
+            type="text"
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            placeholder={t('ph_e_g_master_of_habits_conqueror_of_procra', 'e.g. Master of habits, conqueror of procrastination.')}
+            className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={save}
+            className="px-5 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black text-xs shadow-lg shadow-yellow-500/20 active:scale-95 transition-all inline-flex items-center gap-1"
+          >
+            <Save className="w-3.5 h-3.5" /> {t('web_profile_save', 'Simpan Perubahan')}
           </button>
         </div>
-        <div className="grid sm:grid-cols-2 gap-2 text-xs">
-          <input value={name} onChange={(e) => setName(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800" />
-          <select value={heroClass} onChange={(e) => changeClass(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800">
-            {['warrior', 'mage', 'rogue', 'paladin', 'ranger', 'healer'].map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <input value={emoji} onChange={(e) => setEmoji(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800" />
-          <input value={bio} onChange={(e) => setBio(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800" placeholder="bio" />
-        </div>
-        <button type="button" onClick={save} className="px-4 py-2 rounded-xl bg-yellow-500 text-slate-950 text-xs font-black">
-          {t('save_profile', lang === 'id' ? 'Simpan profil' : 'Save profile')}
-        </button>
       </div>
 
       {/* P3 parity ProfilePage: foto profil (ubah/hapus, normalisasi server) */}
@@ -396,41 +523,6 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
       </div>
 
       <RebirthCard lang={lang} showToast={showToast} />
-
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
-        <div className="text-xs font-bold text-slate-300">{t('profile_color', '🎨 Warna Avatar')}</div>
-        <div className="flex flex-wrap gap-2">
-          {['#5a8a2e', '#d04020', '#4da6ff', '#f0a800', '#9a50e0', '#4dd9e0', '#e8e8e8', '#ff6a00'].map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => {
-                apiPost('/api/settings', { avatarColor: c }).catch(() => undefined);
-                showToast('success', c, '');
-              }}
-              className="w-8 h-8 rounded-lg border border-slate-700"
-              style={{ background: c }}
-            />
-          ))}
-        </div>
-        <div className="text-xs font-bold text-slate-300 pt-2">{t('profile_emoji', '😀 Emoji Avatar')}</div>
-        <div className="flex flex-wrap gap-1">
-          {['⚔️', '🧙', '🏹', '💊', '🗡️', '🛡️', '🔮', '🌟', '👑', '🐉', '🦊', '🐺'].map((em) => (
-            <button
-              key={em}
-              type="button"
-              onClick={() => {
-                setEmoji(em);
-                updateUserProfile({ avatarEmoji: em, avatar: em });
-                apiPost('/api/settings', { avatar: em }).catch(() => undefined);
-              }}
-              className="w-9 h-9 rounded-lg bg-slate-950 border border-slate-800 text-lg"
-            >
-              {em}
-            </button>
-          ))}
-        </div>
-      </div>
 
       <TalentPanel lang={lang} showToast={showToast} />
 
