@@ -177,6 +177,7 @@ WEB_I18N_KEYS = [
     "health_tip_static_2", "health_tip_static_3", "health_tip_static_4", "health_tip_static_5", "health_tip_static_6", "health_tip_static_7",
     "food_add_custom", "food_log", "food_recipes", "food_export", "food_export_format_title", "economy_export_label",
     "export_csv_option", "food_save_csv", "food_save_excel", "food_save_word", "food_save_pdf", "export_date",
+    "export_xlsx_option", "export_docx_option", "food_export_days_hint",
     "export_calories", "export_protein", "export_carbs", "export_fat", "export_water_ml", "export_calories_burned",
     "export_net_calories", "health_nutrition_bonus_msg", "bonus_title", "level_up_bonus", "water_goal_reached",
     "rank_next_progress", "rank_max_label", "rank_view_all", "healthchart_title", "heatmap_less",
@@ -393,6 +394,16 @@ WEB_I18N_KEYS = [
     "learning_delete_gen",
     "learning_topic_label",
     "learning_upload_source",
+    # WEB_I18N += P38 learning parity
+    "learning_title_label",
+    "learning_type_label",
+    "learning_nb_title_ph",
+    "learning_nb_desc_ph",
+    "learning_source_title_ph",
+    "learning_source_content_ph",
+    "learning_generic_topic",
+    "learning_quiz_evaluated",
+    "learning_quiz_check_score",
     # WEB_I18N += P6 pomodoro parity
     "pomodoro_task_label",
     "pomodoro_task_placeholder",
@@ -546,6 +557,13 @@ WEB_I18N_KEYS = [
     "notes_duplicate_tooltip",
     "notes_select_note_first",
     "notes_edit_icon_title",
+    "notes_bold",
+    "notes_italic",
+    "notes_underline",
+    "notes_strike",
+    "notes_superscript",
+    "notes_subscript",
+    "notes_latex",
     "notes_select_icon",
     "notes_folder_info",
     "notes_icon_updated",
@@ -735,6 +753,7 @@ WEB_I18N_KEYS = [
     "pets_level_label",
     "pets_max_1",
     "pets_max_2",
+    "pets_max_n",
     "pets_title",
     "pets_train",
     "shop_active",
@@ -952,6 +971,11 @@ WEB_I18N_KEYS = [
     "guild_skill_info",
     "guild_spyglass_active",
     "guild_spyglass_detail",
+    "guild_spyglass_buy_hint",
+    "guild_boss_min_level",
+    "guild_no_boss",
+    "guild_chat_send_fail",
+    "guild_chat_send_ok",
     "guild_start_boss",
     "guild_stats_bonus_crit",
     "guild_stats_bonus_crit_value",
@@ -1071,8 +1095,10 @@ WEB_I18N_KEYS = [
     "ph_e_g_20_pushups_stretching", "ph_e_g_5km_morning_loop_4_sets_pullups", "ph_e_g_chapter_1_notes_article_summary", "ph_e_g_makan_siang_bersama_tim", "ph_e_g_master_of_habits_conqueror_of_procra", "ph_e_g_minum_2l_air_read_15_mins", "ph_e_g_physics_dynamics_machine_learning", "ph_e_g_pinjaman_laptop_piutang_ke_budi", "ph_e_g_selesaikan_laporan_keuangan_q3", "ph_e_g_slept_deeply_had_high_focus_today", "ph_e_g_sup_buntut_protein_bar", "ph_nama_makanan", "ph_notes", "ph_paste_notes_textbook_paragraphs_or_docum", "ph_routine_instructions", "ph_short_summary_of_this_notebook", "ph_sleep_h", "ph_steps", "ph_task_details_and_deliverables", "ph_tips_or_motivations",
     "buff_xp_multiplier", "buff_gold_multiplier", "buff_boss_damage", "buff_hp_reduction", "buff_mp_bonus", "buff_revive", "buff_crit_chance", "buff_block_chance", "buff_block_strength", "buff_spyglass", "buff_guild_xp", "buff_guild_gold", "buff_guild_damage", "buff_guild_crit", "buff_pet", "buff_class_hp", "buff_class_streak", "buff_skill_shield", "buff_skill_arcane", "buff_skill_goldshot", "buff_skill_shadow", "buff_rebirth", "buff_bar_title", "buff_bar_empty",
     "profile_class_cooldown_hint",
-    "task_difficulty_trivial", "task_difficulty_easy", "task_difficulty_medium", "task_difficulty_hard", "task_difficulty_epic", "habit_good", "habit_bad", "habit_positive", "habit_negative", "habit_edit_habit", "daily_edit_daily", "quest_edit_quest", "ph_e_g_minum_2l_air_read_15_mins", "ph_tips_or_motivations", "ph_e_g_20_pushups_stretching", "ph_routine_instructions", "ph_e_g_selesaikan_laporan_keuangan_q3", "ph_task_details_and_deliverables", "daily_freeze_shields", "daily_frozen", "daily_freeze_tooltip", "task_delete_title",
-    "folder_rename_prompt", "folder_new_placeholder"]
+    "task_difficulty_trivial", "task_difficulty_easy", "task_difficulty_medium", "task_difficulty_hard", "task_difficulty_epic", "habit_good", "habit_bad", "habit_positive", "habit_negative", "habit_edit_habit", "daily_edit_daily", "quest_edit_quest", "ph_e_g_minum_2l_air_read_15_mins", "ph_tips_or_motivations", "ph_e_g_20_pushups_stretching", "ph_routine_instructions", "ph_e_g_selesaikan_laporan_keuangan_q3", "ph_task_details_and_deliverables", "daily_freeze_shields", "daily_frozen", "daily_freeze_tooltip", "task_delete_title", "task_edit_title", "task_duplicate_title", "sport_notes_ph",
+    "folder_rename_prompt", "folder_new_placeholder",
+    "economy_total_income_label", "economy_total_expense_label", "economy_net_balance_label", "economy_donut_empty", "economy_donut_total", "economy_tab_transactions", "economy_tab_debts", "economy_tab_savings", "economy_tab_investments", "economy_tab_subs", "economy_tab_iou", "economy_new_transaction", "economy_new_debt", "economy_edit_transaction_tooltip", "economy_edit_debt_tooltip", "economy_edit_tooltip", "economy_empty_transactions", "economy_debt_total_payable", "economy_debt_total_receivable", "economy_debt_type_payable", "economy_debt_type_receivable", "economy_debt_paid", "economy_due_label", "economy_total_label", "economy_remaining_label", "economy_pay_installment", "economy_saving_name_ph", "economy_invest_placeholder", "economy_withdraw_btn", "economy_sub_placeholder", "economy_save_btn", "economy_iou_person_ph", "economy_settle_btn", "economy_tx_name_ph", "economy_category_label", "economy_amount_currency_label", "economy_debt_total_input", "economy_notes_label", "economy_tx_notes_ph", "economy_debt_title_label", "economy_debt_title_ph", "economy_debt_due_label", "economy_debt_hint", "economy_folder_root", "economy_status_paid", "economy_status_unpaid", "economy_invest_collect_btn", "subscription_updated",
+    "supplies_stock_in", "supplies_stock_out", "supplies_logged_to_economy", "achievement_claimed_toast", "achievement_subtitle", "leaderboard_local_hint", "leaderboard_cloud_fallback", "leaderboard_empty", "leaderboard_cloud_empty"]
 
 
 
@@ -1384,9 +1410,12 @@ def _map_todo(t: dict) -> dict:
 
 
 def _map_inv(row: dict) -> dict:
+    qty = row.get("quantity")
     return {
         "itemId": row.get("item_id"),
-        "quantity": int(row.get("quantity") or 1),
+        # qty 0 HARUS tetap 0 (consumable habis) — jangan di-coerce jadi 1,
+        # kalau tidak Crafting menganggap bahan masih ada. NULL (legacy) → 1.
+        "quantity": int(qty) if qty is not None else 1,
         "equipped": bool(row.get("equipped")),
         "rowId": row.get("id"),
         "enchantLevel": int(row.get("enchant_level") or 0),
@@ -1573,6 +1602,9 @@ def _snapshot(uid: int) -> dict:
         "quests": [_map_todo(t) for t in db.get_todos(uid)],
         "inventory": inv,
         "userPets": pets,
+        # P43: slot pet aktif bertingkat — dihitung backend (db.max_active_pets),
+        # TIDAK boleh dihitung ulang di TypeScript (aturan: rule hanya di database.py).
+        "maxActivePets": db.max_active_pets(int((u or {}).get("level") or 1)),
         "achievements": ach,
         "lang": u.get("language") or "id",
         # Parity ShopPage._buff_bar: daftar string buff aktif apa adanya dari db.
@@ -2098,6 +2130,40 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "private, max-age=300")
             self.end_headers()
             self.wfile.write(blob)
+            return
+
+        # P44 — download attachment chat (parity ChatDialog._download_selected_attachment).
+        dm = re.match(r"^/api/friends/attachments/(\d+)/download$", path)
+        if dm:
+            try:
+                att = db.get_chat_attachment(int(dm.group(1)))
+            except Exception:
+                att = {}
+            # Owner check: attachment harus di-cache/di-upload oleh user ini.
+            if not att or int(att.get("local_user_id") or 0) != int(uid):
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            raw = att.get("file_data")
+            if raw is None:
+                # Cloud: belum di-cache offline → unduh dari Supabase storage.
+                try:
+                    from cloud_service import get_cloud_service
+                    raw = get_cloud_service().download_chat_attachment(uid, att)
+                except Exception:
+                    self._send(404, {"ok": False, "error": "chat_attachment_not_cached"})
+                    return
+            if not raw:
+                self._send(404, {"ok": False, "error": "chat_attachment_not_cached"})
+                return
+            fname = (att.get("original_filename") or "attachment").split("/")[-1]
+            mime = (att.get("mime_type") or "application/octet-stream").split(";")[0].strip()
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
             return
 
         extra = life_api.handle_get(path, uid, qs)

@@ -1,6 +1,7 @@
 """Studio & social API — learning, music, love, guild. Wraps database.py + learning_helper."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -175,6 +176,12 @@ def _love_map(uid: int) -> dict:
         "myName": prof.get("my_name") or "",
         "startDate": prof.get("start_date") or "",
         "relationshipType": prof.get("relationship_type") or "",
+        "myGender": prof.get("my_gender") or "male",
+        "myAge": int(prof.get("my_age") or 25),
+        "myBirthdate": prof.get("my_birthdate") or "",
+        "partnerGender": prof.get("partner_gender") or "female",
+        "partnerAge": int(prof.get("partner_age") or 25),
+        "partnerBirthdate": prof.get("partner_birthdate") or "",
         "memories": memories,
         "bucketList": bucket,
         "connectionScore": int(prof.get("connection_score") or 0),
@@ -279,6 +286,27 @@ def _love_map(uid: int) -> dict:
         data["coupleActive"] = bool((db.get_couple_context(uid) or {}).get("active"))
     except Exception:
         data["coupleActive"] = False
+    # Parity LovePage.load(): status shared (linked username) + realtime cloud
+    # + profil kesehatan tersinkron (gender/usia dari BMI settings).
+    try:
+        cc = db.get_couple_context(uid) or {}
+        partner_u = cc.get("partner")
+        data["linkedPartnerUsername"] = (partner_u or {}).get("username") or ""
+        try:
+            data["cloudLoveActive"] = bool(db.get_cloud_love_space_id(uid))
+        except Exception:
+            data["cloudLoveActive"] = False
+    except Exception:
+        data["linkedPartnerUsername"] = ""
+        data["cloudLoveActive"] = False
+    try:
+        hp = db.get_user_bmi_settings(uid) or {}
+        data["healthProfile"] = {
+            "gender": str(hp.get("gender") or "male").lower(),
+            "age": int(hp.get("age") or 25),
+        }
+    except Exception:
+        data["healthProfile"] = {"gender": "male", "age": 25}
     # Parity tab Cycle: settings + prediksi periode (db.get_menstrual_prediction).
     try:
         s = db.get_menstrual_settings(uid) or {}
@@ -300,6 +328,128 @@ def _love_map(uid: int) -> dict:
     except Exception:
         data["cyclePrediction"] = None
     return data
+
+
+def _couple_tracking_map(uid: int) -> dict:
+    """Ringkasan tracking couple 1:1 `CoupleTrackingDialog` PyQt: 11 sub-tab
+    data per orang (saya + pasangan). Line di-render server-side via tr_db()
+    supaya frontend tidak perlu menduplikasi game rule / string."""
+    rel = db.get_active_couple_relationship(uid)
+    if not rel:
+        return {"ok": False, "code": "no_couple"}
+    try:
+        lang = (db.get_user(uid) or {}).get("language") or "id"
+    except Exception:
+        lang = "id"
+    partner_id = rel["user_b_id"] if rel["user_a_id"] == uid else rel["user_a_id"]
+    me = db.get_user(uid) or {}
+    pn = db.get_user(partner_id) or {}
+    pair = [(uid, (me.get("display_name") or me.get("username") or "A")),
+            (partner_id, (pn.get("display_name") or pn.get("username") or "B"))]
+
+    def _lines(uid2: int, key: str) -> list:
+        try:
+            if key == "ct_tab_tasks":
+                hs = db.get_habits(uid2) or []
+                ds = db.get_dailies(uid2) or []
+                ts = db.get_todos(uid2) or []
+                up = sum(int(h.get("counter_up") or 0) for h in hs)
+                stk = max([int(h.get("streak") or 0) for h in hs] or [0])
+                dd = sum(1 for d in ds if d.get("done_today"))
+                td = sum(1 for t in ts if t.get("done"))
+                return [db.tr_db(lang=lang, key="ct_habits_line", n=len(hs), up=up, s=stk),
+                        db.tr_db(lang=lang, key="ct_dailies_line", n=len(ds), d=dd),
+                        db.tr_db(lang=lang, key="ct_todos_line", n=len(ts), d=td)]
+            if key == "ct_tab_sport":
+                st = db.get_sport_stats(uid2) or {}
+                return [db.tr_db(lang=lang, key="ct_sport_line",
+                                 act=st.get("total_sport", st.get("total_activities", 0)),
+                                 done=st.get("done_today", st.get("done_sport_today", 0)),
+                                 s=st.get("s", st.get("max_sport_streak", 0)),
+                                 lv=st.get("sport_level", 1))]
+            if key == "ct_tab_economy":
+                es = db.get_economy_summary(uid2) or {}
+                return [db.tr_db(lang=lang, key="ct_economy_line",
+                                 inc=es.get("total_income", 0),
+                                 exp=es.get("total_expense", 0),
+                                 bal=es.get("balance", 0))]
+            if key == "ct_tab_supplies":
+                sp = db.supplies_stats(uid2) or {}
+                return [db.tr_db(lang=lang, key="ct_supplies_line", n=sp.get("items", 0),
+                                 low=sp.get("low", 0), val=sp.get("value", 0))]
+            if key == "ct_tab_health":
+                h = db.get_health_summary(uid2) or {}
+                return [db.tr_db(lang=lang, key="ct_health_line",
+                                 steps=h.get("avg_steps") or "—",
+                                 logs=h.get("log_count", h.get("days_recorded") or "—"))]
+            if key == "ct_tab_love":
+                ck = db.get_relationship_checkins(uid2, 100) or []
+                avg = sum(int(x["connection_score"] or 0) for x in ck) / len(ck) if ck else 0
+                ev = db.get_relationship_events(uid2, False, 100) or []
+                try:
+                    ph = db.get_love_space_photo_meta(uid2, 100) or []
+                except Exception:
+                    ph = []
+                mem = db.get_relationship_memories(uid2, 100) or []
+                return [db.tr_db(lang=lang, key="ct_love_line", ck=len(ck), avg=f"{avg:.1f}",
+                                 ev=len(ev), ph=len(ph), mem=len(mem))]
+            if key == "ct_tab_learning":
+                nbs = db.get_learning_notebooks(uid2) or []
+                lines = []
+                for nb in nbs[:5]:
+                    src = len(db.get_learning_sources(nb["id"], uid2) or [])
+                    cht = len(db.get_learning_chats(nb["id"]) or [])
+                    lines.append(db.tr_db(lang=lang, key="ct_learning_line",
+                                          name=(nb.get("title") or nb.get("name") or "?"),
+                                          s=src, c=cht))
+                return lines or [db.tr_db(lang=lang, key="ct_none")]
+            if key == "ct_tab_pomodoro":
+                rows = db.get_recent_pomodoros(uid2, 5) or []
+                out = []
+                for r in rows:
+                    out.append(db.tr_db(lang=lang, key="ct_pomodoro_line",
+                                        m=r.get("minutes") or r.get("duration_minutes") or 0,
+                                        d=str(r.get("created_at") or "")[:16]))
+                return out or [db.tr_db(lang=lang, key="ct_none")]
+            if key == "ct_tab_music":
+                hist = db.get_music_play_history(uid2, 5) or []
+                pls = db.get_all_playlists(uid2) or []
+                blend = db.get_blend_playlist_for_user(uid2)
+                if blend and not any(p["id"] == blend["id"] for p in pls):
+                    pls.append(blend)
+                lines = [db.tr_db(lang=lang, key="ct_music_recent")]
+                lines += [f"🎵 {h.get('title') or (h.get('path') or '').split('/')[-1]} — {h.get('artist') or ''}" for h in hist] or [db.tr_db(lang=lang, key="ct_none")]
+                lines.append(db.tr_db(lang=lang, key="ct_music_playlists"))
+                import json as _json
+                lines += [f"🎧 {p.get('name') or '?'} ({len(_json.loads(p.get('tracks') or '[]'))})" for p in pls] or [db.tr_db(lang=lang, key="ct_none")]
+                return lines
+            if key == "ct_tab_reminders":
+                rs = [r for r in (db.get_reminders(uid2) or []) if r.get("is_active")]
+                return [f"⏰ {r.get('title')} · {str(r.get('reminder_datetime') or '')[:16]}" for r in rs[:8]] or [db.tr_db(lang=lang, key="ct_none")]
+            if key == "ct_tab_achievements":
+                try:
+                    lang = (db.get_user(uid2) or {}).get("language") or "id"
+                except Exception:
+                    lang = "id"
+                ua = db.get_user_achievements(uid2) or []
+                unlocked = [a for a in ua if a.get("unlocked_at")]
+                out = []
+                for a in unlocked[:8]:
+                    name_text, _ = db.tr_achievement(a, lang)
+                    out.append(f"🏆 {name_text} · {str(a.get('unlocked_at') or '')[:10]}")
+                return out or [db.tr_db(lang=lang, key="ct_none")]
+        except Exception:
+            pass
+        return [db.tr_db(lang=lang, key="ct_none")]
+
+    tab_keys = ["ct_tab_tasks", "ct_tab_sport", "ct_tab_economy", "ct_tab_supplies",
+                "ct_tab_health", "ct_tab_love", "ct_tab_learning", "ct_tab_pomodoro",
+                "ct_tab_music", "ct_tab_reminders", "ct_tab_achievements"]
+    out_pair = []
+    for uid2, name in pair:
+        sections = [{"key": k, "label": db.tr_db(lang=lang, key=k), "lines": _lines(uid2, k)} for k in tab_keys]
+        out_pair.append({"id": str(uid2), "name": name, "sections": sections})
+    return {"ok": True, "pair": out_pair}
 
 
 def _guild_map(uid: int) -> dict:
@@ -361,6 +511,8 @@ def _guild_map(uid: int) -> dict:
         "bossHp": int((boss or {}).get("boss_hp") or g.get("boss_hp") or 0),
         "bossMaxHp": int((boss or {}).get("boss_max_hp") or g.get("boss_max_hp") or 0),
         "bossName": (boss or {}).get("boss_name") or g.get("boss_name") or "",
+        "bossIcon": (boss or {}).get("boss_icon") or "🐉",
+        "bossTier": (boss or {}).get("boss_tier") or "normal",
         "bossAttack": int((boss or {}).get("boss_attack") or 0),
         "bossParticipants": (boss or {}).get("participants") or "[]",
         "leaderId": str(g.get("leader_id") or ""),
@@ -569,6 +721,194 @@ def snapshot(uid: int) -> dict:
     }
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# P44 — Friends chat parity (ChatDialog hybrid: cloud Supabase bila linked,
+#       else local SQLite). Semua aturan bisnis tetap di database.py/cloud_service.py.
+# ──────────────────────────────────────────────────────────────────────────────
+def _chat_attachment_payload(a: dict) -> dict:
+    thumb = a.get("thumbnail_data")
+    return {
+        "id": str(a.get("id")),
+        "originalFilename": a.get("original_filename") or "attachment",
+        "mimeType": a.get("mime_type") or "",
+        "sizeBytes": int(a.get("size_bytes") or 0),
+        "width": a.get("width"),
+        "height": a.get("height"),
+        "thumbnailData": base64.b64encode(bytes(thumb)).decode("ascii") if thumb else None,
+    }
+
+
+def _ts_epoch(v, naive_is_utc=False):
+    """Ubah timestamp chat (datetime/str, aware/naive) → unix detik (int) atau None.
+
+    Frontend memakai `epoch` ini untuk merender jam pesan di ZONA LOKASI USER
+    (browser), sama persis dengan jam app — jadi chat selalu sinkron dengan jam
+    user berapa pun zona server-nya.
+      - aware    → .timestamp() (instan absolut, benar).
+      - naive    → dianggap UTC bila `naive_is_utc` (timestamp cloud Supabase),
+                   selain itu dianggap waktu lokal sistem (datetime.now() penulis
+                   pesan lokal) — konsisten karena dibaca di proses yang sama.
+    """
+    import datetime as _dt
+    if v in (None, ""):
+        return None
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return int(v)
+    if isinstance(v, _dt.datetime):
+        dt = v
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_dt.timezone.utc) if naive_is_utc else dt.astimezone()
+    elif isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        try:
+            dt = _dt.datetime.fromisoformat(s)
+        except Exception:
+            try:
+                dt = _dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_dt.timezone.utc) if naive_is_utc else dt.astimezone()
+    else:
+        return None
+    try:
+        return int(dt.timestamp())
+    except Exception:
+        return None
+
+
+def _local_message_payload(m: dict, uid: int) -> dict:
+    return {
+        "id": str(m.get("id")),
+        "senderId": str(m.get("sender_id")),
+        "text": m.get("message") or "",
+        "isSelf": bool(m.get("sender_id") == uid),
+        "createdAt": m.get("created_at") or "",
+        "epoch": _ts_epoch(m.get("created_at"), naive_is_utc=False),
+        "editedAt": m.get("edited_at") or "",
+        "deletedAt": m.get("deleted_at") or "",
+        "replyToId": str(m.get("reply_to_id")) if m.get("reply_to_id") else None,
+        "syncStatus": "synced",
+        "reactions": m.get("reactions") or {},
+        "attachments": [_chat_attachment_payload(a) for a in (m.get("attachments") or [])],
+    }
+
+
+def _cloud_message_payload(m: dict, current_cid) -> dict:
+    return {
+        "id": str(m.get("cloud_id")),
+        "senderId": str(m.get("sender_cloud_id")),
+        "text": m.get("body") or "",
+        "isSelf": bool(str(m.get("sender_cloud_id")) == str(current_cid or "")),
+        "createdAt": m.get("created_at") or "",
+        "epoch": _ts_epoch(m.get("created_at"), naive_is_utc=True),
+        "editedAt": m.get("edited_at") or "",
+        "deletedAt": m.get("deleted_at") or "",
+        "replyToId": m.get("reply_to_cloud_id"),
+        "syncStatus": m.get("sync_status") or "synced",
+        "reactions": m.get("reactions") or {},
+        "attachments": [_chat_attachment_payload(a) for a in (m.get("attachments") or [])],
+    }
+
+
+def _cloud_service_for_user(uid: int):
+    """Return CloudService bila user cloud-linked DAN session terautentikasi, else None."""
+    try:
+        if not db.get_cloud_user_link(uid):
+            return None
+        from sync_service import get_sync_service
+        if not get_sync_service().ensure_session(uid):
+            return None
+        from cloud_service import get_cloud_service
+        return get_cloud_service()
+    except Exception:
+        return None
+
+
+def _cloud_chat_context(uid: int, fid: int):
+    """Return (cloud, conversation_id) bila chat cloud aktif (parity ChatDialog.__init__),
+    else (None, None). Cloud aktif hanya bila user linked + friend punya cloud_user_id
+    + session terautentikasi. conversation_id di-cache di cloud_conversations agar
+    tidak RPC setiap request."""
+    try:
+        friend = db.get_user(fid) or {}
+        friend_cid = friend.get("cloud_user_id")
+        if not friend_cid:
+            return None, None
+        cloud = _cloud_service_for_user(uid)
+        if cloud is None:
+            return None, None
+        cached = db.get_cloud_conversation(uid, fid) or {}
+        conv_id = cached.get("cloud_id")
+        if not conv_id:
+            conv = cloud.get_or_create_direct_conversation(str(friend_cid))
+            if isinstance(conv, list):
+                conv = conv[0] if conv else {}
+            if isinstance(conv, dict):
+                conv_id = conv.get("id") or conv.get("conversation_id")
+            else:
+                conv_id = conv
+            if not conv_id:
+                return None, None
+            conv_id = str(conv_id)
+            db.save_cloud_conversation(uid, fid, conv_id)
+        return cloud, str(conv_id)
+    except Exception:
+        return None, None
+
+
+def _refresh_cloud_chat(cloud, conv_id: str, uid: int) -> int:
+    """Parity ChatDialog._refresh_cloud_page: tarik 50 pesan + reactions + attachments."""
+    remote = cloud.fetch_direct_messages(conv_id, 50) or []
+    db.cache_cloud_messages(remote)
+    ids = [row.get("id") for row in remote if row.get("id")]
+    if ids:
+        db.cache_cloud_message_reactions(cloud.fetch_message_reactions(ids) or [], ids)
+        try:
+            db.cache_cloud_chat_attachments(uid, cloud.fetch_message_attachments(ids) or [])
+        except Exception:
+            pass
+    return len(remote)
+
+
+def _load_chat_payload(uid: int, fid: int, limit: int) -> dict:
+    """Parity ChatDialog._load_messages: hybrid cloud/local + mark-read + typing."""
+    ctx = _cloud_chat_context(uid, fid)
+    if ctx[0] is not None:
+        cloud, conv_id = ctx
+        try:
+            _refresh_cloud_chat(cloud, conv_id, uid)
+        except Exception:
+            pass
+        try:
+            cloud.mark_conversation_read(conv_id)
+        except Exception:
+            pass
+        db.mark_cloud_conversation_read_local(conv_id)
+        rows = db.get_cached_cloud_messages(conv_id, limit) or []
+        current = (db.get_cloud_user_link(uid) or {}).get("cloud_user_id")
+        friend_typing = False
+        try:
+            typing = cloud.get_conversation_typing(conv_id) or []
+            friend_typing = any(str(row.get("user_id") or "") != str(current or "") for row in typing)
+        except Exception:
+            pass
+        return {
+            "ok": True,
+            "cloudMode": True,
+            "friendTyping": friend_typing,
+            "messages": [_cloud_message_payload(m, current) for m in rows],
+        }
+    msgs = [_local_message_payload(m, uid) for m in (db.get_messages(uid, fid, limit) or [])]
+    return {"ok": True, "cloudMode": False, "messages": msgs}
+
+
 def handle_get(path: str, uid: int, qs=None):
     qs = qs or {}
     if path == "/api/learning/notebooks":
@@ -585,38 +925,25 @@ def handle_get(path: str, uid: int, qs=None):
         return {"ok": True, "playlists": s["playlists"], "history": s["musicHistory"]}
     if path == "/api/love":
         return {"ok": True, "loveSpace": snapshot(uid)["loveSpace"]}
+    if path == "/api/love/couple-tracking":
+        return _couple_tracking_map(uid)
     if re.match(r"^/api/friends/[^/]+/chat$", path):
-        # Parity ChatDialog._load_messages (lokal): mark read + pesan lengkap.
+        # Parity ChatDialog._load_messages (hybrid cloud/local).
         fid = path.split("/")[3]
         try:
             fid_i = int(fid)
         except ValueError:
             return {"ok": False, "msg": "not found"}
         try:
+            limit = int((qs or {}).get("limit", [50])[0] or 50)
+        except Exception:
+            limit = 50
+        limit = max(1, min(2000, limit))
+        try:
             db.mark_messages_read(uid, fid_i)
         except Exception:
             pass
-        try:
-            limit = int((qs or {}).get("limit", [100])[0] or 100)
-        except Exception:
-            limit = 100
-        limit = max(1, min(500, limit))
-        msgs = []
-        for m in db.get_messages(uid, fid_i, limit) or []:
-            rxn = m.get("reactions") or {}
-            msgs.append({
-                "id": str(m.get("id")),
-                "senderId": str(m.get("sender_id")),
-                "text": m.get("message") or "",
-                "isSelf": bool(m.get("sender_id") == uid),
-                "createdAt": m.get("created_at") or "",
-                "editedAt": m.get("edited_at") or "",
-                "deletedAt": m.get("deleted_at") or "",
-                "replyToId": str(m.get("reply_to_id")) if m.get("reply_to_id") else None,
-                # di-agregat di client (_reaction_text): dict uid→emoji mentah dibawa
-                "reactions": rxn,
-            })
-        return {"ok": True, "messages": msgs}
+        return _load_chat_payload(uid, fid_i, limit)
     if path == "/api/friends":
         s = snapshot(uid)
         return {"ok": True, "friends": s["friends"], "friendRequests": s.get("friendRequests") or [], "coupleRequests": s.get("coupleRequests") or []}
@@ -677,6 +1004,40 @@ def handle_get(path: str, uid: int, qs=None):
     if path == "/api/guild":
         s = snapshot(uid)
         return {"ok": True, "guild": s["guild"], "guildInvites": s.get("guildInvites") or []}
+    if path == "/api/guild/messages":
+        # Parity GuildChatDialog._load_messages: daftar pesan guild LOKAL (page
+        # guild lokal di PyQt selalu pakai DB lokal; chat cloud hanya ada di
+        # halaman online guild yang terpisah). Kembalikan pesan + isLeader +
+        # timestamp agar render [HH:MM] name: message konsisten.
+        u = db.get_user(uid) or {}
+        gid = u.get("guild_id")
+        if not gid:
+            return {"ok": True, "messages": [], "isLeader": False}
+        try:
+            limit = int((qs or {}).get("limit", [100])[0] or 100)
+        except Exception:
+            limit = 100
+        limit = max(1, min(2000, limit))
+        g = db.get_guild(gid) or {}
+        gcore = g.get("guild") or g
+        is_leader = str(gcore.get("leader_id") or "") == str(uid)
+        msgs = []
+        try:
+            msgs = [
+                {
+                    "id": str(m.get("id")),
+                    "senderId": str(m.get("sender_id")),
+                    "senderName": m.get("display_name") or m.get("username") or "",
+                    "text": m.get("message") or "",
+                    "createdAt": m.get("created_at") or "",
+                    "epoch": _ts_epoch(m.get("created_at"), naive_is_utc=False),
+                    "isSelf": str(m.get("sender_id")) == str(uid),
+                }
+                for m in (db.get_guild_messages(gid, limit) or [])
+            ]
+        except Exception:
+            pass
+        return {"ok": True, "messages": msgs, "isLeader": is_leader}
     if path == "/api/guild/rewards":
         # Parity GuildPage._show_unclaimed_rewards (dialog check saat load page).
         return {"ok": True, "rewards": db.get_unclaimed_boss_rewards(uid)}
@@ -726,22 +1087,80 @@ def handle_get(path: str, uid: int, qs=None):
         return {"ok": True, "lyrics": get_lyrics(
             (qs.get("artist") or [""])[0].strip(),
             (qs.get("title") or [""])[0].strip(),
+            (qs.get("path") or [""])[0].strip(),
         )}
     return None
 
 
 def _clean_lyrics_query(s: str) -> str:
-    """Bersihkan judul/artis untuk query online (sama dengan _LyricsFetcher PyQt)."""
+    """Bersihkan judul/artis untuk query online (sama dengan _LyricsFetcher PyQt,
+    diperluas: live/remaster/radio-edit/bracket/feat/ft.)."""
     import re as _re
-    s = _re.sub(r"\((official|lyric|lyrics|video|audio|mv|hq|hd)[^)]*\)", " ", s, flags=_re.I)
+    s = _re.sub(r"\((official|lyric|lyrics|video|audio|mv|hq|hd|live|remaster(?:ed)?|radio[ -]?edit|explicit|clean|deluxe|bonus)[^)]*\)", " ", s, flags=_re.I)
+    s = _re.sub(r"\[(official|lyric|lyrics|video|audio|mv|hq|hd|live|remaster(?:ed)?|radio[ -]?edit|explicit|clean)[^\]]*\]", " ", s, flags=_re.I)
     s = _re.sub(r"\bfeat(\.|uring)?\b.*$", " ", s, flags=_re.I)
+    s = _re.sub(r"\bft\.?\s+.*$", " ", s, flags=_re.I)
+    s = s.replace("_", " ").replace("/", " ")
     return _re.sub(r"\s+", " ", s).strip()
 
 
-def get_lyrics(artist: str, title: str) -> dict:
-    """Cari lirik online CEPAT: 3 provider paralel (LRCLIB get, LRCLIB search,
-    lyrics.ovh) — meniru _LyricsFetcher PyQt. Return {plain, synced, source}."""
+def _read_embedded_lyrics(file_path: str) -> str:
+    """Baca lirik tertanam dari file audio (parity MusicPage._embedded_lyrics):
+    ID3 USLT/TXXX, Vorbis/FLAC LYRICS, MP4 ©lyr. Import mutagen defensif."""
+    try:
+        from mutagen.mp3 import MP3
+        from mutagen.flac import FLAC
+        from mutagen.mp4 import MP4
+        from mutagen.oggvorbis import OggVorbis
+    except Exception:
+        return ""
+    try:
+        low = file_path.lower()
+        if low.endswith(".mp3"):
+            audio = MP3(file_path)
+            for key in list(audio.keys()):
+                if key.startswith("USLT"):
+                    text = str(audio[key]).strip()
+                    if text:
+                        return text
+            if audio.tags is not None:
+                for key in list(audio.tags.keys()):
+                    if key.startswith("TXXX"):
+                        frame = audio.tags[key]
+                        if "lyric" in (getattr(frame, "desc", "") or "").lower():
+                            text = str(frame).strip()
+                            if text:
+                                return text
+        elif low.endswith(".flac"):
+            audio = FLAC(file_path)
+            for k in ("lyrics", "unsyncedlyrics"):
+                value = audio.get(k) or []
+                if value and str(value[0]).strip():
+                    return str(value[0]).strip()
+        elif low.endswith((".m4a", ".mp4")):
+            audio = MP4(file_path)
+            if audio.tags:
+                value = audio.tags.get("\xa9lyr") or []
+                if value and str(value[0]).strip():
+                    return str(value[0]).strip()
+        elif low.endswith((".ogg", ".opus")):
+            audio = OggVorbis(file_path)
+            for k in ("lyrics", "unsyncedlyrics"):
+                value = audio.get(k) or []
+                if value and str(value[0]).strip():
+                    return str(value[0]).strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def get_lyrics(artist: str, title: str, file_path: str = "") -> dict:
+    """Cari lirik online CEPAT & LUAS: LRCLIB get + LRCLIB search (beberapa varian
+    query) + lyrics.ovh, paralel — meniru _LyricsFetcher PyQt namun dengan
+    fallback query makin longgar (artis+judul → judul saja → artis saja).
+    Fallback terakhir: lirik tertanam file audio. Return {plain, synced, source}."""
     import concurrent.futures as _cf
+    import os
     import requests
     from urllib.parse import quote
 
@@ -750,33 +1169,51 @@ def get_lyrics(artist: str, title: str) -> dict:
     source = ""
     artist = _clean_lyrics_query(artist)
     title = _clean_lyrics_query(title)
-    if artist and title:
+    if artist or title:
         user_agent = {"User-Agent": "CraftLifeDesktop/1.0"}
 
         def lrclib_get():
             r = requests.get("https://lrclib.net/api/get",
                              params={"artist_name": artist, "track_name": title},
-                             headers=user_agent, timeout=6)
+                             headers=user_agent, timeout=5)
             d = r.json() if r.ok else {}
             return (d.get("plainLyrics") or "", d.get("syncedLyrics") or "")
 
-        def lrclib_search():
+        def lrclib_search(q):
             r = requests.get("https://lrclib.net/api/search",
-                             params={"q": f"{artist} {title}"},
-                             headers=user_agent, timeout=6)
+                             params={"q": q},
+                             headers=user_agent, timeout=5)
             for it in (r.json() if r.ok else []) or []:
                 if it.get("syncedLyrics") or it.get("plainLyrics"):
                     return (it.get("plainLyrics") or "", it.get("syncedLyrics") or "")
             return ("", "")
 
         def ovh():
-            r = requests.get(f"https://api.lyrics.ovh/v1/{quote(artist)}/{quote(title)}", timeout=6)
+            if not (artist and title):
+                return ("", "")
+            r = requests.get(f"https://api.lyrics.ovh/v1/{quote(artist)}/{quote(title)}", timeout=5)
             return (((r.json() or {}).get("lyrics") or ""), "") if r.ok else ("", "")
 
+        # Varian query progresif (paling akurat → paling longgar) utk coverage luas.
+        queries = []
+        if artist and title:
+            queries.append(f"{artist} {title}")
+        if title and title not in queries:
+            queries.append(title)
+        if artist and artist not in queries:
+            queries.append(artist)
+
+        def _jobs():
+            if artist and title:
+                yield lrclib_get
+            yield ovh
+            for q in queries:
+                yield lambda q=q: lrclib_search(q)
+
         try:
-            with _cf.ThreadPoolExecutor(max_workers=3) as ex:
-                futs = [ex.submit(fn) for fn in (lrclib_get, lrclib_search, ovh)]
-                for fut in _cf.as_completed(futs, timeout=8):
+            with _cf.ThreadPoolExecutor(max_workers=5) as ex:
+                futs = [ex.submit(fn) for fn in _jobs()]
+                for fut in _cf.as_completed(futs, timeout=9):
                     try:
                         p, s = fut.result()
                     except Exception:
@@ -789,8 +1226,26 @@ def get_lyrics(artist: str, title: str) -> dict:
                         break
         except Exception:
             pass
-    if synced or plain:
-        source = "lrclib" if (synced or plain) else "lyrics.ovh"
+
+    # Fallback: lirik tertanam di file (parity _embedded_lyrics), hanya path valid.
+    if not synced and not plain and file_path:
+        embedded = ""
+        try:
+            import music_downloader as _md
+            lib_dir = os.path.realpath(_md.get_download_dir())
+            real = os.path.realpath(file_path)
+            if real.startswith(lib_dir + os.sep) and os.path.isfile(real):
+                embedded = _read_embedded_lyrics(real)
+        except Exception:
+            embedded = ""
+        if embedded:
+            plain = embedded
+            source = "embedded"
+
+    if synced:
+        source = "lrclib"
+    elif plain:
+        source = source or "lrclib"
     return {"plain": plain, "synced": synced, "source": source}
 
 
@@ -1193,6 +1648,10 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             "relationship_type": body.get("relationshipType") or cur.get("relationship_type") or "dating",
             "start_date": body.get("startDate") or cur.get("start_date") or "",
             "my_name": body.get("myName") or cur.get("my_name") or "",
+            "my_gender": body.get("myGender") or cur.get("my_gender") or "male",
+            "my_age": body.get("myAge") if body.get("myAge") is not None else (cur.get("my_age") or 25),
+            "my_birthdate": body.get("myBirthdate") or cur.get("my_birthdate") or "",
+            "partner_birthdate": body.get("partnerBirthdate") or cur.get("partner_birthdate") or "",
         }
         ca = _cloud_mod()
         if ca and ca.is_cloud_linked(uid):
@@ -1208,8 +1667,10 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             values["relationship_type"],
             values["start_date"],
             my_name=values["my_name"],
-            my_gender=cur.get("my_gender") or "male",
-            my_age=int(cur.get("my_age") or 25),
+            my_gender=values["my_gender"],
+            my_age=int(values["my_age"] or 25),
+            my_birthdate=values["my_birthdate"] or None,
+            partner_birthdate=values["partner_birthdate"] or None,
         )
         return {"result": result}
     if path == "/api/love/memories":
@@ -1296,7 +1757,7 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             try:
                 return {"result": ca.love_photo_from_path(uid, file_path)}
             except Exception as e:
-                return {"result": {"ok": False, "msg": str(e)}}
+                return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
         return {"result": {"ok": False, "msg": "path_required"}}
     if path == "/api/love/bucket":
         return {"result": db.add_relationship_bucket_item(uid, body.get("title") or "Goal")}
@@ -1372,39 +1833,176 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 pass
         return {"result": db.send_message(uid, oid, body.get("text") or "")}
     if re.match(r"^/api/friends/[^/]+/chat$", path):
-        # Parity ChatDialog._send_message (dengan reply_to).
+        # Parity ChatDialog._send_message (hybrid cloud/local + attachments + reply_to).
         fid = path.split("/")[3]
         try:
             fid_i = int(fid)
         except ValueError:
             return _bad("not found")
         text = (body.get("text") or "").strip()
-        if not text:
+        attachment_ids = [int(x) for x in (body.get("attachmentIds") or []) if str(x).lstrip("-").isdigit()]
+        if not text and not attachment_ids:
             return _bad("empty message")
+        ctx = _cloud_chat_context(uid, fid_i)
+        if ctx[0] is not None:
+            cloud, conv_id = ctx
+            reply_to = body.get("replyToId") or None
+            client_id = str(__import__("uuid").uuid4())
+            display_body = text or db.tr_db(user_id=uid, key="chat_attachment_message")
+            try:
+                if attachment_ids:
+                    cloud.send_direct_message_with_attachments(
+                        uid, conv_id, text, client_id, reply_to, attachment_ids)
+                else:
+                    row = cloud.send_direct_message(conv_id, text, client_id, reply_to)
+                    db.cache_cloud_messages([row])
+            except Exception:
+                # Parity ChatDialog._send_message fallback: cache pending + enqueue sync.
+                current = (db.get_cloud_user_link(uid) or {}).get("cloud_user_id")
+                db.cache_pending_cloud_message(conv_id, current, client_id, display_body, reply_to)
+                entity = "direct_message_attachment" if attachment_ids else "direct_message"
+                payload = {"conversation_id": conv_id, "body": text,
+                           "client_message_id": client_id, "reply_to_id": reply_to}
+                if attachment_ids:
+                    payload["attachment_local_ids"] = attachment_ids
+                db.enqueue_sync(uid, entity, client_id, "send", payload)
+            return {"result": {"ok": True, "cloud": True}, "skip_snap": True}
         reply_to = body.get("replyToId")
         try:
             reply_to = int(reply_to) if reply_to else None
         except (TypeError, ValueError):
             reply_to = None
-        return db.send_message(uid, fid_i, text, reply_to_id=reply_to)
-    if re.match(r"^/api/friends/[^/]+/clear$", path):
-        # Parity ChatDialog._clear_chat (non-cloud, konfirmasi di client).
+        display_body = text or db.tr_db(user_id=uid, key="chat_attachment_message")
+        result = db.send_message(uid, fid_i, display_body, reply_to_id=reply_to)
+        if attachment_ids and result.get("message_id"):
+            db.link_local_chat_attachments(uid, result.get("message_id"), attachment_ids)
+        return {"result": result, "skip_snap": True}
+    if path == "/api/friends/chat/attachment":
+        # Parity ChatDialog._choose_attachments: prepare → pending BLOB (dipakai cloud & local).
+        name = (body.get("name") or "attachment").strip() or "attachment"
+        raw_b64 = body.get("dataBase64") or ""
+        try:
+            raw = base64.b64decode(raw_b64, validate=True)
+        except Exception:
+            return _bad("web_upload_bad_type")
+        if not raw:
+            return _bad("empty_file")
+        import tempfile
+        safe_name = os.path.basename(name).replace("\\", "_").replace("/", "_")[:160] or "attachment"
+        tmpdir = tempfile.mkdtemp(prefix="cl_chat_")
+        tmp_path = os.path.join(tmpdir, safe_name)
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(raw)
+            try:
+                from cloud_service import get_cloud_service
+                attachment = get_cloud_service().prepare_chat_attachment(uid, tmp_path)
+            except Exception as e:
+                return _bad(str(e))
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            try:
+                os.rmdir(tmpdir)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "attachment": _chat_attachment_payload(attachment)}, "skip_snap": True}
+    if path == "/api/friends/chat/attachments/discard":
+        # Parity ChatDialog._clear_pending_attachments(delete=True).
+        ids = [int(x) for x in (body.get("ids") or []) if str(x).lstrip("-").isdigit()]
+        if ids:
+            db.delete_pending_chat_attachments(uid, ids)
+        return {"result": {"ok": True}, "skip_snap": True}
+    if re.match(r"^/api/friends/[^/]+/typing$", path):
+        # Parity ChatDialog._set_typing (cloud only; lokal = no-op).
         fid = path.split("/")[3]
         try:
             fid_i = int(fid)
         except ValueError:
             return _bad("not found")
+        ctx = _cloud_chat_context(uid, fid_i)
+        if ctx[0] is None:
+            return {"result": {"ok": True}, "skip_snap": True}
+        cloud, conv_id = ctx
+        try:
+            cloud.set_conversation_typing(conv_id, bool(body.get("isTyping")))
+        except Exception:
+            pass
+        return {"result": {"ok": True}, "skip_snap": True}
+    if re.match(r"^/api/friends/[^/]+/clear$", path):
+        # Parity ChatDialog._clear_chat (cloud → blokir; lokal → soft delete self).
+        fid = path.split("/")[3]
+        try:
+            fid_i = int(fid)
+        except ValueError:
+            return _bad("not found")
+        if _cloud_chat_context(uid, fid_i)[0] is not None:
+            return {"result": {"ok": False, "msg": "cloud_chat_clear_local_only"}, "skip_snap": True}
         db.clear_friend_chat(uid, fid_i)
-        return {"ok": True}
-    if re.match(r"^/api/friends/messages/\d+/edit$", path):
-        mid = int(path.split("/")[4])
-        return db.edit_local_message(uid, mid, body.get("text") or "")
-    if re.match(r"^/api/friends/messages/\d+/delete$", path):
-        mid = int(path.split("/")[4])
-        return db.delete_local_message(uid, mid)
-    if re.match(r"^/api/friends/messages/\d+/reaction$", path):
-        mid = int(path.split("/")[4])
-        return db.set_local_message_reaction(uid, mid, body.get("reaction"))
+        return {"result": {"ok": True}, "skip_snap": True}
+    edit_m = re.match(r"^/api/friends/messages/([^/]+)/edit$", path)
+    if edit_m:
+        mid = edit_m.group(1)
+        if body.get("cloud"):
+            if mid.startswith("pending:"):
+                return {"result": {"ok": False, "msg": "chat_pending_action_blocked"}, "skip_snap": True}
+            cloud = _cloud_service_for_user(uid)
+            if cloud is None:
+                return {"result": {"ok": False, "msg": "cloud_auth_required"}, "skip_snap": True}
+            try:
+                row = cloud.edit_direct_message(mid, body.get("text") or "")
+                db.cache_cloud_messages([row])
+            except Exception as e:
+                return {"result": {"ok": False, "msg": str(e)}}
+            return {"result": {"ok": True}, "skip_snap": True}
+        try:
+            mid_i = int(mid)
+        except (TypeError, ValueError):
+            return _bad("not found")
+        return {"result": db.edit_local_message(uid, mid_i, body.get("text") or ""), "skip_snap": True}
+    del_m = re.match(r"^/api/friends/messages/([^/]+)/delete$", path)
+    if del_m:
+        mid = del_m.group(1)
+        if body.get("cloud"):
+            if mid.startswith("pending:"):
+                return {"result": {"ok": False, "msg": "chat_pending_action_blocked"}}
+            cloud = _cloud_service_for_user(uid)
+            if cloud is None:
+                return {"result": {"ok": False, "msg": "cloud_auth_required"}}
+            try:
+                row = cloud.delete_direct_message(mid)
+                db.cache_cloud_messages([row])
+                db.cache_cloud_message_reactions([], [mid])
+            except Exception as e:
+                return {"result": {"ok": False, "msg": str(e)}}
+            return {"result": {"ok": True}, "skip_snap": True}
+        try:
+            mid_i = int(mid)
+        except (TypeError, ValueError):
+            return _bad("not found")
+        return {"result": db.delete_local_message(uid, mid_i), "skip_snap": True}
+    rxn_m = re.match(r"^/api/friends/messages/([^/]+)/reaction$", path)
+    if rxn_m:
+        mid = rxn_m.group(1)
+        if body.get("cloud"):
+            if mid.startswith("pending:"):
+                return {"result": {"ok": False, "msg": "chat_pending_action_blocked"}}
+            cloud = _cloud_service_for_user(uid)
+            if cloud is None:
+                return {"result": {"ok": False, "msg": "cloud_auth_required"}}
+            try:
+                cloud.set_direct_message_reaction(mid, body.get("reaction"))
+                db.cache_cloud_message_reactions(cloud.fetch_message_reactions([mid]) or [], [mid])
+            except Exception as e:
+                return {"result": {"ok": False, "msg": str(e)}}
+            return {"result": {"ok": True}, "skip_snap": True}
+        try:
+            mid_i = int(mid)
+        except (TypeError, ValueError):
+            return _bad("not found")
+        return {"result": db.set_local_message_reaction(uid, mid_i, body.get("reaction")), "skip_snap": True}
     if path == "/api/friends/request":
         username = body.get("username") or ""
         ca = _cloud_mod()
@@ -1429,17 +2027,17 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             return {"result": {"ok": False, "msg": "guild_id"}}
         return {"result": db.send_guild_request(uid, gid)}
     if path == "/api/guild/messages":
-        ca = _cloud_mod()
-        if ca and ca.is_cloud_linked(uid):
-            try:
-                return {"result": ca.send_guild_message_cloud(body.get("text") or "")}
-            except Exception:
-                pass
+        # Parity GuildChatDialog._send_message: chat guild di halaman guild LOKAL
+        # selalu disimpan ke DB lokal. Sebelumnya dikirim ke guild online (cloud)
+        # padahal halaman ini menampilkan guild lokal → pesan tampak tidak terkirim.
         u = db.get_user(uid) or {}
         gid = u.get("guild_id")
         if not gid:
             return {"result": {"ok": False, "msg": "no_guild"}}
-        return {"result": db.send_guild_message(gid, uid, body.get("text") or "")}
+        text = (body.get("text") or "").strip()
+        if not text:
+            return {"result": {"ok": False, "msg": "empty"}}
+        return {"result": db.send_guild_message(gid, uid, text), "skip_snap": True}
     if path == "/api/guild/leave":
         return {"result": db.leave_guild_with_transfer(uid)}
     if path == "/api/guild/invite":

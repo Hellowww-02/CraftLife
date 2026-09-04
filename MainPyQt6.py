@@ -7202,8 +7202,8 @@ class PetsPage(QWidget):
         # Hitung jumlah pet aktif & info batas
         active_count = len([p for p in pets if p["is_active"]])
         user_level = AppState.user().get("level", 1)
-        max_pets = 2 if user_level >= 25 else 1
-        status_text = tr("pets_max_2") if user_level >= 25 else tr("pets_max_1")
+        max_pets = db.max_active_pets(user_level)
+        status_text = tr("pets_max_n", n=max_pets) if max_pets >= 2 else tr("pets_max_1")
 
         # Buat widget info (ditampilkan sebagai card di atas daftar pet)
         info_widget = _card()

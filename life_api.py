@@ -74,6 +74,7 @@ def map_sport(row: dict) -> dict:
         "done": bool(row.get("done_today")),
         "totalReps": int(getattr(db, "get_sport_rep_total")(row.get("user_id"), row.get("id")) or 0)
         if getattr(db, "get_sport_rep_total", None) else 0,
+        "folderId": str(row.get("folder_id")) if row.get("folder_id") else None,
     }
 
 
@@ -327,6 +328,8 @@ def snapshot(uid: int) -> dict:
                 "icon": r.get("icon") or "📈",
                 "amount": float(r.get("amount") or 0),
                 "notes": r.get("notes") or "",
+                "investedDate": (r.get("invested_date") or "")[:10],
+                "isActive": bool(r.get("is_active", 1)),
             }
             for r in (db.get_investments(uid) or [])
         ]
@@ -342,6 +345,7 @@ def snapshot(uid: int) -> dict:
                 "dueDate": r.get("due_date") or "",
                 "period": r.get("period") or "monthly",
                 "notes": r.get("notes") or "",
+                "isRecurring": bool(r.get("is_recurring", 1)),
             }
             for r in (db.get_subscriptions(uid) or [])
         ]
@@ -779,7 +783,10 @@ def handle_get(path: str, uid: int, qs=None):
                 "totalReps": total,
                 "rank": rank,
             })
-        return {"ok": True, "activities": activities}
+        return {"ok": True, "activities": activities,
+                # Series reps harian global (7 hari, zero-fill) — parity
+                # SportRepsChartWidget PyQt yang memakai db.get_sport_rep_series(uid).
+                "series": db.get_sport_rep_series(uid)}
     if path.startswith("/api/sport/") and path.endswith("/reps"):
         try:
             sid = int(path.split("/")[3])
@@ -797,22 +804,33 @@ def handle_get(path: str, uid: int, qs=None):
             items = db.get_food_items(uid, include_default=True) or []
         except Exception:
             items = []
-        return {
-            "ok": True,
-            "items": [
-                {
-                    "id": str(r.get("id")),
-                    "name": r.get("name") or "",
-                    "icon": r.get("icon") or "🍽️",
-                    "calories": int(r.get("calories") or 0),
-                    "protein": float(r.get("protein") or 0),
-                    "carbs": float(r.get("carbs") or 0),
-                    "fat": float(r.get("fat") or 0),
-                    "isCustom": bool(r.get("is_custom")),
-                }
-                for r in items
-            ],
-        }
+        out = []
+        for r in items:
+            name = r.get("name") or ""
+            if r.get("is_custom"):
+                # Makanan custom user: tidak ada terjemahan → nameId == nameEn.
+                name_id, name_en = name, name
+            else:
+                # Makanan default: name di DB = nama Indonesia; nameEn dari
+                # FOOD_NAMES_MAP (parity get_food_name PyQt).
+                name_id = name
+                try:
+                    name_en = db.get_food_name(name, "en") or name
+                except Exception:
+                    name_en = name
+            out.append({
+                "id": str(r.get("id")),
+                "name": name,
+                "nameId": name_id,
+                "nameEn": name_en,
+                "icon": r.get("icon") or "🍽️",
+                "calories": int(r.get("calories") or 0),
+                "protein": float(r.get("protein") or 0),
+                "carbs": float(r.get("carbs") or 0),
+                "fat": float(r.get("fat") or 0),
+                "isCustom": bool(r.get("is_custom")),
+            })
+        return {"ok": True, "items": out}
     if path == "/api/nutrition/goals":
         try:
             g = db.get_nutrition_goals(uid) or {}
@@ -1249,6 +1267,12 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         iid = int(parts[2])
         if parts[3] == "return":
             return {"result": db.collect_investment_return(iid, uid, float(body.get("percent") or 5))}
+        if parts[3] == "add-return":
+            # Parity PyQt _collect_return: user input amount → db.add_investment_return.
+            return {"result": db.add_investment_return(iid, uid, _to_idr(uid, body.get("amount")))}
+        if parts[3] == "delete":
+            db.delete_investment(iid, uid)
+            return {"result": {"ok": True}}
         if parts[3] == "withdraw":
             return {"result": db.withdraw_investment(iid, uid)}
 
@@ -1268,6 +1292,19 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         sid = int(parts[2])
         if parts[3] == "delete":
             db.delete_subscription(sid, uid)
+            return {"result": {"ok": True}}
+        if parts[3] == "update":
+            # Parity AddSubscriptionDialog mode edit (db.update_subscription).
+            db.update_subscription(
+                sid, uid,
+                name=body.get("name") or "Subscription",
+                icon=body.get("icon") or "📅",
+                amount=_to_idr(uid, body.get("amount")),
+                due_date=body.get("dueDate") or _today(),
+                period=body.get("period") or "monthly",
+                is_recurring=bool(body.get("isRecurring", True)),
+                notes=body.get("notes") or "",
+            )
             return {"result": {"ok": True}}
         if parts[3] == "renew":
             return {"result": db.renew_subscription(sid, uid, bool(body.get("autoPay", True)))}

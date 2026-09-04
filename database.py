@@ -3774,7 +3774,8 @@ def reorder_tasks(user_id, mode, items):
     so the same call handles reorder-within-a-folder AND moves across folders.
     Returns ``{'ok': True}``.
     """
-    mapping = {"habit": "habits", "daily": "dailies", "todo": "todos", "quest": "todos"}
+    mapping = {"habit": "habits", "daily": "dailies", "todo": "todos", "quest": "todos",
+               "sport": "sport_activities"}
     tbl = mapping.get(str(mode).lower())
     if not tbl:
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_invalid_mode")}
@@ -4750,17 +4751,26 @@ def adopt_pet(user_id, pet_id):
     check_achievements(user_id, "pet_adopt", 1)
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_pet_adopted", icon=pet['icon'], name=pet['name'])}
 
+def max_active_pets(user_level: int) -> int:
+    """Slot pet aktif bertingkat (P43): 1 pet di bawah level 25; di level 25
+    naik ke 2, lalu +1 tiap kelipatan 5 level di atasnya (25→2, 30→3, 35→4, ...)."""
+    level = int(user_level or 1)
+    if level < 25:
+        return 1
+    return 2 + (level - 25) // 5
+
+
 def equip_pet(user_id, pet_id):
-    """Equip pet (aktifkan). Maksimal 2 pet jika user level >=25, selain itu maksimal 1.
-       Jika sudah mencapai batas, akan mengganti pet aktif yang paling lama (ID terkecil)."""
+    """Equip pet (aktifkan). Maksimal slot pet aktif mengikuti level user
+       (db.max_active_pets). Jika sudah mencapai batas, pet aktif paling lama
+       (ID terkecil) diganti."""
     conn = get_conn()
     try:
         # Ambil level user
         user = conn.execute("SELECT level FROM users WHERE id=?", (user_id,)).fetchone()
         if not user:
             return {"ok": False, "msg": tr_db(user_id=user_id, key="db_user_not_found")}
-        user_level = user["level"]
-        max_pets = 2 if user_level >= 25 else 1
+        max_pets = max_active_pets(user["level"])
         
         # Cek apakah pet yang akan di-equip sudah aktif?
         pet = conn.execute(
