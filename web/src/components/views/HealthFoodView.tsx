@@ -26,7 +26,10 @@ const shiftISO = (iso: string, delta: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-type CatalogFood = { id: string; name: string; icon: string; calories: number; protein: number; carbs: number; fat: number; isCustom?: boolean };
+type CatalogFood = { id: string; name?: string; nameId: string; nameEn: string; icon: string; calories: number; protein: number; carbs: number; fat: number; isCustom?: boolean };
+
+/** Nama tampil sesuai bahasa aktif (data-mapping nameId/nameEn, parity get_food_name). */
+const foodNameOf = (f: CatalogFood, lang: string) => (lang === 'en' ? (f.nameEn || f.nameId) : (f.nameId || f.nameEn));
 
 /** HealthFoodPage PyQt → versi web. Seluruh data di server; UI hanya render. */
 export const HealthFoodView: React.FC = () => {
@@ -172,13 +175,23 @@ export const HealthFoodView: React.FC = () => {
     life.foodItems().then((d) => setCatalog(d.items || [])).catch(() => setCatalog([]));
   }, [day]);
   const dbFoods: CatalogFood[] = catalog.length
-    ? catalog
-    : DEFAULT_FOODS.map((f) => ({ id: f.id, name: lang === 'id' ? f.nameId : f.nameEn, icon: f.icon, calories: f.calories, protein: f.protein, carbs: f.carbs, fat: f.fat }));
-  const filteredFoods = dbFoods.filter((f) => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    ? catalog.map((c) => ({
+        id: c.id,
+        nameId: c.nameId || c.name || '',
+        nameEn: c.nameEn || c.nameId || c.name || '',
+        icon: c.icon, calories: c.calories, protein: c.protein, carbs: c.carbs, fat: c.fat, isCustom: c.isCustom,
+      }))
+    : DEFAULT_FOODS.map((f) => ({ id: f.id, nameId: f.nameId, nameEn: f.nameEn, icon: f.icon, calories: f.calories, protein: f.protein, carbs: f.carbs, fat: f.fat }));
+  // Parity AddFoodDialog: pencarian mencakup nama Indonesia & Inggris.
+  const filteredFoods = dbFoods.filter((f) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return f.nameId.toLowerCase().includes(q) || f.nameEn.toLowerCase().includes(q);
+  });
 
   const logFood = async (food: CatalogFood) => {
     const res = await life.logFood({
-      mealType: mealTarget, foodName: food.name, icon: food.icon, portion: portionInput,
+      mealType: mealTarget, foodId: food.id, foodName: food.nameId, icon: food.icon, portion: portionInput,
       calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat, date: day,
       notes: logNotes.trim() || undefined,
     });
@@ -253,7 +266,7 @@ export const HealthFoodView: React.FC = () => {
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex items-center gap-2 flex-wrap">
         <Salad className="w-6 h-6 text-teal-400" />
         <h2 className="text-xl font-black text-slate-100 mr-2">
-          {t('page_health_title', lang === 'id' ? 'Kesehatan & Nutrisi' : 'Health & Food')}
+          {t('page_health_title', 'Health & Food')}
         </h2>
         <div className="ml-auto flex items-center gap-2">
           <button type="button" onClick={() => setDay((d) => shiftISO(d, -1))} className="p-2 rounded-lg bg-slate-800 text-slate-200"><ChevronLeft className="w-4 h-4" /></button>
@@ -291,7 +304,7 @@ export const HealthFoodView: React.FC = () => {
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Droplets className="w-4 h-4 text-cyan-400" /> {t('food_tab_water', '💧 Tracker Air')}</h3>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-300">Target: {water.goalMl} ml</span>
+            <span className="text-xs font-bold text-slate-300">{trv('food_water_goal', { goal: water.goalMl }, `Goal: ${water.goalMl} ml`)}</span>
             <button type="button" onClick={() => { setWaterGoalInput(water.goalMl); setWaterGoalOpen(true); }} className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 text-[11px] font-black">{t('food_water_set_goal', 'Atur Target')}</button>
           </div>
         </div>
@@ -384,7 +397,7 @@ export const HealthFoodView: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <h3 className="font-bold text-sm text-slate-200">{t('health_food_db', lang === 'id' ? 'Database Makanan' : 'Food Database')}</h3>
+            <h3 className="font-bold text-sm text-slate-200">{t('health_food_db', 'Food Database')}</h3>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl text-xs">
               {MEALS.map((m) => (
                 <button key={m} type="button" onClick={() => setMealTarget(m)} className={`px-2.5 py-1 rounded-lg capitalize font-semibold transition-colors ${mealTarget === m ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}>
@@ -397,11 +410,11 @@ export const HealthFoodView: React.FC = () => {
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('health_search_food_ph', lang === 'id' ? 'Cari makanan (Ayam, Nasi, Telur...)' : 'Search food items...')}
+                placeholder={t('health_search_food_ph', 'Search food items...')}
                 className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-teal-500" />
             </div>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1.5 rounded-xl text-xs">
-              <span className="text-slate-400 font-semibold">{t('health_portion', lang === 'id' ? 'Porsi:' : 'Portion:')}</span>
+              <span className="text-slate-400 font-semibold">{t('health_portion', 'Portion:')}</span>
               <input type="number" step="0.5" min="0.5" max="10" value={portionInput} onChange={(e) => setPortionInput(Math.max(0.5, Number(e.target.value)))} className="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold" />
             </div>
           </div>
@@ -410,7 +423,7 @@ export const HealthFoodView: React.FC = () => {
             type="text"
             value={logNotes}
             onChange={(e) => setLogNotes(e.target.value)}
-            placeholder={t('health_log_notes_ph', lang === 'id' ? 'Catatan log (opsional, mis. tanpa nasi, double protein)...' : 'Log notes (optional, e.g. no rice, double protein)...')}
+            placeholder={t('health_log_notes_ph', 'Log notes (optional, e.g. no rice, double protein)...')}
             className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-teal-500"
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
@@ -419,7 +432,7 @@ export const HealthFoodView: React.FC = () => {
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="text-2xl">{food.icon}</span>
                   <div className="min-w-0">
-                    <div className="font-bold text-xs text-slate-100 truncate">{food.name}{food.isCustom ? ' ★' : ''}</div>
+                    <div className="font-bold text-xs text-slate-100 truncate">{foodNameOf(food, lang)}{food.isCustom ? ' ★' : ''}</div>
                     <div className="text-[10px] text-slate-400">{Math.round(food.calories * portionInput)} kcal · {Math.round(food.protein * portionInput * 10) / 10}g Pro</div>
                   </div>
                 </div>
@@ -571,7 +584,7 @@ export const HealthFoodView: React.FC = () => {
             <h3 className="font-bold text-sm text-slate-200">{t('food_recipes', '📖 Resep Makanan')}</h3>
           </div>
           <button type="button" onClick={() => setRecipeCreateOpen(true)} className="px-3 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-bold flex items-center gap-1">
-            <Plus className="w-3.5 h-3.5" /> {t('health_manage_btn', lang === 'id' ? 'Kelola / Baru' : 'Manage / New')}
+            <Plus className="w-3.5 h-3.5" /> {t('health_manage_btn', 'Manage / New')}
           </button>
         </div>
         {recipes.length === 0 ? (
@@ -603,11 +616,11 @@ export const HealthFoodView: React.FC = () => {
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-black text-slate-100">{t('food_add_custom', '➕ Tambah Makanan Kustom')}</h3>
             <form onSubmit={addCustomAndLog} className="space-y-3 text-xs">
-              <input type="text" required value={custom.name} onChange={(e) => setCustom((c) => ({ ...c, name: e.target.value }))} placeholder="Nama makanan…" className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
+              <input type="text" required value={custom.name} onChange={(e) => setCustom((c) => ({ ...c, name: e.target.value }))} placeholder={t('food_custom_ph', 'Contoh: Smoothie Buah')} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
               <div className="grid grid-cols-2 gap-3">
-                {(([['calories', 'Calories (kcal)'], ['protein', 'Protein (g)'], ['carbs', 'Carbs (g)'], ['fat', 'Fat (g)']] as const)).map(([k, l]) => (
+                {(([['calories', 'food_calories_label'], ['protein', 'food_protein_label'], ['carbs', 'food_carbs_label'], ['fat', 'food_fat_label']] as const)).map(([k, l]) => (
                   <label key={k} className="block text-slate-300 font-semibold">
-                    {l}
+                    {t(l, l)}
                     <input type="number" value={custom[k]} onChange={(e) => setCustom((c) => ({ ...c, [k]: Number(e.target.value) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
                   </label>
                 ))}
@@ -673,11 +686,11 @@ export const HealthFoodView: React.FC = () => {
               <h3 className="text-base font-black text-slate-100">{t('food_export_format_title', '📤 Ekspor Data Nutrisi')}</h3>
               <button onClick={() => setExportOpen(false)} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
             </div>
-            <p className="text-xs text-slate-400">{t('economy_export_label', 'Pilih format file:')} (30 hari terakhir)</p>
+            <p className="text-xs text-slate-400">{t('economy_export_label', 'Pilih format file:')} ({t('food_export_days_hint', 'last 30 days')})</p>
             <div className="grid gap-2">
               <button type="button" onClick={() => doExport('csv')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">{t('export_csv_option', 'CSV (.csv)')}</button>
-              <button type="button" onClick={() => doExport('xlsx')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">Excel (.xlsx)</button>
-              <button type="button" onClick={() => doExport('docx')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">Word (.docx)</button>
+              <button type="button" onClick={() => doExport('xlsx')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">{t('export_xlsx_option', 'Excel (.xlsx)')}</button>
+              <button type="button" onClick={() => doExport('docx')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">{t('export_docx_option', 'Word (.docx)')}</button>
               <button type="button" onClick={() => doExport('pdf')} className="w-full px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold text-left">{t('export_pdf_option', 'PDF (.pdf)')}</button>
             </div>
           </div>
@@ -709,7 +722,8 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
   const addItem = () => {
     const f = catalog.find((x) => x.id === sel);
     if (!f) return;
-    setItems((prev) => ([...prev.filter((x) => x.foodId !== f.id), { foodId: f.id, name: f.name, quantity: qty }]));
+    const disp = lang === 'en' ? (f.nameEn || f.nameId || f.name) : (f.nameId || f.name || f.nameEn);
+    setItems((prev) => ([...prev.filter((x) => x.foodId !== f.id), { foodId: f.id, name: disp, quantity: qty }]));
   };
   const totalCal = items.reduce((s, it) => s + ((catalog.find((x) => x.id === it.foodId)?.calories || 0) * it.quantity), 0);
   const submit = async () => {
@@ -744,7 +758,7 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
           <div className="font-bold text-slate-300">{t('food_recipe_ingredients', 'Bahan')}</div>
           <div className="flex gap-2">
             <select value={sel} onChange={(e) => setSel(e.target.value)} className="flex-1 px-2 py-2 rounded-lg bg-slate-800 border border-slate-700">
-              {catalog.map((f) => (<option key={f.id} value={f.id}>{f.icon} {f.name}</option>))}
+              {catalog.map((f) => (<option key={f.id} value={f.id}>{f.icon} {lang === 'en' ? (f.nameEn || f.nameId || f.name) : (f.nameId || f.name || f.nameEn)}</option>))}
             </select>
             <input type="number" step="0.5" min="0.5" value={qty} onChange={(e) => setQty(Math.max(0.5, Number(e.target.value) || 1))} className="w-16 px-2 py-2 rounded-lg bg-slate-800 border border-slate-700 text-center" />
             <button type="button" onClick={addItem} className="px-3 py-2 rounded-lg bg-amber-600 text-white font-bold">+</button>

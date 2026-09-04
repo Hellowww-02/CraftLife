@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
 import { authToken } from '../../api/client';
 import { t } from '../../i18n';
+import { fmtChatTime } from '../../utils/serverTime';
 import { X } from 'lucide-react';
 
 const tr = (key: string, vars?: Record<string, string | number>) => {
@@ -13,7 +14,12 @@ const tr = (key: string, vars?: Record<string, string | number>) => {
 };
 
 const CUSTOM_BOSS_ICONS = ['👾', '👹', '🤖', '🦖', '🐙', '🦂', '🧌', '🐉', '🦇', '🍄'];
-const TIERS = ['all', 'beginner', 'normal', 'hard', 'elite', 'legendary', 'seasonal'] as const;
+const TIERS = ['all', 'beginner', 'normal', 'hard', 'elite', 'legendary', 'seasonal', 'custom'] as const;
+// Parity db.BOSS_TIER_COLOR (database.py)
+const TIER_COLORS: Record<string, string> = {
+  beginner: '#7bbf3e', normal: '#f0a800', hard: '#e05050',
+  elite: '#a97fff', legendary: '#ff6b00', seasonal: '#2dd4bf', custom: '#f0a800',
+};
 
 interface BossItem {
   id: string; name: string; icon: string; tier: string; hp: number; atk: number;
@@ -21,7 +27,7 @@ interface BossItem {
 }
 
 export const GuildView: React.FC = () => {
-  const { user, guild, friends, refreshSocial, lang, showToast, applyLive } = useGame();
+  const { user, guild, friends, refreshSocial, showToast, applyLive } = useGame();
   const isLeader = !!guild.leaderId && String(guild.leaderId) === String(user.id ?? '');
 
   const [tick, setTick] = useState(0);
@@ -74,12 +80,19 @@ export const GuildView: React.FC = () => {
   const [cbAtk, setCbAtk] = useState(20);
   const [cbMinLvl, setCbMinLvl] = useState(10);
 
-  // ── Deskripsi & chat & invite member ──
+  // ── Deskripsi & invite member ──
   const [descDraft, setDescDraft] = useState('');
-  const [chatText, setChatText] = useState('');
-
-  // ── P26: undang teman ke guild (leader only) ──
   const [inviteFriendDlg, setInviteFriendDlg] = useState(false);
+
+  // ── Hasil serangan boss (parity _perform_action → _show) ──
+  const [attackModal, setAttackModal] = useState<{ title: string; body: string; variant: 'info' | 'success' } | null>(null);
+
+  // ── Guild chat dialog (parity GuildChatDialog lokal: send + clear leader + poll 3s) ──
+  const [chatOpen, setChatOpen] = useState(false);
+  const [guildMsgs, setGuildMsgs] = useState<any[]>([]);
+  const [chatText, setChatText] = useState('');
+  const [chatIsLeader, setChatIsLeader] = useState(false);
+  const chatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const members: any[] = guild.members || [];
   const memberCount = members.length;
@@ -94,8 +107,47 @@ export const GuildView: React.FC = () => {
 
   const myClass = (user as any).avatarClass || 'warrior';
   const skill = skills[myClass] || { name: 'Shield Bash', icon: '🛡️', mp_cost: 10, desc: '' };
+  const hasSpyglass = !!(user as any).hasSpyglass;
+  const bossDamageBonus = Number((user as any).bossDamageBonus || 0);
 
-  // ═══ aksi ═══
+  // ═══ Guild chat (parity GuildChatDialog) ═══
+  const fetchGuildChat = () => {
+    studio.guildChat(100).then((d) => {
+      setGuildMsgs(Array.isArray(d?.messages) ? d.messages : []);
+      setChatIsLeader(!!d?.isLeader);
+    }).catch(() => setGuildMsgs([]));
+  };
+  const openGuildChat = () => {
+    setChatOpen(true);
+    fetchGuildChat();
+    if (chatTimer.current) clearInterval(chatTimer.current);
+    chatTimer.current = setInterval(fetchGuildChat, 3000);
+  };
+  const closeGuildChat = () => {
+    if (chatTimer.current) { clearInterval(chatTimer.current); chatTimer.current = null; }
+    setChatOpen(false);
+  };
+  useEffect(() => () => { if (chatTimer.current) clearInterval(chatTimer.current); }, []);
+  const sendGuildChat = () => {
+    const text = chatText.trim();
+    if (!text) return;
+    setChatText('');
+    studio.sendGuild(text)
+      .then((r) => {
+        applyLive(r);
+        const m = r?.result || r;
+        if (m?.ok === false) { showToast('info', tr('guild_chat_send_fail'), m?.msg ? tr(m.msg) : ''); }
+        else showToast('success', tr('guild_chat_send_ok'), '');
+        fetchGuildChat();
+      })
+      .catch(() => showToast('info', tr('guild_chat_send_fail'), ''));
+  };
+  const doClearGuildChat = () => {
+    if (!window.confirm(tr('chat_clear_all_confirm'))) return;
+    void post(studio.clearGuildChat()).then(() => fetchGuildChat());
+  };
+
+  // ═══ aksi boss (parity _perform_action) ═══
   const startSolo = () => {
     if (!bossId) { showToast('info', tr('msg_error'), tr('raid_select_boss_first')); return; }
     void post(studio.startGuildBoss(bossId));
@@ -123,7 +175,69 @@ export const GuildView: React.FC = () => {
       showToast('info', tr('hp_habis_title'), tr('guild_hp_zero_msg'));
       return;
     }
-    void post(studio.attackGuildBoss(action));
+    void studio.attackGuildBoss(action)
+      .then((res) => {
+        applyLive(res);
+        const m = res?.result || res;
+        const freshUser = res?.user || user;
+        if (!m?.ok) {
+          showToast('info', tr('guild_cant_attack'), String(m?.msg || tr('guild_no_boss')));
+          reload();
+          return;
+        }
+        if (m.defeated) {
+          let body = String(m.msg || '');
+          if (m.extra_effect) body += '\n' + m.extra_effect;
+          setAttackModal({ title: tr('victory_title'), body, variant: 'success' });
+          reload();
+          return;
+        }
+        // BLOCK — ditangani terpisah (parity _perform_action)
+        if (action === 'block') {
+          setAttackModal({
+            title: tr('boss_block_title'),
+            body: tr('boss_block_result', { reduction: Number(m.block_reduction || 0) }),
+            variant: 'info',
+          });
+          reload();
+          return;
+        }
+        const userDmg = Number(m.user_damage || 0);
+        const userHp = Number(freshUser?.hp ?? user.hp ?? 0);
+        let body: string;
+        if (hasSpyglass) {
+          const bossDmgText = tr('boss_damage_text', { dmg: Number(m.boss_damage || 0) })
+            + (m.boss_critical ? ` ${tr('boss_critical_mark')}` : '');
+          body = tr('boss_attack_spyglass', {
+            user_dmg: userDmg,
+            boss_hp_left: Math.round(Number(m.boss_hp_left || 0)),
+            boss_max_hp: Math.round(Number(m.boss_max_hp || 0)),
+            boss_dmg_text: bossDmgText,
+            user_hp: userHp,
+          });
+        } else {
+          body = tr('boss_attack_no_spyglass', {
+            user_dmg: userDmg,
+            actual_damage: Number(m.actual_damage || 0),
+            user_hp: userHp,
+          });
+        }
+        // ── Informasi tambahan (parity _perform_action) ──
+        if (Number(m.block_reduction || 0) > 0) {
+          body += '\n' + tr('boss_block_active_info', { reduction: Number(m.block_reduction) });
+        }
+        const reduc = Number((user as any).hpDamageReduction || 0);
+        if (reduc > 0) {
+          if (hasSpyglass) body += ' ' + tr('boss_reduction_info', { reduction: reduc });
+          else body += '\n' + tr('boss_reduction_info', { reduction: reduc });
+        }
+        if (m.shield_used) body += '\n' + tr('boss_shield_used');
+        if (m.revived) body += tr('attack_totem_revive');
+        if (action === 'ultimate' && m.extra_effect) body += '\n' + m.extra_effect;
+        setAttackModal({ title: tr('attack_title'), body, variant: m.revived ? 'success' : 'info' });
+        reload();
+      })
+      .catch((e) => showToast('info', String(e?.message || e), ''));
   };
 
   const myHpZero = (user.hp || 0) <= 0;
@@ -186,6 +300,12 @@ export const GuildView: React.FC = () => {
   }
 
   const need = (guild.level || 1) * 500;
+  const tierColor = TIER_COLORS[guild.bossTier || 'normal'] || '#f0a800';
+  const bossTitle = tr('boss_title_format', {
+    icon: guild.bossIcon || '🐉',
+    name: guild.bossName || 'Boss',
+    tier: String(guild.bossTier || 'normal').toUpperCase(),
+  });
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-6xl mx-auto space-y-4 animate-fade-in-up">
@@ -193,11 +313,15 @@ export const GuildView: React.FC = () => {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">{tr('page_guild_subtitle')}</p>
-          <h2 className="text-2xl font-black text-slate-100">{guild.name}</h2>
+          <h2 className="text-2xl font-black text-slate-100">{tr('guild_name_header', { name: guild.name })}</h2>
           <p className="text-xs text-slate-400">{tr('guild_id_level', { id: guild.id, level: guild.level || 1 })}</p>
           {guild.description && <p className="text-xs text-slate-400">{tr('guild_description_label', { desc: guild.description })}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={openGuildChat}
+            className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold">
+            💬 {tr('guild_chat_title')}
+          </button>
           {isLeader && (
             <button type="button" onClick={() => setInviteFriendDlg(true)}
               className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold">
@@ -207,7 +331,7 @@ export const GuildView: React.FC = () => {
           {isLeader && (
             <button type="button" onClick={() => setDescDraft(guild.description || '')}
               className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">
-              ✏️ {lang === 'id' ? 'Edit' : 'Edit'}
+              ✏️ {tr('guild_edit_desc_btn')}
             </button>
           )}
           <button type="button" onClick={() => { if (window.confirm(tr('cloud_guild_leave_confirm'))) void post(studio.leaveGuild()); }}
@@ -267,7 +391,7 @@ export const GuildView: React.FC = () => {
       {rewards.length > 0 && !rewardDlg && (
         <button type="button" onClick={() => setRewardDlg(true)}
           className="w-full py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-black">
-          🎁 {lang === 'id' ? `${rewards.length} reward boss belum diklaim` : `${rewards.length} unclaimed boss rewards`}
+          {tr('guild_unclaimed_reward', { n: rewards.length })}
         </button>
       )}
 
@@ -286,20 +410,20 @@ export const GuildView: React.FC = () => {
         </div>
       </section>
 
-      {/* SECTION BOSS (parity _make_boss_section) */}
+      {/* SECTION BOSS (parity _make_boss_section + _boss_selector) */}
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
         <h3 className="text-sm font-black text-slate-100">{tr('guild_boss_battle')}</h3>
         {guild.bossMaxHp > 0 ? (
           <>
             <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-rose-300">{guild.bossName || 'Boss'}</span>
-              <span className="text-slate-400 font-mono">{guild.bossHp}/{guild.bossMaxHp}</span>
+              <span className="font-bold" style={{ color: tierColor }}>{bossTitle}</span>
+              <span className="text-slate-400 font-mono">{tr('guild_boss_hp', { hp: guild.bossHp ?? 0, max_hp: guild.bossMaxHp })}</span>
             </div>
             <div className="h-5 rounded-xl bg-slate-800 overflow-hidden">
-              <div className="h-full bg-rose-500" style={{ width: `${Math.max(3, (guild.bossHp / guild.bossMaxHp) * 100)}%` }} />
+              <div className="h-full" style={{ width: `${Math.max(3, (guild.bossHp / guild.bossMaxHp) * 100)}%`, background: tierColor }} />
             </div>
             <p className="text-xs text-slate-400">
-              {tr('guild_boss_atk_info', { atk: guild.bossAttack ?? 0, bonus: (user as any).bossDamageBonus ?? 0, total: 25 + ((user as any).bossDamageBonus ?? 0) })}
+              {tr('guild_boss_atk_info', { atk: guild.bossAttack ?? 0, bonus: bossDamageBonus, total: 25 + bossDamageBonus })}
             </p>
             <p className="text-xs font-bold text-amber-300">
               {tr('raid_ultimate_label', { name: tr(`boss_ultimate_name_${myClass}`) })}
@@ -328,11 +452,12 @@ export const GuildView: React.FC = () => {
         ) : (
           <>
             <p className="text-xs text-slate-500">{tr('guild_boss_none')}</p>
-            {/* Selector (parity _boss_selector: tier filter + item gabungan) */}
+            {/* Selector (parity _boss_selector: tier filter + item gabungan + custom boss btn) */}
             <div className="flex flex-wrap gap-2">
               <select value={tier} onChange={(e) => setTier(e.target.value as typeof tier)}
                 className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100">
-                {TIERS.map((t2) => <option key={t2} value={t2}>{t2.toUpperCase()}</option>)}
+                <option value="all">{tr('guild_boss_all')}</option>
+                {TIERS.filter((t2) => t2 !== 'all').map((t2) => <option key={t2} value={t2}>{t2 === 'custom' ? tr('cboss_custom_tag') : t2.toUpperCase()}</option>)}
               </select>
               <select value={bossId} onChange={(e) => setBossId(e.target.value)}
                 className="flex-1 min-w-[200px] px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100">
@@ -346,41 +471,64 @@ export const GuildView: React.FC = () => {
                   </option>
                 ))}
               </select>
+              <button type="button" onClick={() => { setBossModal(true); setCbName(''); setCbIcon('👾'); setCbHp(1000); setCbAtk(20); setCbMinLvl(10); }}
+                className="px-4 py-2 rounded-xl bg-amber-900/60 hover:bg-amber-900/90 text-amber-200 text-xs font-bold">
+                {tr('cboss_btn')}
+              </button>
             </div>
             {/* Info boss terpilih (parity _update_boss_info: spyglass = detail penuh) */}
             {selectedBoss && (
-              <div className="text-xs text-slate-300">
-                {tr('guild_boss_info_format', {
-                  color: '',
-                  icon: selectedBoss.icon,
-                  name: selectedBoss.name,
-                  tier: selectedBoss.tier.toUpperCase(),
-                  hp: selectedBoss.hp,
-                  atk: selectedBoss.atk,
-                  xp: selectedBoss.xp,
-                  gold: selectedBoss.gold,
-                  min_level: selectedBoss.minLevel,
-                  ok: (user.level || 1) >= selectedBoss.minLevel ? '✅' : '🔒',
-                }).replace(/<[^>]+>/g, '')}
-                {(user as any).hasSpyglass ? ` · 🔭 ${tr('guild_spyglass_detail')}` : ''}
+              <div className="text-xs text-slate-300 whitespace-pre-line">
+                {hasSpyglass ? (
+                  <>
+                    <span style={{ color: TIER_COLORS[selectedBoss.tier] || '#f0a800' }}>
+                      {tr('guild_boss_info_format', {
+                        color: '',
+                        icon: selectedBoss.icon,
+                        name: selectedBoss.name,
+                        tier: selectedBoss.tier.toUpperCase(),
+                        hp: selectedBoss.hp,
+                        atk: selectedBoss.atk,
+                        xp: selectedBoss.xp,
+                        gold: selectedBoss.gold,
+                        min_level: selectedBoss.minLevel,
+                        ok: (user.level || 1) >= selectedBoss.minLevel ? '✅' : '🔒',
+                      }).replace(/<[^>]+>/g, '')}
+                    </span>
+                    {`\n🔭 ${tr('guild_spyglass_detail')}`}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold" style={{ color: TIER_COLORS[selectedBoss.tier] || '#f0a800' }}>
+                      {selectedBoss.icon} {selectedBoss.name} [{selectedBoss.tier.toUpperCase()}]
+                    </span>
+                    {`\n${tr('guild_boss_min_level', { min_level: selectedBoss.minLevel })}  ${(user.level || 1) >= selectedBoss.minLevel ? '✅' : '🔒'}`}
+                    {`\n\n${tr('guild_spyglass_buy_hint')}`}
+                  </>
+                )}
               </div>
             )}
-            {(user as any).hasSpyglass && (
+            {hasSpyglass && (
               <p className="text-[11px] italic text-amber-300">{tr('guild_spyglass_active')}</p>
             )}
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={startSolo}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
-                ⚔️ {lang === 'id' ? 'Mulai (Solo)' : 'Start (Solo)'}
-              </button>
-              <button type="button" onClick={openTeamDialog}
-                className="px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-xs font-black">
-                🛡️ {tr('raid_team_selection')}
-              </button>
-              <button type="button" onClick={() => { setBossModal(true); setCbName(''); setCbIcon('👾'); setCbHp(1000); setCbAtk(20); setCbMinLvl(10); }}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">
-                {lang === 'id' ? 'Boss kustom' : 'Custom boss'}
-              </button>
+              {isLeader ? (
+                <>
+                  <button type="button" onClick={startSolo}
+                    className="px-4 py-2 rounded-xl bg-rose-700 hover:bg-rose-600 text-white text-xs font-black">
+                    {tr('guild_start_boss')}
+                  </button>
+                  <button type="button" onClick={openTeamDialog}
+                    className="px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-xs font-black">
+                    🛡️ {tr('raid_team_selection')}
+                  </button>
+                </>
+              ) : (
+                <button type="button" disabled
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-500 text-xs font-bold cursor-not-allowed">
+                  {tr('guild_only_leader')}
+                </button>
+              )}
             </div>
           </>
         )}
@@ -405,40 +553,16 @@ export const GuildView: React.FC = () => {
         </section>
       )}
 
-      {/* Guild chat (parity _open_guild_chat inline) */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black text-slate-100">💬 <b>{tr('guild_chat_title')}</b></h3>
-          {isLeader && (
-            <button type="button" onClick={() => { if (window.confirm(tr('chat_clear_all_confirm'))) void post(studio.clearGuildChat()); }}
-              className="text-[11px] px-2 py-1 rounded-lg bg-slate-800 text-slate-400">{tr('chat_clear_all')}</button>
-          )}
-        </div>
-        <div className="max-h-48 overflow-y-auto space-y-1.5">
-          {(guild.messages || []).slice(-30).map((m: any) => (
-            <div key={m.id} className={`text-xs ${m.isSelf ? 'text-amber-200' : 'text-slate-300'}`}>
-              <span className="font-bold">{m.senderName}: </span>{m.text}
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input value={chatText} onChange={(e) => setChatText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && chatText.trim()) { void post(studio.sendGuild(chatText.trim())); setChatText(''); } }}
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100" />
-          <button type="button" onClick={() => { if (chatText.trim()) { void post(studio.sendGuild(chatText.trim())); setChatText(''); } }}
-            className="px-4 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold">➤</button>
-        </div>
-      </section>
-
       {/* ── Dialog raid team (parity _show_team_selection) ── */}
       {teamDlg && selectedBoss && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-3">
             <h3 className="text-lg font-black text-slate-100">{tr('raid_team_selection')}</h3>
-            <p className="text-xs text-slate-400">
-              {(lang === 'id'
-                ? `Pilih anggota tim (maks 4 anggota + leader).\nMin level: ${selectedBoss.minLevel}, Max level: ${selectedBoss.maxLevel ?? '∞'}`
-                : `Pick raid members (max 4 + leader).\nMin level: ${selectedBoss.minLevel}, Max level: ${selectedBoss.maxLevel ?? '∞'}`)}
+            <p className="text-xs text-slate-400 whitespace-pre-line">
+              {tr('raid_team_selection_info', {
+                min_lvl: selectedBoss.minLevel,
+                max_lvl: selectedBoss.maxLevel ?? 999,
+              })}
             </p>
             <div className="space-y-1.5 max-h-60 overflow-y-auto">
               {regular
@@ -455,7 +579,26 @@ export const GuildView: React.FC = () => {
               <button type="button" onClick={() => setTeamDlg(false)}
                 className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{tr('btn_cancel')}</button>
               <button type="button" onClick={startWithTeam}
-                className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">⚔️</button>
+                className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">{tr('raid_start_btn')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dialog hasil serangan boss (parity _perform_action → _show) ── */}
+      {attackModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-slate-100">
+                {attackModal.variant === 'success' ? '🏆' : '⚔️'} {attackModal.title}
+              </h3>
+              <button type="button" onClick={() => setAttackModal(null)} className="text-slate-400"><X className="w-5 h-5" /></button>
+            </div>
+            <pre className="text-xs text-slate-200 whitespace-pre-wrap break-words font-sans">{attackModal.body}</pre>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setAttackModal(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{tr('btn_close')}</button>
             </div>
           </div>
         </div>
@@ -466,21 +609,21 @@ export const GuildView: React.FC = () => {
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-100">🎁 {lang === 'id' ? 'Reward Boss' : 'Boss Rewards'}</h3>
+              <h3 className="text-lg font-black text-slate-100">{tr('guild_unclaimed_rewards')}</h3>
               <button type="button" onClick={() => setRewardDlg(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {rewards.map((r: any) => (
                 <div key={r.id} className="flex items-center justify-between text-xs bg-slate-950 rounded-xl p-3 border border-slate-800">
                   <span className="text-slate-300">
-                    {r.boss_name || 'Boss'} · +{r.xp_reward ?? r.xp ?? 0} XP · +{r.gold_reward ?? r.gold ?? 0} G
+                    {tr('guild_reward_format', { name: r.boss_name || 'Boss', xp: r.xp_reward ?? r.xp ?? 0, gold: r.gold_reward ?? r.gold ?? 0 })}
                   </span>
                   <button type="button"
                     onClick={() => void post(studio.claimGuildReward(String(r.id))).then(() => {
                       setRewards((prev) => prev.filter((x) => x.id !== r.id));
                     })}
                     className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
-                    {lang === 'id' ? 'Klaim' : 'Claim'}
+                    {tr('guild_claim')}
                   </button>
                 </div>
               ))}
@@ -494,16 +637,16 @@ export const GuildView: React.FC = () => {
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-100">{lang === 'id' ? 'Buat Boss Kustom' : 'Create Custom Boss'}</h3>
+              <h3 className="text-lg font-black text-slate-100">{tr('cboss_title')}</h3>
               <button type="button" onClick={() => setBossModal(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
             </div>
             <div>
-              <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'Nama' : 'Name'}</label>
+              <label className="text-xs text-slate-400 font-semibold">{tr('cboss_name')}</label>
               <input value={cbName} onChange={(e) => setCbName(e.target.value)} placeholder="👾 ..."
                 className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
             </div>
             <div>
-              <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'Ikon' : 'Icon'}</label>
+              <label className="text-xs text-slate-400 font-semibold">{tr('cboss_icon')}</label>
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {CUSTOM_BOSS_ICONS.map((ic) => (
                   <button key={ic} type="button" onClick={() => setCbIcon(ic)}
@@ -513,19 +656,19 @@ export const GuildView: React.FC = () => {
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-xs text-slate-400 font-semibold">HP</label>
+                <label className="text-xs text-slate-400 font-semibold">{tr('cboss_hp')}</label>
                 <input type="number" min={100} max={10000} step={100} value={cbHp}
                   onChange={(e) => setCbHp(Math.max(100, Number(e.target.value) || 100))}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
               </div>
               <div>
-                <label className="text-xs text-slate-400 font-semibold">ATK</label>
+                <label className="text-xs text-slate-400 font-semibold">{tr('cboss_atk')}</label>
                 <input type="number" min={1} max={150} value={cbAtk}
                   onChange={(e) => setCbAtk(Math.max(1, Number(e.target.value) || 1))}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
               </div>
               <div>
-                <label className="text-xs text-slate-400 font-semibold">{lang === 'id' ? 'Min. level' : 'Min level'}</label>
+                <label className="text-xs text-slate-400 font-semibold">{tr('cboss_minlvl')}</label>
                 <input type="number" min={1} max={99} value={cbMinLvl}
                   onChange={(e) => setCbMinLvl(Math.max(1, Number(e.target.value) || 1))}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
@@ -533,7 +676,7 @@ export const GuildView: React.FC = () => {
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
               <button type="button" onClick={() => setBossModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">{lang === 'id' ? 'Batal' : 'Cancel'}</button>
+                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">{tr('btn_cancel')}</button>
               <button type="button"
                 onClick={() => {
                   if (!cbName.trim()) return;
@@ -541,8 +684,45 @@ export const GuildView: React.FC = () => {
                   setBossModal(false);
                 }}
                 className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
-                {lang === 'id' ? 'Buat Boss' : 'Create Boss'}
+                {tr('cboss_create')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dialog Guild Chat (parity GuildChatDialog lokal) ── */}
+      {chatOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-100">{tr('guild_chat_title')}</h3>
+              <div className="flex items-center gap-2">
+                {chatIsLeader && (
+                  <button type="button" onClick={doClearGuildChat}
+                    className="text-[11px] px-2 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-rose-300">{tr('chat_clear_all')}</button>
+                )}
+                <button type="button" onClick={closeGuildChat} className="text-slate-400 text-lg leading-none">×</button>
+              </div>
+            </div>
+            <div className="h-72 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-1.5">
+              {guildMsgs.map((m) => (
+                <div key={m.id} className={`text-xs ${m.isSelf ? 'text-amber-200' : 'text-slate-300'}`}>
+                  {tr('guild_chat_message_format', {
+                    time: fmtChatTime(m.createdAt, m.epoch),
+                    name: m.senderName,
+                    message: m.text,
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={chatText} onChange={(e) => setChatText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendGuildChat(); }}
+                placeholder={tr('chat_input_placeholder')}
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100" />
+              <button type="button" onClick={sendGuildChat}
+                className="px-4 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold">{tr('chat_send_btn')}</button>
             </div>
           </div>
         </div>

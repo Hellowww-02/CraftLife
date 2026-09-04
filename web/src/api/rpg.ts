@@ -42,7 +42,7 @@ export const rpg = {
   useClassSkill: () => apiPost<any>('/api/skill/use', {}),
   claimAchievement: (id: string) => apiPost<any>(`/api/achievements/${id}/claim`, {}),
   // ── Phase P1: drag & drop reorder + trash restore ──
-  reorderTasks: (mode: 'habit' | 'daily' | 'todo' | 'quest', items: { id: string; folderId?: string | null }[]) =>
+  reorderTasks: (mode: 'habit' | 'daily' | 'todo' | 'quest' | 'sport', items: { id: string; folderId?: string | null }[]) =>
     apiPost<any>('/api/tasks/reorder', { mode, items }),
   restoreTask: (trashId: string) =>
     apiPost<any>('/api/trash/restore', { trashId }),

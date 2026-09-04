@@ -24,13 +24,16 @@ const expNeeded = (lvl: number) => lvl * 100;
 const buffScale = (lvl: number) => 1 + (lvl - 1) * 0.1;
 
 export const PetsView: React.FC = () => {
-  const { user, userPets, adoptPet, feedPet, trainPet, equipPet, unequipPet, lang } = useGame();
+  const { user, userPets, maxActivePets, adoptPet, feedPet, trainPet, equipPet, unequipPet } = useGame();
   const PETS_DATA = livePets() as Record<string, any>;
 
   const activeCount = userPets.filter((p) => p.isEquipped).length;
   const userLevel = user.level || 1;
-  const maxPets = userLevel >= 25 ? 2 : 1;
-  const statusKey = userLevel >= 25 ? 'pets_max_2' : 'pets_max_1';
+  // P43: slot pet aktif bertingkat — nilai dari backend (db.max_active_pets),
+  // BUKAN dihitung ulang di sini (aturan: rule hanya di database.py).
+  const maxPets = maxActivePets;
+  const statusVars = maxPets >= 2 ? { n: maxPets } : undefined;
+  const statusKey = maxPets >= 2 ? 'pets_max_n' : 'pets_max_1';
 
   const ownedIds = useMemo(() => new Set(userPets.map((p) => p.petId)), [userPets]);
 
@@ -52,7 +55,7 @@ export const PetsView: React.FC = () => {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-center">
             <p className="text-sm font-bold text-amber-200">
               {tr('pets_active_info', {
-                active: activeCount, max: maxPets, level: userLevel, status: tr(statusKey),
+                active: activeCount, max: maxPets, level: userLevel, status: tr(statusKey, statusVars),
               })}
             </p>
           </div>
@@ -144,7 +147,7 @@ export const PetsView: React.FC = () => {
       {/* ── Adoption market (parity ShopPage tab Pets bagian belum dimiliki) ── */}
       <div className="space-y-3 pt-4 border-t border-slate-800">
         <h3 className="font-bold text-sm text-slate-200">
-          {lang === 'id' ? 'Pilihan Pet untuk Diadopsi' : 'Adoption Sanctuary'}
+          {tr('adoption_sanctuary')}
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {Object.entries(PETS_DATA).map(([pid, pet]: [string, any]) => {

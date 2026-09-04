@@ -74,3 +74,5 @@ html.high-contrast .ct-muted { color: var(--ct-text); }
   to { opacity: 1; transform: translateX(0); }
 }
 .ct-slide-in { animation: ct-slide-in-r 0.22s ease-out; }
+.ct-slide-in-r { animation: ct-slide-in-r 0.22s ease-out; }
+.ct-slide-in-l { animation: ct-slide-in-l 0.22s ease-out; }

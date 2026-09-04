@@ -423,10 +423,10 @@ export const NotesView: React.FC<NotesViewProps> = () => {
             <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
               {/* Format toolbar */}
               <div className="flex items-center gap-1.5 flex-wrap border-b border-slate-800 pb-2.5">
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm font-black text-slate-200 hover:bg-slate-700" title="Bold">B</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm italic text-slate-200 hover:bg-slate-700" title="Italic">I</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('underline')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm underline text-slate-200 hover:bg-slate-700" title="Underline">U</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('strikeThrough')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm line-through text-slate-200 hover:bg-slate-700" title="Strike">S</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm font-black text-slate-200 hover:bg-slate-700" title={t('notes_bold', 'Tebal')}>B</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm italic text-slate-200 hover:bg-slate-700" title={t('notes_italic', 'Miring')}>I</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('underline')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm underline text-slate-200 hover:bg-slate-700" title={t('notes_underline', 'Garis bawah')}>U</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('strikeThrough')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm line-through text-slate-200 hover:bg-slate-700" title={t('notes_strike', 'Coret')}>S</button>
                 <select
                   value={fontSize}
                   onChange={(e) => { const v = Number(e.target.value); setFontSize(v); exec('fontSize', String(Math.min(7, Math.max(1, Math.round(v / 4) + 1)))); }}
@@ -446,11 +446,11 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => {
                   const sel = selectionText();
                   if (sel) insertHtmlAtCaret(`<sup>${sel}</sup>`); else insertTextFallback('x²');
-                }} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title="Superscript">x²</button>
+                }} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title={t('notes_superscript', 'Superskrip')}>x²</button>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => {
                   const sel = selectionText();
                   if (sel) insertHtmlAtCaret(`<sub>${sel}</sub>`); else insertTextFallback('x₁');
-                }} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title="Subscript">x₁</button>
+                }} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title={t('notes_subscript', 'Subskrip')}>x₁</button>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={insertFraction} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title={t('notes_fraction', 'Pecahan')}>⅟</button>
 
                 {/* Menu simbol Σ */}
@@ -470,7 +470,7 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                 {/* Menu ∑ LaTeX (parity _latex_menu) */}
                 <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowLatexMenu((s) => !s); setShowSymbols(false); }}
-                    className="px-2.5 py-1.5 rounded-lg bg-indigo-900/60 border border-indigo-500/40 text-sm text-indigo-200 hover:bg-indigo-800/60" title="LaTeX">∑</button>
+                    className="px-2.5 py-1.5 rounded-lg bg-indigo-900/60 border border-indigo-500/40 text-sm text-indigo-200 hover:bg-indigo-800/60" title={t('notes_latex', 'LaTeX')}>∑</button>
                   {showLatexMenu && (
                     <div className="absolute top-full mt-1 left-0 z-30 w-56 bg-slate-900 border border-slate-700 rounded-xl p-1 shadow-2xl text-xs">
                       <button onClick={() => { latexConvertSelection(); setShowLatexMenu(false); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-800 text-slate-200">{t('notes_math_convert_sel', 'Konversi seleksi LaTeX → Unicode')}</button>

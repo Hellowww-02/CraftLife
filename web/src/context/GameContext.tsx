@@ -142,6 +142,7 @@ interface GameContextType {
   updateSportLog: (id: string, body: Record<string, unknown>) => void;
   completeSportLog: (id: string) => void;
   deleteSportLog: (id: string) => void;
+  reorderSportLogs: (ordered: SportLog[]) => void;
 
   // Nutrition & Water
   mealLogs: MealLog[];
@@ -163,6 +164,7 @@ interface GameContextType {
 
   // Pets
   userPets: UserPet[];
+  maxActivePets: number; // P43: slot pet aktif bertingkat (dari backend db.max_active_pets)
   adoptPet: (petId: string, nickname?: string) => boolean;
   feedPet: (petId: string) => void;
   trainPet: (petId: string) => void;
@@ -192,11 +194,11 @@ interface GameContextType {
   withdrawFromSaving: (id: string, amount: number) => void;
   deleteSaving: (id: string) => void;
   investments: InvestmentItem[];
-  addInvestment: (name: string, amount: number, notes?: string) => void;
+  addInvestment: (name: string, amount: number, icon?: string, notes?: string) => void;
   collectInvestmentReturn: (id: string) => void;
   withdrawInvestment: (id: string) => void;
   subscriptions: SubscriptionItem[];
-  addSubscription: (name: string, amount: number, dueDate: string, period?: string) => void;
+  addSubscription: (name: string, amount: number, dueDate: string, period?: string, notes?: string, icon?: string, isRecurring?: boolean) => void;
   renewSubscription: (id: string) => void;
   deleteSubscription: (id: string) => void;
   debtNotes: DebtNote[];
@@ -482,6 +484,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [waterLog, setWaterLog] = useState<WaterLog>(emptyWaterLog);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [userPets, setUserPets] = useState<UserPet[]>([]);
+  const [maxActivePets, setMaxActivePets] = useState<number>(1);
   const [activeBuffs, setActiveBuffs] = useState<string[]>([]);
   const [activeBuffsDetail, setActiveBuffsDetail] = useState<{ key: string; [k: string]: string | number }[]>([]);
   const [activeBoss, setActiveBoss] = useState<Boss | null>(null);
@@ -546,6 +549,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (Array.isArray(data.quests)) setQuests(data.quests);
       if (Array.isArray(data.inventory)) setInventory(data.inventory);
       if (Array.isArray(data.userPets)) setUserPets(data.userPets);
+      if (typeof data.maxActivePets === 'number') setMaxActivePets(data.maxActivePets);
       if (Array.isArray(data.achievements)) setAchievements(data.achievements);
       if (Array.isArray(data.activeBuffs)) setActiveBuffs(data.activeBuffs);
       if (Array.isArray(data.activeBuffsDetail)) setActiveBuffsDetail(data.activeBuffsDetail);
@@ -674,6 +678,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (Array.isArray(res.quests)) setQuests(res.quests);
     if (Array.isArray(res.inventory)) setInventory(res.inventory);
     if (Array.isArray(res.userPets)) setUserPets(res.userPets);
+    if (typeof res.maxActivePets === 'number') setMaxActivePets(res.maxActivePets);
     if (Array.isArray(res.activeBuffs)) setActiveBuffs(res.activeBuffs);
     if (Array.isArray(res.activeBuffsDetail)) setActiveBuffsDetail(res.activeBuffsDetail);
     if (Array.isArray(res.achievements) && res.achievements.length) setAchievements(res.achievements);
@@ -989,6 +994,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } else if (mode === 'daily') {
       setDailies((prev) => prev.map((d) => (d.id === id ? { ...d, folderId: fid } : d)));
       rpg.reorderTasks('daily', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(notifyApiErr);
+    } else if (mode === 'sport') {
+      setSportLogs((prev) => prev.map((s) => (s.id === id ? { ...s, folderId: fid } : s)));
+      rpg.reorderTasks('sport', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(notifyApiErr);
     } else {
       setQuests((prev) => prev.map((q) => (q.id === id ? { ...q, folderId: fid } : q)));
       rpg.reorderTasks('quest', [{ id, folderId: fid }]).then((res) => applyLive(res)).catch(notifyApiErr);
@@ -1025,6 +1033,12 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteSportLog = useCallback((id: string) => {
     life.deleteSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive])
+
+  const reorderSportLogs = useCallback((ordered: SportLog[]) => {
+    setSportLogs(ordered);
+    rpg.reorderTasks('sport', ordered.map((s) => ({ id: s.id, folderId: s.folderId })))
+      .then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   // Nutrition
@@ -1069,9 +1083,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive])
 
   const craftItem = useCallback((recipeResultId: string): boolean => {
-    rpg.craftItem(recipeResultId).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
+    rpg.craftItem(recipeResultId).then((res) => applyLive(res)).catch(notifyApiErr);
     return true;
-  }, [applyLive, showToast])
+  }, [applyLive, notifyApiErr])
 
   const enchantItem = useCallback((itemId: string) => {
     rpg.enchantItem(itemId).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
@@ -1162,8 +1176,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const deleteSaving = useCallback((id: string) => {
     life.deleteSaving(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
-  const addInvestment = useCallback((name: string, amount: number, notes?: string) => {
-    life.addInvestment({ name, amount, notes }).then((res) => applyLive(res)).catch(notifyApiErr);
+  const addInvestment = useCallback((name: string, amount: number, icon?: string, notes?: string) => {
+    life.addInvestment({ name, amount, icon: icon || '📈', notes }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const collectInvestmentReturn = useCallback((id: string) => {
     life.investmentReturn(id).then((res) => applyLive(res)).catch(notifyApiErr);
@@ -1171,8 +1185,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const withdrawInvestment = useCallback((id: string) => {
     life.withdrawInvestment(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
-  const addSubscription = useCallback((name: string, amount: number, dueDate: string, period?: string) => {
-    life.addSubscription({ name, amount, dueDate, period: period || 'monthly' }).then((res) => applyLive(res)).catch(notifyApiErr);
+  const addSubscription = useCallback((name: string, amount: number, dueDate: string, period?: string, notes?: string, icon?: string, isRecurring?: boolean) => {
+    life.addSubscription({ name, amount, dueDate, period: period || 'monthly', notes, icon: icon || '📅', isRecurring }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
   const renewSubscription = useCallback((id: string) => {
     life.renewSubscription(id).then((res) => applyLive(res)).catch(notifyApiErr);
@@ -1439,8 +1453,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Love Space Actions
   const updateLoveSpace = useCallback((updates: Partial<LoveSpaceData>) => {
-    studio.updateLove(updates as Record<string, unknown>).then((res) => applyLive(res)).catch(notifyApiErr);
-  }, [applyLive])
+    studio.updateLove(updates as Record<string, unknown>)
+      .then((res) => {
+        applyLive(res);
+        // Endpoint profile tidak mengembalikan snapshot loveSpace → refresh
+        // supaya hero/profile menampilkan data terbaru (parity LovePage.load()).
+        return studio.love().then((l) => {
+          if (l?.loveSpace) setLoveSpace((prev) => ({ ...prev, ...l.loveSpace }));
+        }).catch(() => undefined);
+      })
+      .catch(notifyApiErr);
+  }, [applyLive, setLoveSpace, notifyApiErr])
 
   const addLoveMemory = useCallback((title: string, date: string, description: string, emoji: string) => {
     studio.addMemory(title, date, description, emoji).then((res) => applyLive(res)).catch(notifyApiErr);
@@ -1778,6 +1801,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateSportLog,
         completeSportLog,
         deleteSportLog,
+        reorderSportLogs,
         mealLogs,
         addMealLog,
         deleteMealLog,
@@ -1793,6 +1817,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         craftItem,
         enchantItem,
         userPets,
+        maxActivePets,
         adoptPet,
         feedPet,
         trainPet,

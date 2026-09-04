@@ -30,6 +30,7 @@ export const studio = {
     apiPost<any>('/api/music/play', { path, title, artist }),
   createPlaylist: (name: string) => apiPost<any>('/api/music/playlists', { name }),
   updateLove: (updates: Record<string, unknown>) => apiPost<any>('/api/love/profile', updates),
+  loveCoupleTracking: () => apiGet<any>('/api/love/couple-tracking'),
   addMemory: (title: string, date: string, description: string, emoji?: string) =>
     apiPost<any>('/api/love/memories', { title, date, description, emoji }),
   toggleBucket: (id: string) => apiPost<any>(`/api/love/bucket/${id}/toggle`, {}),
@@ -37,6 +38,9 @@ export const studio = {
   sendChat: (text: string, otherId?: string) =>
     apiPost<any>('/api/social/messages', { text, otherId }),
   sendGuild: (text: string) => apiPost<any>('/api/guild/messages', { text }),
+  // Parity GuildChatDialog._load_messages (guild lokal): daftar pesan + isLeader.
+  guildChat: (limit = 100) =>
+    apiGet<any>(`/api/guild/messages` + (limit ? `?limit=${limit}` : '')),
   attackGuildBoss: (action: 'light' | 'heavy' | 'block' | 'ultimate' = 'light') =>
     apiPost<any>('/api/guild/boss/attack', { action }),
   startGuildBoss: (bossId: string, teamIds?: string[]) =>
@@ -59,19 +63,40 @@ export const studio = {
   acceptGuildTransfer: (transferId: string) => apiPost<any>('/api/guild/accept-transfer', { transferId }),
   guildDescription: (description: string) => apiPost<any>('/api/guild/description', { description }),
   clearGuildChat: () => apiPost<any>('/api/guild/clear-chat', {}),
-  // ── Friends chat lokal (parity ChatDialog) ──────────────────────────────
-  friendChat: (friendId: number | string, limit = 100) =>
+  // ── Friends chat (parity ChatDialog hybrid: cloud Supabase / local) ─────
+  friendChat: (friendId: number | string, limit = 50) =>
     apiGet<any>(`/api/friends/${friendId}/chat` + (limit ? `?limit=${limit}` : '')),
-  sendFriendChat: (friendId: number | string, text: string, replyToId?: string | number | null) =>
-    apiPost<any>(`/api/friends/${friendId}/chat`, { text, replyToId: replyToId || null }),
+  sendFriendChat: (
+    friendId: number | string,
+    text: string,
+    replyToId?: string | number | null,
+    attachmentIds: (string | number)[] = [],
+  ) => apiPost<any>(`/api/friends/${friendId}/chat`, { text, replyToId: replyToId || null, attachmentIds }),
   clearFriendChat: (friendId: number | string) =>
     apiPost<any>(`/api/friends/${friendId}/clear`, {}),
-  editFriendMessage: (mid: string | number, text: string) =>
-    apiPost<any>(`/api/friends/messages/${mid}/edit`, { text }),
-  deleteFriendMessage: (mid: string | number) =>
-    apiPost<any>(`/api/friends/messages/${mid}/delete`, {}),
-  reactFriendMessage: (mid: string | number, reaction: string | null) =>
-    apiPost<any>(`/api/friends/messages/${mid}/reaction`, { reaction }),
+  friendChatAttachment: async (file: File) => {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('read_failed'));
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        const comma = result.indexOf(',');
+        resolve(comma >= 0 ? result.slice(comma + 1) : result);
+      };
+      reader.readAsDataURL(file);
+    });
+    return apiPost<any>('/api/friends/chat/attachment', { name: file.name, dataBase64 });
+  },
+  discardFriendAttachments: (ids: (string | number)[]) =>
+    apiPost<any>('/api/friends/chat/attachments/discard', { ids }),
+  friendTyping: (friendId: number | string, isTyping: boolean) =>
+    apiPost<any>(`/api/friends/${friendId}/typing`, { isTyping }),
+  editFriendMessage: (mid: string | number, text: string, cloud = false) =>
+    apiPost<any>(`/api/friends/messages/${mid}/edit`, { text, cloud }),
+  deleteFriendMessage: (mid: string | number, cloud = false) =>
+    apiPost<any>(`/api/friends/messages/${mid}/delete`, { cloud }),
+  reactFriendMessage: (mid: string | number, reaction: string | null, cloud = false) =>
+    apiPost<any>(`/api/friends/messages/${mid}/reaction`, { reaction, cloud }),
   customBoss: (body: Record<string, unknown>) => apiPost<any>('/api/guild/custom-boss', body),
   endCouple: () => apiPost<any>('/api/couple/end', {}),
   coupleRequest: (friendId: string) => apiPost<any>('/api/couple/request', { friendId }),
@@ -140,9 +165,9 @@ export const studio = {
   musicLibrary: () => apiGet<any>('/api/music/library'),
   addPlaylistTrack: (playlistId: string | number, path: string) =>
     apiPost<any>('/api/music/playlist-track', { playlistId, path }),
-  // Lyrics (3-provider: LRCLIB get/search + lyrics.ovh) — parity dengan _LyricsFetcher PyQt
-  musicLyrics: (artist: string, title: string) =>
-    apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}`),
+  // Lyrics (LRCLIB get/search multi-varian + lyrics.ovh + embedded) — parity _LyricsFetcher PyQt
+  musicLyrics: (artist: string, title: string, path = '') =>
+    apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&path=${encodeURIComponent(path)}`),
   uploadMusicFile: async (file: File) => {
     // Parity MusicPage._add_files/_select_folder: file masuk folder library
     // musik server lalu direferensikan playlist berdasar path absolut.

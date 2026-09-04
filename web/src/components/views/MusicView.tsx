@@ -145,6 +145,23 @@ export const MusicView: React.FC = () => {
     setActiveLyricLine(-1);
   }, [syncedLines]);
 
+  // Auto-scroll garis aktif ke tengah panel (parity _update_synced_lyric → ensureCursorVisible)
+  const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
+  const lyricLineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
+  useEffect(() => {
+    if (activeLyricLine < 0) return;
+    const el = lyricLineRefs.current[activeLyricLine];
+    const box = lyricsScrollRef.current;
+    if (el && box) {
+      const elTop = el.getBoundingClientRect().top;
+      const boxTop = box.getBoundingClientRect().top;
+      box.scrollTo({
+        top: box.scrollTop + (elTop - boxTop) - box.clientHeight / 2 + el.clientHeight / 2,
+        behavior: 'smooth',
+      });
+    }
+  }, [activeLyricLine]);
+
   const activePlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
   const activeTracks = activePlaylist?.tracks || [];
 
@@ -216,7 +233,7 @@ export const MusicView: React.FC = () => {
     setProgressMs(0);
     setDurationMs(0);
     studio.logMusic(entry.path, entry.title || entry.name, entry.artist || '').then(() => refreshMusic()).catch(() => {});
-    loadLyrics(entry.artist || '', entry.title || entry.name);
+    loadLyrics(entry.artist || '', entry.title || entry.name, entry.path || '');
     showToast('info', tr('music_now_playing'), entry.title || entry.name);
   };
 
@@ -323,13 +340,13 @@ export const MusicView: React.FC = () => {
   };
 
   // ── Lyrics (parity _load_lyrics) ──────────────────────────────────────────
-  const loadLyrics = useCallback((artist: string, title: string) => {
+  const loadLyrics = useCallback((artist: string, title: string, path: string) => {
     if (!title) return;
     setLyricsLoading(true);
     setLyrics({ plain: '', synced: '' });
     setLyricsSource('');
-    studio.musicLyrics(artist || '', title).then((res) => {
-      const d = res?.result || res || {};
+    studio.musicLyrics(artist || '', title, path || '').then((res) => {
+      const d = res?.lyrics || res?.result || res || {};
       const plain = typeof d.plain === 'string' ? d.plain : (typeof d.lyrics === 'string' ? d.lyrics : '');
       const synced = typeof d.synced === 'string' ? d.synced : '';
       setLyrics({ plain, synced });
@@ -341,7 +358,7 @@ export const MusicView: React.FC = () => {
   const toggleLyrics = () => {
     setLyricsOpen((o) => {
       const next = !o;
-      if (next && playingFile) loadLyrics(playingFile.artist || '', playingFile.title || playingFile.name);
+      if (next && playingFile) loadLyrics(playingFile.artist || '', playingFile.title || playingFile.name, playingFile.path || '');
       return next;
     });
   };
@@ -586,21 +603,31 @@ export const MusicView: React.FC = () => {
 
         {/* ── Lyrics drawer (parity musicLyricsPanel) ── */}
         {lyricsOpen && (
-          <div className="w-72 shrink-0 border-l border-slate-800/70 p-5 bg-[#181818] space-y-3 overflow-y-auto">
-            <div className="text-white text-sm font-black">{tr('music_lyrics')}</div>
+          <div ref={lyricsScrollRef} className="w-80 shrink-0 border-l border-slate-800/70 p-5 bg-[#181818] overflow-y-auto">
+            <div className="text-white text-sm font-black mb-3">{tr('music_lyrics')}</div>
             <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
-              {lyricsLoading ? <span className="text-slate-500">{tr('music_lyrics_searching')}</span>
-                : (syncedLines.length ? (
+              {lyricsLoading ? (
+                <span className="text-slate-500">{tr('music_lyrics_searching')}</span>
+              ) : syncedLines.length ? (
+                <>
+                  <div className="text-[#1ed760] font-bold text-[11px] uppercase tracking-wide mb-2">{tr('music_lyrics_from_web')}</div>
                   <div className="space-y-1.5">
                     {syncedLines.map((ln, i) => (
-                      <p key={i} className={`transition-all duration-200 ${i === activeLyricLine ? 'text-white font-bold' : 'text-slate-500'}`}>{ln.text}</p>
+                      <p key={i} ref={(el) => { lyricLineRefs.current[i] = el; }}
+                        className={`transition-all duration-200 leading-snug ${i === activeLyricLine ? 'text-white font-bold text-[13px]' : 'text-slate-500'}`}>
+                        <span className="mr-1.5 font-mono text-[10px] text-slate-600 tabular-nums">{fmtTime(ln.ms)}</span>{ln.text}
+                      </p>
                     ))}
                   </div>
-                ) : (lyrics.plain ? (
-                  <span>{lyricsSource ? tr('music_lyrics_from_web') : ''}<span className="block pt-2">{lyrics.plain}</span></span>
-                ) : (
-                  <span className="text-slate-500 italic">{tr('music_no_lyrics')}</span>
-                )))}
+                </>
+              ) : lyrics.plain ? (
+                <>
+                  <div className="text-[#1ed760] font-bold text-[11px] uppercase tracking-wide mb-2">{lyricsSource === 'embedded' ? tr('music_lyrics_from_file') : tr('music_lyrics_from_web')}</div>
+                  <span>{lyrics.plain}</span>
+                </>
+              ) : (
+                <span className="text-slate-500 italic">{tr('music_no_lyrics')}</span>
+              )}
             </div>
           </div>
         )}

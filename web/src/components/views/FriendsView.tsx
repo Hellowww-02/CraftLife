@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
+import { apiGetBlob } from '../../api/client';
 import { t } from '../../i18n';
+import { fmtChatTime } from '../../utils/serverTime';
 import { Send } from 'lucide-react';
 
 const tr = (key: string, vars?: Record<string, string | number>) => {
@@ -21,7 +23,7 @@ export const FriendsView: React.FC = () => {
     user, friends, friendRequests, pvpChallenges,
     sendFriendRequest, acceptFriendRequest, rejectFriendRequest,
     sendPvpChallenge, respondPvpChallenge, claimPvPReward,
-    refreshSocial, lang, showToast, applyLive, clockNow,
+    refreshSocial, showToast, applyLive, clockNow,
   } = useGame();
 
   const [friendName, setFriendName] = useState('');
@@ -30,13 +32,20 @@ export const FriendsView: React.FC = () => {
   const [chatWith, setChatWith] = useState<any | null>(null);
   const [chatMsgs, setChatMsgs] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
-  const [chatLimit, setChatLimit] = useState(100);
+  const [chatLimit, setChatLimit] = useState(50);
+  const [chatCloudMode, setChatCloudMode] = useState(false);
+  const [friendTyping, setFriendTyping] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<any[]>([]);
   const [selectedMsg, setSelectedMsg] = useState<any | null>(null);
   const [replyTarget, setReplyTarget] = useState<any | null>(null);
   const [editingMsg, setEditingMsg] = useState<any | null>(null);
   const [editText, setEditText] = useState('');
   const [tick, setTick] = useState(0);
   const chatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingClear = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const chatListRef = useRef<HTMLDivElement | null>(null);
 
   const reload = () => { refreshSocial(); setTick((x) => x + 1); };
   useEffect(() => {
@@ -66,16 +75,26 @@ export const FriendsView: React.FC = () => {
     studio.friendChat(f.id, limit)
       .then((d) => {
         setChatMsgs(Array.isArray(d?.messages) ? d.messages : []);
+        setChatCloudMode(!!d?.cloudMode);
+        setFriendTyping(!!d?.friendTyping);
         reload();
       })
       .catch(() => setChatMsgs([]));
   };
+  const discardPending = () => {
+    if (pendingAttachments.length) {
+      studio.discardFriendAttachments(pendingAttachments.map((a) => a.id)).catch(() => undefined);
+    }
+    setPendingAttachments([]);
+  };
   const openChat = (f: any) => {
     setChatWith(f);
-    setChatLimit(100);
+    setChatLimit(50);
     setSelectedMsg(null);
     setReplyTarget(null);
     setEditingMsg(null);
+    setPendingAttachments([]);
+    setFriendTyping(false);
     fetchChat(f);
     // PyQt: QTimer 3 detik refresh pesan saat dialog aktif.
     if (chatTimer.current) clearInterval(chatTimer.current);
@@ -83,21 +102,39 @@ export const FriendsView: React.FC = () => {
   };
   const closeChat = () => {
     if (chatTimer.current) { clearInterval(chatTimer.current); chatTimer.current = null; }
+    if (typingDebounce.current) { clearTimeout(typingDebounce.current); typingDebounce.current = null; }
+    if (typingClear.current) { clearTimeout(typingClear.current); typingClear.current = null; }
+    discardPending();
     setChatWith(null);
   };
-  useEffect(() => () => { if (chatTimer.current) clearInterval(chatTimer.current); }, []);
+  useEffect(() => () => {
+    if (chatTimer.current) clearInterval(chatTimer.current);
+    if (typingDebounce.current) clearTimeout(typingDebounce.current);
+    if (typingClear.current) clearTimeout(typingClear.current);
+  }, []);
+
+  // Auto-scroll ke bawah saat pesan baru (parity scrollToBottom ChatDialog).
+  useEffect(() => {
+    const el = chatListRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatMsgs]);
 
   const sendChat = () => {
     const text = chatInput.trim();
-    if (!text || !chatWith) return;
+    const attIds = pendingAttachments.map((a) => a.id);
+    if ((!text && !attIds.length) || !chatWith) return;
     const replyId = replyTarget?.id || null;
     setChatInput('');
+    const tmpAtts = pendingAttachments;
     setChatMsgs((prev) => [...prev, {
       id: `tmp-${Date.now()}`, text, isSelf: true, senderId: String(user.id ?? ''),
-      createdAt: (clockNow() ?? new Date()).toISOString(), replyToId: replyId, reactions: {},
+      createdAt: (clockNow() ?? new Date()).toISOString(), replyToId: replyId,
+      reactions: {}, attachments: tmpAtts, syncStatus: 'pending',
     }]);
     setReplyTarget(null);
-    studio.sendFriendChat(chatWith.id, text, replyId)
+    setPendingAttachments([]);
+    setFriendTyping(false);
+    studio.sendFriendChat(chatWith.id, text, replyId, attIds)
       .then(() => fetchChat(chatWith))
       .catch((e) => showToast('info', String(e?.message || e), ''));
   };
@@ -105,29 +142,94 @@ export const FriendsView: React.FC = () => {
   const doClearChat = () => {
     if (!chatWith) return;
     if (!window.confirm(tr('chat_clear_confirm_self'))) return;
-    studio.clearFriendChat(chatWith.id).then(() => fetchChat(chatWith)).catch(() => undefined);
+    studio.clearFriendChat(chatWith.id)
+      .then((r) => {
+        const m = r?.result || r;
+        if (m?.ok === false && m?.msg) showToast('info', tr(m.msg), '');
+        fetchChat(chatWith);
+      })
+      .catch(() => undefined);
   };
 
   const doDeleteMsg = () => {
     if (!selectedMsg?.id || String(selectedMsg.id).startsWith('tmp-')) return;
+    if (selectedMsg.syncStatus === 'pending') {
+      showToast('info', tr('chat_pending_action_blocked'), '');
+      return;
+    }
     if (!window.confirm(tr('chat_delete_confirm'))) return;
-    studio.deleteFriendMessage(selectedMsg.id)
+    studio.deleteFriendMessage(selectedMsg.id, chatCloudMode)
       .then(() => { setSelectedMsg(null); fetchChat(chatWith); })
       .catch(() => undefined);
   };
 
   const doReact = (emoji: string | null) => {
     if (!selectedMsg?.id || String(selectedMsg.id).startsWith('tmp-')) return;
-    studio.reactFriendMessage(selectedMsg.id, emoji)
+    if (selectedMsg.syncStatus === 'pending') {
+      showToast('info', tr('chat_pending_action_blocked'), '');
+      return;
+    }
+    studio.reactFriendMessage(selectedMsg.id, emoji, chatCloudMode)
       .then(() => { setSelectedMsg(null); fetchChat(chatWith); })
       .catch(() => undefined);
   };
 
   const doSaveEdit = () => {
     if (!editingMsg || !editText.trim()) return;
-    studio.editFriendMessage(editingMsg.id, editText.trim())
+    if (editingMsg.syncStatus === 'pending') {
+      showToast('info', tr('chat_pending_action_blocked'), '');
+      return;
+    }
+    studio.editFriendMessage(editingMsg.id, editText.trim(), chatCloudMode)
       .then(() => { setEditingMsg(null); fetchChat(chatWith); })
       .catch((e) => showToast('info', String(e?.message || e), ''));
+  };
+
+  const doDownloadAttachment = (att: any) => {
+    if (!att?.id) return;
+    apiGetBlob(`/api/friends/attachments/${att.id}/download`, att.originalFilename || 'attachment')
+      .then(({ blob, name }) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        showToast('success', tr('chat_attachment_saved'), '');
+      })
+      .catch(() => showToast('info', tr('chat_attachment_not_cached'), ''));
+  };
+
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    const remaining = 5 - pendingAttachments.length;
+    if (remaining <= 0) { showToast('info', tr('chat_attachment_max'), ''); return; }
+    for (const file of files.slice(0, remaining)) {
+      try {
+        const r = await studio.friendChatAttachment(file);
+        const att = r?.result?.attachment || r?.attachment;
+        if (att) setPendingAttachments((prev) => [...prev, att]);
+      } catch (err) {
+        showToast('info', String((err as any)?.message || err), '');
+      }
+    }
+  };
+
+  const onChatInputChange = (v: string) => {
+    setChatInput(v);
+    if (!chatCloudMode || !chatWith) return;
+    if (typingDebounce.current) clearTimeout(typingDebounce.current);
+    if (typingClear.current) clearTimeout(typingClear.current);
+    typingDebounce.current = setTimeout(() => {
+      studio.friendTyping(chatWith.id, !!v.trim()).catch(() => undefined);
+    }, 500);
+    typingClear.current = setTimeout(() => {
+      studio.friendTyping(chatWith.id, false).catch(() => undefined);
+    }, 4500);
   };
 
   const reactionText = (reactions: Record<string, string> | undefined) => {
@@ -290,7 +392,7 @@ export const FriendsView: React.FC = () => {
                     {it.status === 'completed' && (
                       <button type="button" onClick={() => claimPvPReward(it.id)}
                         className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
-                        {lang === 'id' ? 'Klaim' : 'Claim'}
+                        {tr('claim')}
                       </button>
                     )}
                   </>
@@ -301,7 +403,7 @@ export const FriendsView: React.FC = () => {
         })()}
       </section>
 
-      {/* ── ChatDialog parity (select → aksi bar, reply label, reactions) ── */}
+      {/* ── ChatDialog parity (select → aksi bar, reply label, reactions, attachments) ── */}
       {chatWith && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-2">
@@ -313,18 +415,23 @@ export const FriendsView: React.FC = () => {
                 <button type="button" onClick={closeChat} className="text-slate-400 text-lg leading-none">×</button>
               </div>
             </div>
-            {/* earlier (parity _load_earlier) */}
+            {/* typing indicator (parity typing_label, cloud only) */}
+            {friendTyping && (
+              <div className="text-[10px] italic text-slate-400">✍️ {tr('cloud_chat_typing')}</div>
+            )}
+            {/* earlier (parity _load_earlier: +50/page) */}
             <div className="text-center">
-              <button type="button" onClick={() => { const nl = chatLimit + 100; setChatLimit(nl); fetchChat(chatWith, nl); }}
+              <button type="button" onClick={() => { const nl = chatLimit + 50; setChatLimit(nl); fetchChat(chatWith, nl); }}
                 className="text-[11px] text-sky-400 hover:text-sky-300">
-                {lang === 'id' ? 'Muat pesan lebih lama' : 'Load earlier messages'}
+                {tr('chat_load_earlier')}
               </button>
             </div>
-            <div className="h-64 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2">
+            <div ref={chatListRef} className="h-64 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 p-3 space-y-2">
               {chatMsgs.map((m) => {
                 const deleted = !!m.deletedAt;
                 const body = deleted ? tr('chat_message_deleted') : m.text;
                 const flagEdited = m.editedAt && !deleted;
+                const flagPending = m.syncStatus === 'pending' && !deleted;
                 const replyTo = m.replyToId ? chatMsgs.find((x) => String(x.id) === String(m.replyToId)) : null;
                 const replyBody = m.replyToId
                   ? (replyTo ? (replyTo.deletedAt ? tr('chat_message_deleted') : (replyTo.text || '')) : tr('chat_reply_unavailable'))
@@ -335,13 +442,30 @@ export const FriendsView: React.FC = () => {
                     className={`text-xs cursor-pointer rounded-lg px-1.5 py-1 ${m.isSelf ? 'text-right' : ''} ${selectedMsg?.id === m.id ? 'bg-slate-800/80' : ''}`}>
                     <div className="text-[9px] text-slate-500">
                       {m.isSelf ? tr('chat_you') : tr('chat_friend')}
-                      {' · '}{(m.createdAt || '').slice(11, 16)}
+                      {' · '}{fmtChatTime(m.createdAt, m.epoch)}
                       {flagEdited ? ` · ${tr('chat_edited')}` : ''}
+                      {flagPending ? ` · ${tr('chat_pending')}` : ''}
                     </div>
                     {m.replyToId ? (
                       <div className="text-[10px] text-slate-500 italic">↪ {replyBody.slice(0, 90)}</div>
                     ) : null}
                     <div className={deleted ? 'text-slate-600 italic' : m.isSelf ? 'text-amber-200' : 'text-slate-300'}>{body}</div>
+                    {(m.attachments || []).length > 0 && !deleted && (
+                      <div className="mt-1 space-y-1">
+                        {(m.attachments || []).map((a: any) => (
+                          <div key={a.id} className={m.isSelf ? 'text-right' : ''}>
+                            {a.thumbnailData ? (
+                              <img
+                                src={`data:${a.mimeType || 'image/webp'};base64,${a.thumbnailData}`}
+                                alt={a.originalFilename || ''}
+                                className="inline-block w-24 h-24 object-cover rounded-lg border border-slate-700"
+                              />
+                            ) : null}
+                            <div className="text-[9px] text-slate-400">📎 {a.originalFilename} ({(Number(a.sizeBytes || 0) / 1024).toFixed(1)} KB)</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {!!reactionText(m.reactions) && (
                       <div className="text-[10px] text-slate-400">{reactionText(m.reactions)}</div>
                     )}
@@ -350,7 +474,7 @@ export const FriendsView: React.FC = () => {
               })}
             </div>
 
-            {/* Action bar (parity actions: reply/edit/delete/react/remove) */}
+            {/* Action bar (parity actions: reply/edit/delete/react/remove/download) */}
             {selectedMsg && !selectedMsg.deletedAt && (
               <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-2">
                 <button type="button" onClick={() => { setReplyTarget(selectedMsg); setSelectedMsg(selectedMsg); }}
@@ -363,6 +487,11 @@ export const FriendsView: React.FC = () => {
                       className="px-2 py-1 rounded-lg bg-rose-900/60 text-rose-200 text-[11px] font-bold">{tr('chat_delete_message')}</button>
                   </>
                 )}
+                {(selectedMsg.attachments || []).map((a: any) => (
+                  <button key={a.id} type="button" onClick={() => doDownloadAttachment(a)}
+                    title={tr('chat_download_attachment')}
+                    className="px-2 py-1 rounded-lg bg-slate-700 text-slate-100 text-[11px] font-bold">📎</button>
+                ))}
                 <div className="flex gap-0.5">
                   {REACTIONS.map((e) => (
                     <button key={e} type="button" onClick={() => doReact(e)}
@@ -396,9 +525,23 @@ export const FriendsView: React.FC = () => {
               </div>
             )}
 
+            {/* Pending attachments (parity attachment_label) */}
+            {pendingAttachments.length > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-[10px] text-slate-400">
+                <span className="truncate">{tr('chat_attachments_ready', { files: pendingAttachments.map((a) => a.originalFilename).join(', ') })}</span>
+                <button type="button" onClick={discardPending} className="text-slate-500">×</button>
+              </div>
+            )}
+
+            <input ref={fileRef} type="file" multiple accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,.docx,.xlsx,.pptx"
+              onChange={onPickFiles} className="hidden" />
             <div className="flex gap-2">
-              <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+              <button type="button" title={tr('chat_choose_attachment')}
+                onClick={() => fileRef.current?.click()}
+                className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-sm">📎</button>
+              <input value={chatInput} onChange={(e) => onChatInputChange(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
+                placeholder={tr('chat_input_placeholder')}
                 className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100" />
               <button type="button" onClick={sendChat} className="px-3 py-2 rounded-xl bg-sky-600 text-white">
                 <Send className="w-4 h-4" />

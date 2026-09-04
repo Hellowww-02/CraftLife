@@ -28,27 +28,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAchievements,
   onOpenPalette,
 }) => {
-  const { user, lang, setLang, achievements, clockNow, today, serverNow, activeBuffs, activeBuffsDetail } = useGame();
+  const { user, lang, setLang, achievements, clockNow, today, activeBuffs, activeBuffsDetail } = useGame();
   const [notifOpen, setNotifOpen] = useState(false);
 
-  // ── Digital clock (parity TopBar._update_time + TimeSync): jam berjalan maju
-  //    tiap detik dengan basis waktu server (bukan zona/clock browser). ──
-  const tzMin = serverNow?.tzOffsetMin ?? 0;
+  // ── Digital clock (parity TopBar._update_time): jam berjalan maju tiap detik.
+  //    Ditampilkan dalam ZONA LOKASI USER (browser), bukan zona server — karena
+  //    timezone harus mengikuti lokasi user. clockNow() memberi instan UTC yang
+  //    sinkron dgn server; field .getHours() dst. dibaca di zona browser user. ──
   const [clockTick, setClockTick] = useState('--:--:--');
   useEffect(() => {
+    const pad = (n: number) => String(n).padStart(2, '0');
     const renderClock = () => {
       const d = clockNow();
       if (!d) { setClockTick('--:--:--'); return; }
-      // Wall-clock server = instan server + tz offset (Asia/Jakarta). Dibaca via
-      // getUTC* karena ms tersebut merepresentasikan waktu dinding server.
-      const wall = new Date(d.getTime() + (tzMin * 60000));
-      setClockTick(wall.toISOString().slice(11, 19));
+      setClockTick(`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`);
     };
     renderClock();
     const t = window.setInterval(renderClock, 1000);
     return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clockNow, tzMin]);
+  }, [clockNow]);
   const [notifs, setNotifs] = useState<{ id: string; message: string; type: string; isRead: boolean; createdAt: string }[]>([]);
   const loadNotifs = () => {
     studio.notifications().then((d) => {
@@ -67,6 +66,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   const hpPercentage = Math.max(0, Math.min(100, Math.round((user.hp / user.maxHp) * 100)));
   const mpPercentage = Math.max(0, Math.min(100, Math.round((user.mp / user.maxMp) * 100)));
   const xpPercentage = Math.max(0, Math.min(100, Math.round((user.xp / user.xpToNextLevel) * 100)));
+
+  // Daftar buff aktif (parity ShopPage._buff_bar): prefer detail terstruktur, fallback string.
+  const buffChips: { key: string; label: string }[] =
+    activeBuffsDetail.length > 0
+      ? activeBuffsDetail.map((b, i) => ({ key: `buff-${i}`, label: tr(b.key, b) }))
+      : activeBuffs.map((s, i) => ({ key: `buffs-${i}`, label: s }));
+  const hasBuffs = buffChips.length > 0;
 
   return (
     <header className="shrink-0 z-30 ct-surface-solid backdrop-blur-md border-b ct-border px-4 py-2.5">
@@ -141,7 +147,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Center: XP Progress Bar (Desktop) */}
-        <div className="hidden lg:flex flex-col items-center justify-center min-w-[200px] max-w-xs">
+        <div className="hidden lg:flex flex-col items-center justify-center min-w-[220px] max-w-md flex-1">
           <div className="flex items-center justify-between w-full text-[10px] font-semibold text-slate-300 mb-0.5">
             <span className="text-amber-300">{tr('nav_level_progress', { level: user.level })}</span>
             <span className="text-slate-400">{user.xp} / {user.xpToNextLevel} ({xpPercentage}%)</span>
@@ -151,30 +157,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-300 rounded-full"
               style={{ width: `${xpPercentage}%` }}
             />
-          </div>
-
-          {/* Active Buffs (P30 parity ShopPage._buff_bar: seluruh buff aktif user) */}
-          <div className="flex flex-wrap items-center justify-center gap-1 mt-1 max-w-2xl">
-            {activeBuffsDetail.length > 0 ? (
-              activeBuffsDetail.map((b, i) => (
-                <span
-                  key={`buff-${i}`}
-                  title={tr(b.key, b)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap"
-                >
-                  {tr(b.key, b)}
-                </span>
-              ))
-            ) : activeBuffs.length > 0 ? (
-              activeBuffs.map((s, i) => (
-                <span
-                  key={`buffs-${i}`}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap"
-                >
-                  {s}
-                </span>
-              ))
-            ) : null}
           </div>
         </div>
 
@@ -187,12 +169,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>{(user.gold ?? 0).toLocaleString()}</span>
           </div>
 
-          {/* Buff count (mobile-only; daftar lengkap tampil di center pada desktop) */}
+          {/* Buff count (mobile-only; daftar lengkap tampil di strip bawah pada desktop) */}
           <span
             className="lg:hidden px-2 py-1 rounded-xl bg-slate-800 text-[10px] font-bold text-slate-300 border border-slate-700/60"
-            title={(activeBuffsDetail.length ? activeBuffsDetail.map((b) => tr(b.key, b)) : activeBuffs).join(' · ') || t('buff_bar_empty', 'No active buffs.')}
+            title={buffChips.map((b) => b.label).join(' · ') || t('buff_bar_empty', 'No active buffs.')}
           >
-            ⚡{activeBuffsDetail.length || activeBuffs.length}
+            ⚡{buffChips.length}
           </span>
 
           {/* Digital clock + date (parity TimeSync / TopBar chip_time) */}
@@ -252,6 +234,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Active Buffs — strip lebar penuh, tersebar rata kanan–kiri
+          (parity ShopPage._buff_bar: seluruh buff aktif user). */}
+      {hasBuffs && (
+        <div className="hidden lg:flex flex-wrap items-center justify-evenly gap-x-2 gap-y-1.5 pt-2 mt-2 border-t border-slate-800/70">
+          {buffChips.map((b) => (
+            <span
+              key={b.key}
+              title={b.label}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap"
+            >
+              {b.label}
+            </span>
+          ))}
+        </div>
+      )}
     </header>
   );
 };

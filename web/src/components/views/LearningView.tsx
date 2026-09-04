@@ -97,7 +97,7 @@ const MindMapView: React.FC<{ raw: unknown; lang: string; fontSize: number }> = 
     <div className="bg-slate-950/60 border border-slate-800 rounded-xl overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-800/80">
         <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
-          {lang === 'id' ? '🧠 Peta Pikiran' : '🧠 Mind Map'}
+          {tr('mind_map', '🧠 Mind Map')}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <button onClick={() => zoomStep(-0.2)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Zoom out"><ZoomOut className="w-3.5 h-3.5" /></button>
@@ -160,7 +160,7 @@ export const LearningView: React.FC = () => {
     if (seededRef.current) return;
     if (notebooks.length === 0) {
       seededRef.current = true;
-      addNotebook(lang === 'id' ? 'Notebook Pertama' : 'First Notebook', '');
+      addNotebook(tr('learning_first_notebook', 'First Notebook'), '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notebooks.length]);
@@ -279,6 +279,14 @@ export const LearningView: React.FC = () => {
   const [showSources, setShowSources] = useState(true);
   const [showStudio, setShowStudio] = useState(true);
   const [compactPanel, setCompactPanel] = useState<'sources' | 'chat' | 'studio'>('sources');
+  // Arah slide compact-nav (parity LearningPage._set_compact_panel): panel
+  // bergeser masuk dari kanan/kiri sesuai arah tab yang dipilih.
+  const [slideDir, setSlideDir] = useState<'r' | 'l'>('r');
+  const PANEL_ORDER: Record<'sources' | 'chat' | 'studio', number> = { sources: 0, chat: 1, studio: 2 };
+  const switchPanel = (k: 'sources' | 'chat' | 'studio') => {
+    setSlideDir(PANEL_ORDER[k] >= PANEL_ORDER[compactPanel] ? 'r' : 'l');
+    setCompactPanel(k);
+  };
   // Math Problem state
   const [mathProblem, setMathProblem] = useState('x^2 - 5x + 6 = 0');
   const [mathSolution, setMathSolution] = useState('');
@@ -292,7 +300,7 @@ export const LearningView: React.FC = () => {
     const cards = activeNotebook?.flashcards || [];
     if (!cards.length) {
       return (
-        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><Layers className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{lang === 'id' ? 'Belum ada flashcard.' : 'No flashcards yet.'}</p><p className="text-xs mt-1">{lang === 'id' ? 'Klik tombol Flashcards.' : 'Click the Flashcards button.'}</p></div>
+        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><Layers className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{tr('no_flashcards_yet', 'No flashcards yet.')}</p><p className="text-xs mt-1">{tr('click_the_flashcards_button', 'Click the Flashcards button.')}</p></div>
       );
     }
     const idx = Math.min(currentCardIndex, cards.length - 1);
@@ -300,14 +308,14 @@ export const LearningView: React.FC = () => {
       <div className="flex flex-col items-center space-y-4 py-2">
         <div onClick={() => setIsCardFlipped(!isCardFlipped)} className="w-full min-h-[200px] p-6 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700/80 rounded-2xl shadow-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:border-violet-500/50 select-none">
           <span className="text-xs font-bold text-slate-500 mb-1">{idx + 1} / {cards.length}</span>
-          <span className="text-xs font-bold uppercase tracking-wider text-violet-400 mb-2">{isCardFlipped ? (lang === 'id' ? 'Jawaban' : 'Answer') : (lang === 'id' ? 'Pertanyaan' : 'Question')}</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-violet-400 mb-2">{isCardFlipped ? tr('answer', 'Answer') : tr('question', 'Question')}</span>
           <p className="text-base font-semibold text-slate-100">{isCardFlipped ? cards[idx]?.answer : cards[idx]?.question}</p>
-          <span className="text-[11px] text-slate-500 mt-2">{lang === 'id' ? 'Klik untuk membalik' : 'Click to flip'}</span>
+          <span className="text-[11px] text-slate-500 mt-2">{tr('click_to_flip', 'Click to flip')}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p > 0 ? p - 1 : cards.length - 1)); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200">{lang === 'id' ? '‹ Sebelumnya' : '‹ Prev'}</button>
-          <button onClick={() => setIsCardFlipped(!isCardFlipped)} className="px-3 py-1.5 bg-violet-600/30 hover:bg-violet-600/40 text-violet-300 text-xs font-bold rounded-lg border border-violet-500/30">{lang === 'id' ? 'Balik' : 'Flip'}</button>
-          <button onClick={() => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p < cards.length - 1 ? p + 1 : 0)); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200">{lang === 'id' ? 'Berikutnya ›' : 'Next ›'}</button>
+          <button onClick={() => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p > 0 ? p - 1 : cards.length - 1)); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200">{tr('prev', '‹ Prev')}</button>
+          <button onClick={() => setIsCardFlipped(!isCardFlipped)} className="px-3 py-1.5 bg-violet-600/30 hover:bg-violet-600/40 text-violet-300 text-xs font-bold rounded-lg border border-violet-500/30">{tr('flip', 'Flip')}</button>
+          <button onClick={() => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p < cards.length - 1 ? p + 1 : 0)); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200">{tr('next', 'Next ›')}</button>
         </div>
       </div>
     );
@@ -317,7 +325,7 @@ export const LearningView: React.FC = () => {
     const quizzes = activeNotebook?.quizzes || [];
     if (!quizzes.length) {
       return (
-        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><HelpCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{lang === 'id' ? 'Belum ada kuis.' : 'No quiz yet.'}</p><p className="text-xs mt-1">{lang === 'id' ? 'Klik tombol Kuis.' : 'Click the Quiz button.'}</p></div>
+        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><HelpCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{tr('no_quiz_yet', 'No quiz yet.')}</p><p className="text-xs mt-1">{tr('click_the_quiz_button', 'Click the Quiz button.')}</p></div>
       );
     }
     return (
@@ -345,15 +353,15 @@ export const LearningView: React.FC = () => {
                   );
                 })}
               </div>
-              {quizSubmitted && <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{lang === 'id' ? 'Pembahasan:' : 'Explanation:'}</span> {q.explanation}</p>}
+              {quizSubmitted && <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{tr('explanation', 'Explanation:')}</span> {q.explanation}</p>}
             </div>
           );
         })}
         <div className="flex justify-end gap-2 pt-1">
           {!quizSubmitted ? (
-            <button onClick={() => { setQuizSubmitted(true); showToast('success', 'Quiz Evaluated', 'Check your score.'); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl">{lang === 'id' ? 'Periksa Jawaban' : 'Evaluate'}</button>
+            <button onClick={() => { setQuizSubmitted(true); showToast('success', tr('learning_quiz_evaluated', 'Quiz Evaluated'), tr('learning_quiz_check_score', 'Check your score.')); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl">{tr('evaluate', 'Evaluate')}</button>
           ) : (
-            <button onClick={() => { setQuizSubmitted(false); setSelectedAnswers({}); }} className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl"><RotateCcw className="w-3.5 h-3.5" /><span>{lang === 'id' ? 'Ulangi Kuis' : 'Retake'}</span></button>
+            <button onClick={() => { setQuizSubmitted(false); setSelectedAnswers({}); }} className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl"><RotateCcw className="w-3.5 h-3.5" /><span>{tr('retake', 'Retake')}</span></button>
           )}
         </div>
       </div>
@@ -364,19 +372,19 @@ export const LearningView: React.FC = () => {
     const lines = activeNotebook?.podcast || [];
     if (!lines.length) {
       return (
-        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><Headphones className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{lang === 'id' ? 'Belum ada episode.' : 'No episode yet.'}</p><p className="text-xs mt-1">{lang === 'id' ? 'Klik tombol Podcast.' : 'Click the Podcast button.'}</p></div>
+        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><Headphones className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{tr('no_episode_yet', 'No episode yet.')}</p><p className="text-xs mt-1">{tr('click_the_podcast_button', 'Click the Podcast button.')}</p></div>
       );
     }
     return (
       <div className="space-y-3">
         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center gap-3">
           <button onClick={() => { const next = !isPodcastPlaying; setIsPodcastPlaying(next); if (next && lines[currentLineIndex]) speakLine(lines[currentLineIndex].line); else window.speechSynthesis?.cancel(); }} className="w-9 h-9 rounded-xl bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center">{isPodcastPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}</button>
-          <div><h4 className="font-bold text-sm text-slate-200">{lang === 'id' ? 'Deep Dive Episode' : 'Deep Dive Episode'}</h4><p className="text-[10px] text-slate-500">{lang === 'id' ? 'Host: Alex & Sam · Text-to-Speech' : 'Hosts: Alex & Sam · Text-to-Speech'}</p></div>
+          <div><h4 className="font-bold text-sm text-slate-200">{tr('deep_dive_episode', 'Deep Dive Episode')}</h4><p className="text-[10px] text-slate-500">{tr('hosts_alex_sam_text_to_speech', 'Hosts: Alex & Sam · Text-to-Speech')}</p></div>
         </div>
         <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
           {lines.map((line, idx) => (
             <div key={idx} onClick={() => { setCurrentLineIndex(idx); speakLine(line.line); }} className={`p-2.5 rounded-xl border cursor-pointer transition-colors ${line.speaker === 'Alex' ? 'bg-indigo-950/30 border-indigo-500/30' : 'bg-emerald-950/30 border-emerald-500/30'}`}>
-              <div className="flex items-center justify-between mb-1"><span className={`text-xs font-bold uppercase tracking-wider ${line.speaker === 'Alex' ? 'text-indigo-400' : 'text-emerald-400'}`}>🎙️ {line.speaker}</span><span className="text-[10px] text-slate-500">{lang === 'id' ? 'Klik: dengar' : 'Click to listen'}</span></div>
+              <div className="flex items-center justify-between mb-1"><span className={`text-xs font-bold uppercase tracking-wider ${line.speaker === 'Alex' ? 'text-indigo-400' : 'text-emerald-400'}`}>🎙️ {line.speaker}</span><span className="text-[10px] text-slate-500">{tr('click_to_listen', 'Click to listen')}</span></div>
               <p className="text-xs text-slate-200 leading-relaxed">{line.line}</p>
             </div>
           ))}
@@ -581,21 +589,21 @@ export const LearningView: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-2xl">📚</div>
           <div>
-            <h1 className="text-xl font-bold text-slate-100">{lang === 'id' ? 'Workspace Belajar AI' : 'AI Learning Workspace'}</h1>
-            <p className="text-xs text-slate-400">{lang === 'id' ? 'Sumber + Chat + Studio dalam satu ruang belajar grounded.' : 'Sources + Chat + Studio in one grounded learning workspace.'}</p>
+            <h1 className="text-xl font-bold text-slate-100">{tr('ai_learning_workspace', 'AI Learning Workspace')}</h1>
+            <p className="text-xs text-slate-400">{tr('sources_chat_studio_in_one_grounded_learning_wor', 'Sources + Chat + Studio in one grounded learning workspace.')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs px-2 py-1 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20 font-semibold">{lang === 'id' ? 'AI' : 'AI'}</span>
+          <span className="text-xs px-2 py-1 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20 font-semibold">{tr('ai', 'AI')}</span>
           {/* Parity _manage_api_key */}
           <button
             onClick={() => { const k = window.prompt(tr('learning_api_key_label', 'Gemini API key'), geminiKey); if (k !== null && k !== geminiKey) { setGeminiKey(k); studio.setGeminiKey(k).then(() => showToast('success', 'Gemini', 'saved')).catch((e) => showToast('damage', String(e), '')); } }}
             className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl border border-slate-700"
           >
-            <KeyRound className="w-3.5 h-3.5" /><span>{lang === 'id' ? 'API Key' : 'API Key'}</span>
+            <KeyRound className="w-3.5 h-3.5" /><span>{tr('learning_api_btn', 'API Key')}</span>
           </button>
           <button onClick={() => setShowNewNbModal(true)} className="flex items-center gap-2 px-3.5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl">
-            <Plus className="w-4 h-4" /><span>{lang === 'id' ? 'Notebook Baru' : 'New Notebook'}</span>
+            <Plus className="w-4 h-4" /><span>{tr('learning_new_notebook_title', 'New Notebook')}</span>
           </button>
         </div>
       </div>
@@ -621,20 +629,23 @@ export const LearningView: React.FC = () => {
             </div>
           </div>
 
-          {/* Compact nav (mobile, parity learningCompactNav) */}
+          {/* Compact nav (mobile, parity learningCompactNav: slide antar 3 tab) */}
           <div className="lg:hidden flex gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
             {(['sources', 'chat', 'studio'] as const).map((k) => (
-              <button key={k} onClick={() => setCompactPanel(k)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${compactPanel === k ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>
+              <button key={k} onClick={() => switchPanel(k)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${compactPanel === k ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>
                 {k === 'sources' ? tr('learning_sources_panel', 'Sumber') : k === 'chat' ? tr('learning_chat_panel', 'Chat') : tr('learning_studio_panel', 'Studio')}
               </button>
             ))}
           </div>
 
-          {/* 3-panel split (parity _splitter: sources | chat | studio) */}
-          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_330px] gap-4">
+          {/* 3-panel split (parity _splitter: sources | chat | studio).
+              P38: flex + lebar animasi → menutup panel membuat panel tersisa
+              stretch penuh (chat flex-1), dengan transisi slide halus. */}
+          <div className="flex flex-col space-y-4 lg:flex-row lg:space-y-0 items-stretch">
             {/* ── SOURCES PANEL ── */}
-            {showSources && (
-              <div className={`${compactPanel !== 'sources' ? 'hidden lg:flex' : 'flex ct-slide-in'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3`}>
+            <div
+              className={`${compactPanel !== 'sources' ? 'hidden lg:flex' : `flex ${slideDir === 'r' ? 'ct-slide-in-r' : 'ct-slide-in-l'}`} w-full flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 transition-all duration-300 lg:shrink-0 ${!showSources ? 'lg:w-0 lg:mr-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[280px] lg:mr-4'}`}
+            >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_sources_panel', 'Sumber')} <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{activeNotebook.sources?.length || 0}</span></span>
                   <button onClick={() => setShowNewSourceModal(true)} className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700" title={tr('learning_add_source', 'Tambah Sumber')}><Plus className="w-3.5 h-3.5" /></button>
@@ -649,8 +660,8 @@ export const LearningView: React.FC = () => {
                   {(!activeNotebook.sources || activeNotebook.sources.length === 0) ? (
                     <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500">
                       <FileText className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                      <p className="text-sm font-medium">{lang === 'id' ? 'Belum ada sumber.' : 'No sources yet.'}</p>
-                      <p className="text-xs mt-1">{lang === 'id' ? 'Klik Tambah / Upload untuk memulai.' : 'Add a source to begin.'}</p>
+                      <p className="text-sm font-medium">{tr('no_sources_yet', 'No sources yet.')}</p>
+                      <p className="text-xs mt-1">{tr('add_a_source_to_begin', 'Add a source to begin.')}</p>
                     </div>
                   ) : (
                     activeNotebook.sources.map((src) => (
@@ -659,7 +670,7 @@ export const LearningView: React.FC = () => {
                           <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold">{src.type}</span>
                           <h4 className="font-bold text-sm text-slate-200 truncate flex-1">{src.title}</h4>
                         </div>
-                        <p className="text-[11px] text-slate-500">{src.wordCount} {lang === 'id' ? 'kata' : 'words'}</p>
+                        <p className="text-[11px] text-slate-500">{src.wordCount} {tr('words', 'words')}</p>
                         <div className="flex items-center gap-1 pt-1">
                           <button onClick={() => handleViewSource(src.id)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-violet-300 text-[11px] font-semibold" title={tr('learning_view', 'Lihat')}><Eye className="w-3.5 h-3.5" />{tr('learning_view', 'Lihat')}</button>
                           <button onClick={() => deleteNotebookSource(activeNotebook.id, src.id)} className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
@@ -668,12 +679,11 @@ export const LearningView: React.FC = () => {
                     ))
                   )}
                 </div>
-                <p className="text-[10px] text-slate-500">{activeNotebook.sources?.length || 0} {lang === 'id' ? 'sumber · menjadi dasar jawaban AI' : 'sources · grounding the AI answers'}</p>
+                <p className="text-[10px] text-slate-500">{activeNotebook.sources?.length || 0} {tr('sources_grounding_the_ai_answers', 'sources · grounding the AI answers')}</p>
               </div>
-            )}
 
             {/* ── CHAT PANEL ── */}
-            <div className={`${compactPanel !== 'chat' ? 'hidden lg:flex' : 'flex ct-slide-in'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
+            <div className={`${compactPanel !== 'chat' ? 'hidden lg:flex' : `flex ${slideDir === 'r' ? 'ct-slide-in-r' : 'ct-slide-in-l'}`} w-full lg:flex-1 lg:min-w-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_chat_panel', 'Chat AI')}</span>
                 <div className="flex items-center gap-1 text-xs text-slate-400">
@@ -688,8 +698,8 @@ export const LearningView: React.FC = () => {
                 {(!activeNotebook.chatHistory || activeNotebook.chatHistory.length === 0) && (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
                     <Bot className="w-10 h-10 mb-3 text-violet-400/50" />
-                    <h4 className="font-semibold text-slate-300">{lang === 'id' ? 'Tanyakan materi dari sumber ini' : 'Ask questions about your sources'}</h4>
-                    <p className="text-xs max-w-sm mt-1">{lang === 'id' ? 'AI menjawab berdasar seluruh sumber notebook ini.' : 'AI answers grounded in this notebook\'s sources.'}</p>
+                    <h4 className="font-semibold text-slate-300">{tr('ask_questions_about_your_sources', 'Ask questions about your sources')}</h4>
+                    <p className="text-xs max-w-sm mt-1">{tr('ai_answers_grounded_in_this_notebook_s_sources', "AI answers grounded in this notebook's sources.")}</p>
                   </div>
                 )}
                 {activeNotebook.chatHistory?.map((msg, idx) => (
@@ -704,7 +714,7 @@ export const LearningView: React.FC = () => {
                   </div>
                 ))}
                 {isAiLoading && (
-                  <div className="flex items-center gap-2 text-violet-400 text-xs p-2"><Sparkles className="w-4 h-4 animate-spin" /><span>{lang === 'id' ? 'AI sedang menganalisis…' : 'AI is synthesizing…'}</span></div>
+                  <div className="flex items-center gap-2 text-violet-400 text-xs p-2"><Sparkles className="w-4 h-4 animate-spin" /><span>{tr('ai_is_synthesizing', 'AI is synthesizing…')}</span></div>
                 )}
               </div>
 
@@ -713,7 +723,7 @@ export const LearningView: React.FC = () => {
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendChat(); } }}
-                  placeholder={lang === 'id' ? 'Tanyakan sesuatu tentang notebook ini…' : 'Ask anything about this notebook…'}
+                  placeholder={tr('ask_anything_about_this_notebook', 'Ask anything about this notebook…')}
                   rows={1}
                   className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none"
                 />
@@ -723,8 +733,9 @@ export const LearningView: React.FC = () => {
             </div>
 
             {/* ── STUDIO PANEL ── */}
-            {showStudio && (
-              <div className={`${compactPanel !== 'studio' ? 'hidden lg:flex' : 'flex ct-slide-in'} flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3`}>
+            <div
+              className={`${compactPanel !== 'studio' ? 'hidden lg:flex' : `flex ${slideDir === 'r' ? 'ct-slide-in-r' : 'ct-slide-in-l'}`} w-full flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 transition-all duration-300 lg:shrink-0 ${!showStudio ? 'lg:w-0 lg:ml-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[330px] lg:ml-4'}`}
+            >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_studio_panel', 'Studio')}</span>
                   <span className="text-[10px] text-slate-500">{tr('learning_studio_hint', 'Buat materi dari sumber')}</span>
@@ -785,7 +796,7 @@ export const LearningView: React.FC = () => {
                     {activeGenList.length > 0 ? activeGenList.map((g: any) => (
                       <div key={g.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-[11px] cursor-pointer transition-colors ${selectedGen?.id === g.id ? 'bg-violet-950/40 border-violet-500/40 text-slate-100' : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'}`} onClick={() => { setSelectedGen(selectedGen?.id === g.id ? null : g); if (g.gtype && (g.gtype as string).includes('flash')) setActiveStudioType('flashcards'); else if (g.gtype === 'mindmap') setActiveStudioType('mindmap'); else if (g.gtype === 'quiz') setActiveStudioType('quiz'); else if ((g.gtype as string).includes('audio') || (g.gtype as string).includes('podcast')) setActiveStudioType('podcast'); else setActiveStudioType((g.gtype as StudioType) || 'summary'); }}>
                           <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold shrink-0">{g.gtype}</span>
-                          <span className="truncate flex-1">{g.topic || '(topik umum)'}</span>
+                          <span className="truncate flex-1">{g.topic || tr('learning_generic_topic', '(topik umum)')}</span>
                           <span className="text-slate-600 shrink-0">{g.createdAt || ''}</span>
                         </div>
                       )) : (
@@ -793,14 +804,13 @@ export const LearningView: React.FC = () => {
                       )}
                   </div>
                 </div>
-              </div>
-            )}
+            </div>
           </div>
         </>
       ) : (
         <div className="p-12 text-center bg-slate-900/50 border border-slate-800 rounded-2xl text-slate-500">
           <BookOpen className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-          <p className="text-base font-semibold">{lang === 'id' ? 'Pilih notebook atau buat baru.' : 'Select or create a notebook.'}</p>
+          <p className="text-base font-semibold">{tr('select_or_create_a_notebook', 'Select or create a notebook.')}</p>
         </div>
       )}
 
@@ -808,15 +818,15 @@ export const LearningView: React.FC = () => {
       {showNewNbModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <h3 className="font-bold text-lg text-slate-100">{lang === 'id' ? 'Buat Notebook Baru' : 'Create New Notebook'}</h3>
+            <h3 className="font-bold text-lg text-slate-100">{tr('create_new_notebook', 'Create New Notebook')}</h3>
             <div className="space-y-3 text-sm">
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Judul' : 'Title'}</label><input type="text" value={newNbTitle} onChange={(e) => setNewNbTitle(e.target.value)} placeholder="e.g. Physics Dynamics, Machine Learning" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Deskripsi' : 'Description'}</label><input type="text" value={newNbDesc} onChange={(e) => setNewNbDesc(e.target.value)} placeholder="Short summary of this notebook..." className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_title_label', 'Title')}</label><input type="text" value={newNbTitle} onChange={(e) => setNewNbTitle(e.target.value)} placeholder={tr('learning_nb_title_ph', 'e.g. Physics Dynamics, Machine Learning')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('description', 'Description')}</label><input type="text" value={newNbDesc} onChange={(e) => setNewNbDesc(e.target.value)} placeholder={tr('learning_nb_desc_ph', 'Short summary of this notebook...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
               <div><label className="block text-xs font-bold text-slate-400 mb-1">Emoji Icon</label><div className="flex gap-2">{['📚', '🧠', '🔬', '💻', '📐', '🚀', '📝', '⚡'].map((emoji) => (<button key={emoji} onClick={() => setNewNbIcon(emoji)} className={`text-xl p-2 rounded-lg border ${newNbIcon === emoji ? 'bg-violet-600/30 border-violet-500' : 'bg-slate-950 border-slate-800'}`}>{emoji}</button>))}</div></div>
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setShowNewNbModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
-              <button onClick={() => { if (!newNbTitle.trim()) return; addNotebook(newNbTitle.trim(), newNbDesc.trim(), newNbIcon); setShowNewNbModal(false); setNewNbTitle(''); setNewNbDesc(''); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{lang === 'id' ? 'Buat Notebook' : 'Create Notebook'}</button>
+              <button onClick={() => { if (!newNbTitle.trim()) return; addNotebook(newNbTitle.trim(), newNbDesc.trim(), newNbIcon); setShowNewNbModal(false); setNewNbTitle(''); setNewNbDesc(''); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{tr('create_notebook', 'Create Notebook')}</button>
             </div>
           </div>
         </div>
@@ -851,15 +861,15 @@ export const LearningView: React.FC = () => {
       {showNewSourceModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
-            <h3 className="font-bold text-lg text-slate-100">{lang === 'id' ? 'Tambah Sumber Belajar' : 'Add Study Source'}</h3>
+            <h3 className="font-bold text-lg text-slate-100">{tr('add_study_source', 'Add Study Source')}</h3>
             <div className="space-y-3 text-sm">
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Judul Dokumen' : 'Source Title'}</label><input type="text" value={newSourceTitle} onChange={(e) => setNewSourceTitle(e.target.value)} placeholder="e.g. Chapter 1 Notes, Article summary" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Tipe' : 'Type'}</label><div className="flex gap-2">{(['text', 'doc', 'pdf', 'url'] as const).map((tt) => (<button key={tt} onClick={() => setNewSourceType(tt)} className={`px-3 py-1.5 uppercase text-xs font-bold rounded-lg border ${newSourceType === tt ? 'bg-violet-600/30 border-violet-500 text-violet-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>{tt}</button>))}</div></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{lang === 'id' ? 'Isi Teks Dokumen' : 'Content / Text'}</label><textarea rows={6} value={newSourceContent} onChange={(e) => setNewSourceContent(e.target.value)} placeholder="Paste notes, textbook paragraphs, or document content here..." className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 text-xs focus:outline-none focus:border-violet-500 font-mono" /></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('source_title', 'Source Title')}</label><input type="text" value={newSourceTitle} onChange={(e) => setNewSourceTitle(e.target.value)} placeholder={tr('learning_source_title_ph', 'e.g. Chapter 1 Notes, Article summary')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_type_label', 'Type')}</label><div className="flex gap-2">{(['text', 'doc', 'pdf', 'url'] as const).map((tt) => (<button key={tt} onClick={() => setNewSourceType(tt)} className={`px-3 py-1.5 uppercase text-xs font-bold rounded-lg border ${newSourceType === tt ? 'bg-violet-600/30 border-violet-500 text-violet-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>{tt}</button>))}</div></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('content_text', 'Content / Text')}</label><textarea rows={6} value={newSourceContent} onChange={(e) => setNewSourceContent(e.target.value)} placeholder={tr('learning_source_content_ph', 'Paste notes, textbook paragraphs, or document content here...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 text-xs focus:outline-none focus:border-violet-500 font-mono" /></div>
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setShowNewSourceModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
-              <button onClick={() => { if (!newSourceTitle.trim() || !newSourceContent.trim() || !activeNotebook) return; addNotebookSource(activeNotebook.id, newSourceTitle.trim(), newSourceContent.trim(), newSourceType); setShowNewSourceModal(false); setNewSourceTitle(''); setNewSourceContent(''); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{lang === 'id' ? 'Simpan Sumber' : 'Save Source'}</button>
+              <button onClick={() => { if (!newSourceTitle.trim() || !newSourceContent.trim() || !activeNotebook) return; addNotebookSource(activeNotebook.id, newSourceTitle.trim(), newSourceContent.trim(), newSourceType); setShowNewSourceModal(false); setNewSourceTitle(''); setNewSourceContent(''); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{tr('save_source', 'Save Source')}</button>
             </div>
           </div>
         </div>

@@ -52,6 +52,20 @@ export async function apiPost<T = any>(path: string, body: unknown): Promise<T> 
   return data;
 }
 
+/** GET binary (download attachment); return blob + nama file dari header. */
+export async function apiGetBlob(path: string, fallbackName = 'attachment'): Promise<{ blob: Blob; name: string }> {
+  const token = authToken();
+  const headers: Record<string, string> = { Accept: '*/*' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${apiBase()}${path}`, { headers, credentials: 'include' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const disp = res.headers.get('Content-Disposition') || '';
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp);
+  const name = m ? decodeURIComponent(m[1]) : fallbackName;
+  return { blob, name };
+}
+
 /** Target upload yang didukung server (parity QFileDialog PyQt). */
 export type UploadTarget = 'love_photo' | 'profile_photo' | 'reminder_sound' | 'music' | 'learning_source';
 

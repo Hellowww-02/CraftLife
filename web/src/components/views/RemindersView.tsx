@@ -49,7 +49,7 @@ function emptyForm(now: Date): ReminderForm {
 export const RemindersView: React.FC = () => {
   const {
     reminders, addReminder, editReminder, deleteReminder, toggleReminder,
-    lang, nowDate,
+    nowDate,
   } = useGame();
   // Jam & tanggal default berasal dari server (parity emptyForm/TimeSync),
   // bukan new Date() browser.
@@ -347,7 +347,7 @@ export const RemindersView: React.FC = () => {
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => { setFormOpen(null); setErr(null); }}
                 className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">
-                <X className="w-3.5 h-3.5 inline mr-1" />{tr('dialog_cancel') !== 'dialog_cancel' ? tr('dialog_cancel') : (lang === 'id' ? 'Batal' : 'Cancel')}
+                <X className="w-3.5 h-3.5 inline mr-1" />{tr('dialog_cancel')}
               </button>
               <button type="button" onClick={save}
                 className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">

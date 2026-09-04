@@ -146,6 +146,13 @@ export interface SportLog {
   date: string;
   sportXpEarned: number;
   done?: boolean;
+  difficulty?: string;
+  xpReward?: number;
+  goldReward?: number;
+  sportPointsReward?: number;
+  streak?: number;
+  totalReps?: number;
+  folderId?: string | null;
 }
 
 export interface FoodItem {
@@ -296,6 +303,8 @@ export interface InvestmentItem {
   icon: string;
   amount: number;
   notes?: string;
+  investedDate?: string;
+  isActive?: boolean;
 }
 
 export interface SubscriptionItem {
@@ -306,6 +315,7 @@ export interface SubscriptionItem {
   dueDate: string;
   period: string;
   notes?: string;
+  isRecurring?: boolean;
 }
 
 export interface DebtNote {
@@ -523,6 +533,19 @@ export interface LoveSpaceData {
   coupleActive?: boolean;
   cycleSettings?: LoveCycleSettings;
   cyclePrediction?: LoveCyclePrediction | null;
+  // Parity _LoveProfileDialog (P37): profil lengkap kedua sisi + relasi.
+  myName?: string;
+  myGender?: string;
+  myAge?: number;
+  myBirthdate?: string;
+  partnerGender?: string;
+  partnerAge?: number;
+  partnerBirthdate?: string;
+  relationshipType?: string;
+  startDate?: string;
+  linkedPartnerUsername?: string;
+  cloudLoveActive?: boolean;
+  healthProfile?: { gender: string; age: number };
 }
 
 // ── Social, Friends, PvP & Guild ───────────────────────────────────────────
@@ -592,6 +615,8 @@ export interface GuildData {
   buffDamage?: number;
   critChance?: number;
   bossAttack?: number;
+  bossIcon?: string;
+  bossTier?: string;
   bossParticipants?: string;
 }
 

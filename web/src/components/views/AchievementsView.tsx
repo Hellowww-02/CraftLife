@@ -27,12 +27,11 @@ const CATEGORIES = [
 ];
 
 export const AchievementsView: React.FC = () => {
-  const { lang, showToast, applyLive } = useGame();
+  const { showToast, applyLive } = useGame();
   const [items, setItems] = useState<Achievement[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
   const [busyId, setBusyId] = useState<string | null>(null);
-  const isId = lang === 'id';
 
   const load = async () => {
     try {
@@ -68,7 +67,9 @@ export const AchievementsView: React.FC = () => {
       } else {
         showToast(
           'success',
-          isId ? `Reward diklaim: +${a.xpReward} XP +${a.goldReward} Gold` : `Reward claimed: +${a.xpReward} XP +${a.goldReward} Gold`,
+          t('achievement_claimed_toast', 'Reward claimed: +{xp} XP +{gold} Gold')
+            .replace('{xp}', String(a.xpReward))
+            .replace('{gold}', String(a.goldReward)),
           '',
         );
         // P24-fix: snapshot_claim berisi user + achievements terbaru. Terapkan ke
@@ -88,11 +89,7 @@ export const AchievementsView: React.FC = () => {
     <div className="space-y-5 w-full mx-auto max-w-6xl">
       <div>
         <h2 className="text-xl font-black text-slate-100">🏆 {t('nav_achievements', 'Achievement')}</h2>
-        <p className="text-xs text-slate-400 mt-1">
-          {isId
-            ? 'Koleksi pencapaian dari semua aktivitasmu. Claim reward untuk setiap kesuksesan.'
-            : 'A collection of milestones across every activity. Claim the reward for each success.'}
-        </p>
+        <p className="text-xs text-slate-400 mt-1">{t('achievement_subtitle', 'A collection of milestones across every activity. Claim the reward for each success.')}</p>
       </div>
 
       {/* Parity AchievementPage: search input + combo kategori */}

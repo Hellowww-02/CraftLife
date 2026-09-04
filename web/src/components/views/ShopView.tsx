@@ -48,8 +48,8 @@ export const ShopView: React.FC = () => {
 
   // ── Buff bar (parity db.get_all_active_buffs) ──
   const buffText = activeBuffs && activeBuffs.length
-    ? `⚡ Buff Aktif :  ${activeBuffs.join('  ·  ')}`
-    : '⚡ Buff Aktif :  Tidak ada buff aktif.';
+    ? `${tr('buff_bar_title')} :  ${activeBuffs.join('  ·  ')}`
+    : `${tr('buff_bar_title')} :  ${tr('buff_bar_empty')}`;
 
   const visibleItems = useMemo(
     () => Object.entries(SHOP_ITEMS)
@@ -103,7 +103,12 @@ export const ShopView: React.FC = () => {
               <div key={it.id}
                 className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
                 <span className="text-3xl">{it.icon}</span>
-                <span className="text-xs font-bold text-slate-100">{it.name}</span>
+                <span className="text-xs font-bold text-slate-100">
+                  {it.name}
+                  {it.type === 'consumable' && (
+                    <span className={`ml-1.5 text-[10px] font-bold ${qty > 0 ? 'text-sky-300' : 'text-slate-500'}`}>× {qty}</span>
+                  )}
+                </span>
                 {it.seasonal && (
                   <span className="text-[9px] font-bold text-teal-400">{tr('shop_seasonal_badge')}</span>
                 )}
@@ -222,6 +227,7 @@ export const ShopView: React.FC = () => {
                 <span className="text-xs font-bold text-slate-100">{it.name || inv.itemId}</span>
                 {elvl > 0 && <span className="text-[9px] font-bold text-violet-300">⛏️ +{elvl}</span>}
                 <p className="text-[10px] text-slate-500">{tr(`shop_type_${it.type || 'item'}`)}</p>
+                <p className="text-[10px] text-amber-300 leading-relaxed">{it.buffDesc || it.buff_desc || ''}</p>
                 <span className="text-[11px] font-bold text-sky-300">
                   × {qty} {inv.equipped ? `· ${tr('shop_equipped')}` : ''}
                 </span>
@@ -248,7 +254,8 @@ export const ShopView: React.FC = () => {
                   )}
                   <button type="button"
                     onClick={() => setSellDlg({ inv, it })}
-                    className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                    disabled={qty < 1}
+                    className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed">
                     {tr('shop_sell')}
                   </button>
                 </div>

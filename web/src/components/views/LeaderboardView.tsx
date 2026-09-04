@@ -35,7 +35,7 @@ type CloudRow = Record<string, any>;
 type Mode = 'local' | 'cloud_productivity' | 'cloud_guild';
 
 export const LeaderboardView: React.FC = () => {
-  const { lang, user } = useGame();
+  const { user } = useGame();
   const [mode, setMode] = useState<Mode>('local');
   const [rows, setRows] = useState<LocalRow[]>([]);
   const [cloudRows, setCloudRows] = useState<CloudRow[]>([]);
@@ -114,20 +114,14 @@ export const LeaderboardView: React.FC = () => {
           <option value="local">{t('cloud_leaderboard_local', 'Ranking Lokal')}</option>
         </select>
         {mode === 'local' && (
-          <p className="text-[11px] text-slate-500">
-            {lang === 'id'
-              ? 'Kamu, teman, dan anggota guild — data lokal.'
-              : 'You, friends, and guild members — local data.'}
-          </p>
+          <p className="text-[11px] text-slate-500">{t('leaderboard_local_hint', 'You, friends, and guild members — local data.')}</p>
         )}
       </div>
 
       {/* Cloud fallback parity: bila mode cloud tapi belum linked → kembali lokal (seperti PyQt) */}
       {mode !== 'local' && !loading && !cloudLinked && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-          {lang === 'id'
-            ? 'Akun belum terhubung ke cloud — memakai ranking lokal (perilaku sama dengan aplikasi desktop).'
-            : 'Account not linked to cloud — falling back to local ranking (same as the desktop app).'}
+          {t('leaderboard_cloud_fallback', 'Account not linked to cloud — falling back to local ranking (same as the desktop app).')}
           <button
             type="button"
             onClick={() => setMode('local')}
@@ -194,7 +188,7 @@ export const LeaderboardView: React.FC = () => {
               {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={8} className="p-4 text-slate-500 text-center">
-                    {lang === 'id' ? 'Belum ada data.' : 'No rows yet.'}
+                    {t('leaderboard_empty', 'No rows yet.')}
                   </td>
                 </tr>
               )}
@@ -241,7 +235,7 @@ export const LeaderboardView: React.FC = () => {
               {!loading && cloudRows.length === 0 && !cloudError && (
                 <tr>
                   <td colSpan={cloudColumns.length} className="p-4 text-slate-500 text-center">
-                    {lang === 'id' ? 'Belum ada data cloud.' : 'No cloud rows yet.'}
+                    {t('leaderboard_cloud_empty', 'No cloud rows yet.')}
                   </td>
                 </tr>
               )}

@@ -50,3 +50,24 @@ export function fmtHMS(d: Date | null | undefined): string {
   if (!d) return '';
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+
+/**
+ * Format waktu pesan chat (HH:MM) mengikuti ZONA LOKASI USER (browser) — sama
+ * persis dengan jam di Navbar, jadi chat selalu sinkron dengan jam app.
+ * Prioritas:
+ *  1. `epochSec` (unix detik absolut dari backend) → render di zona browser user.
+ *  2. `iso` ber-zona (Z / ±HH:MM, mis. pesan cloud/pending) → instan absolut.
+ *  3. `iso` naif (fallback) → slice mentah (hanya utk kasus tanpa epoch).
+ */
+export function fmtChatTime(iso: string | null | undefined, epochSec?: number | null): string {
+  if (epochSec != null && Number.isFinite(Number(epochSec))) {
+    const d = new Date(Number(epochSec) * 1000);
+    if (!Number.isNaN(d.getTime())) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  if (!iso) return '';
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(iso.trim());
+  if (!hasZone) return iso.slice(11, 16);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(11, 16);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

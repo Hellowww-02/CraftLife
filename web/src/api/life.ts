@@ -96,6 +96,9 @@ export const life = {
   addInvestment: (body: Record<string, unknown>) => apiPost<any>('/api/investments', body),
   investmentReturn: (id: string, percent?: number) =>
     apiPost<any>(`/api/investments/${id}/return`, { percent: percent || 5 }),
+  addInvestmentReturn: (id: string, amount: number) =>
+    apiPost<any>(`/api/investments/${id}/add-return`, { amount }),
+  deleteInvestment: (id: string) => apiPost<any>(`/api/investments/${id}/delete`, {}),
   withdrawInvestment: (id: string) => apiPost<any>(`/api/investments/${id}/withdraw`, {}),
   addSubscription: (body: Record<string, unknown>) => apiPost<any>('/api/subscriptions', body),
   renewSubscription: (id: string) => apiPost<any>(`/api/subscriptions/${id}/renew`, {}),

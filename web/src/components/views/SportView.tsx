@@ -3,9 +3,11 @@ import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { SPORT_TYPES, SPORT_INTENSITY_FACTOR } from '../../data/gameData';
 import { t } from '../../i18n';
-import { Activity, Plus, Flame, Timer, Trash2, Dumbbell, Award, TrendingUp, X, Pencil } from 'lucide-react';
+import { Activity, Plus, Flame, Timer, Trash2, Dumbbell, Award, TrendingUp, X, Pencil, FolderOpen } from 'lucide-react';
 import { BarChart } from '../charts';
 import { TaskDifficulty } from '../../types';
+import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
+import { useTaskReorder } from '../../hooks/useTaskReorder';
 
 // Parity SPORT_RANK_COLORS (MainPyQt6.py)
 const SPORT_RANK_COLORS: Record<string, string> = {
@@ -29,7 +31,7 @@ interface SportFormState {
 const DIFFICULTIES: TaskDifficulty[] = ['easy', 'medium', 'hard', 'epic'];
 
 export const SportView: React.FC = () => {
-  const { user, sportLogs, addSportLog, updateSportLog, completeSportLog, deleteSportLog, lang, applyTaskTemplate, showToast } = useGame();
+  const { user, sportLogs, addSportLog, updateSportLog, completeSportLog, deleteSportLog, reorderSportLogs, moveTaskAcrossFolders, applyTaskTemplate, showToast } = useGame();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form state (parity AddSportActivityDialog PyQt)
@@ -115,15 +117,22 @@ export const SportView: React.FC = () => {
   const sportXpPct = Math.min(100, Math.round((user.sportXp / Math.max(1, nextSportLvlSp)) * 100));
 
   // ---- Reps (parity LogSportRepsDialog + SportRepsChartWidget PyQt) ----
-  const [repsSummary, setRepsSummary] = useState<any>(null);
+  const [repsSummary, setRepsSummary] = useState<{ activities: any[]; series: any[] }>({ activities: [], series: [] });
   const [repsModal, setRepsModal] = useState<{ open: boolean; activity: any }>({ open: false, activity: null });
   const [repSets, setRepSets] = useState(1);
   const [repReps, setRepReps] = useState(10);
   const [repNote, setRepNote] = useState('');
   const [repInfo, setRepInfo] = useState<any>(null);
 
+  const refreshRepsSummary = () => {
+    life.sportRepsSummary()
+      .then((d) => setRepsSummary({ activities: d?.activities || [], series: d?.series || [] }))
+      .catch(() => setRepsSummary({ activities: [], series: [] }));
+  };
+
   useEffect(() => {
-    life.sportRepsSummary().then((d) => setRepsSummary(d?.activities || [])).catch(() => setRepsSummary([]));
+    refreshRepsSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sportLogs.length]);
 
   const openReps = async (activity: any) => {
@@ -155,23 +164,26 @@ export const SportView: React.FC = () => {
       const info = await life.sportRepsInfo(repsModal.activity.id);
       setRepInfo(info);
     } catch { /* ignore */ }
-    life.sportRepsSummary().then((d) => setRepsSummary(d?.activities || [])).catch(() => undefined);
+    refreshRepsSummary();
     if (res?.result && res.result.rank_up) {
       const key = String(res.result.rank_after?.key || 'rookie');
       showToast('level_up', t('sport_rank_up', '🏆 Rank UP! Kamu sekarang {rank}!').replace('{rank}', t('sport_rank_' + key, key)), '');
     }
   };
 
-  // Agregasi chart reps 7 hari (parity SportRepsChartWidget: bar harian zero-fill).
-  const repSeriesByDate = new Map<string, number>();
-  (repsSummary || []).forEach((a: any) => (a.series || []).forEach((s: any) => {
-    repSeriesByDate.set(s.date, (repSeriesByDate.get(s.date) || 0) + Number(s.reps || 0));
-  }));
-  const repChartData = [...repSeriesByDate.entries()].sort((x, y) => (x[0] < y[0] ? -1 : 1)).map(([date, value]) => ({ label: date.slice(5), value }));
-  const totalRepsAll = (repsSummary || []).reduce((acc: number, a: any) => acc + Number(a.totalReps || 0), 0);
+  // Chart reps 7 hari (parity SportRepsChartWidget PyQt: db.get_sport_rep_series → bar harian zero-fill global).
+  const repChartData = (repsSummary.series || []).map((s: any) => ({ label: String(s.date || '').slice(5), value: Number(s.reps || 0) }));
+  const hasRepData = repChartData.some((p) => p.value > 0);
+  const totalRepsAll = (repsSummary.activities || []).reduce((acc: number, a: any) => acc + Number(a.totalReps || 0), 0);
 
   const rankKeyOf = (rank: any) => String(rank?.key || 'rookie');
   const rankColorOf = (rank: any) => SPORT_RANK_COLORS[rankKeyOf(rank)] || '#9aa0a6';
+
+  // ---- Folder (parity SportTrackPage: db.get_task_folders(uid, "sport") + FolderWidget) ----
+  const [selectedFolderFilter, setSelectedFolderFilter] = useState<string>('all');
+  const sportFolders = useModeFolders('sport');
+  const filteredSports = filterByFolder(sportLogs, selectedFolderFilter);
+  const drag = useTaskReorder(sportLogs, filteredSports, reorderSportLogs);
 
   return (
     <div className="space-y-6">
@@ -181,7 +193,7 @@ export const SportView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Activity className="w-6 h-6 text-rose-400" />
-              <h2 className="text-xl font-black text-slate-100">{t('page_sport_title', lang === 'id' ? 'Pelacak Olahraga & Kebugaran' : 'Sport & Workout Tracker')}</h2>
+              <h2 className="text-xl font-black text-slate-100">{t('page_sport_title', 'Sport & Workout Tracker')}</h2>
             </div>
             <p className="text-xs text-slate-400">
               {t('page_sport_subtitle', 'Catat sesi latihan harianmu, bakar kalori, naikkan Sport Level, dan perkuat karakter RPG-mu!')}
@@ -190,15 +202,15 @@ export const SportView: React.FC = () => {
 
           <div className="grid grid-cols-3 gap-3 mt-4 pt-3 border-t border-slate-800">
             <div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_total_sessions', lang === 'id' ? 'Total Sesi' : 'Workouts')}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_total_sessions', 'Workouts')}</div>
               <div className="text-base font-extrabold text-slate-200">{sportLogs.length}</div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_total_duration', lang === 'id' ? 'Total Durasi' : 'Duration')}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_total_duration', 'Duration')}</div>
               <div className="text-base font-extrabold text-rose-400">{totalMinutes} m</div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_calories_burned', lang === 'id' ? 'Kalori Terbakar' : 'Calories')}</div>
+              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('sport_calories_burned', 'Calories')}</div>
               <div className="text-base font-extrabold text-amber-400">{totalCaloriesBurned} kcal</div>
             </div>
           </div>
@@ -208,7 +220,7 @@ export const SportView: React.FC = () => {
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('sport_mastery', lang === 'id' ? 'Tingkat Kebugaran' : 'Sport Mastery')}</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('sport_mastery', 'Sport Mastery')}</span>
               <Award className="w-5 h-5 text-rose-400" />
             </div>
             <div className="text-2xl font-black text-rose-400 mt-2">Level {user.sportLevel}</div>
@@ -228,7 +240,7 @@ export const SportView: React.FC = () => {
               onClick={openAdd}
               className="w-full py-2 px-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5"
             >
-              <Plus className="w-4 h-4" /> {t('sport_log_workout', lang === 'id' ? 'Catat Sesi Latihan' : 'Log Workout')}
+              <Plus className="w-4 h-4" /> {t('sport_log_workout', 'Log Workout')}
             </button>
           </div>
         </div>
@@ -239,16 +251,16 @@ export const SportView: React.FC = () => {
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-sky-400" />
-            <h3 className="font-bold text-sm text-slate-200">{t('sport_reps_chart', lang === 'id' ? 'Grafik Reps' : 'Reps Chart')}</h3>
+            <h3 className="font-bold text-sm text-slate-200">{t('sport_reps_chart', 'Reps Chart')}</h3>
           </div>
           <div className="text-xs text-slate-400">{t('sport_total_reps_label', 'Total reps')}: <span className="text-sky-300 font-bold">{totalRepsAll}</span></div>
         </div>
-        {repChartData.length === 0 ? (
+        {!hasRepData ? (
           <p className="text-sm text-slate-500 text-center py-6">{t('sport_reps_empty', 'Belum ada sesi reps. Catat set×reps lewat tombol "Reps".')}</p>
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[420px]">
-              <BarChart data={repChartData} color="#38bdf8" width={680} height={170} />
+              <BarChart data={repChartData} color="#38bdf8" />
             </div>
           </div>
         )}
@@ -256,6 +268,21 @@ export const SportView: React.FC = () => {
 
       {/* Kartu aktivitas (parity _build_card_content SportTrackPage PyQt) */}
       <div className="space-y-3">
+        <TaskFolderBar
+          mode="sport"
+          selected={selectedFolderFilter}
+          onSelect={setSelectedFolderFilter}
+          accent="bg-sky-500/20 text-sky-300 border border-sky-500/40"
+          allLabel={t('sport_filter_all', 'All')}
+          allCount={sportLogs.length}
+          onDropInto={(fid) => {
+            const idx = drag.dragIndex;
+            if (idx === null) return;
+            const it = filteredSports[idx];
+            if (it) moveTaskAcrossFolders('sport', it.id, fid);
+          }}
+        />
+
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-bold text-sm text-slate-200">{t('sport_activities_title', 'Aktivitas Olahraga')}</h3>
           <button
@@ -268,7 +295,8 @@ export const SportView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {sportLogs.map((log: any) => {
+          {filteredSports.map((log: any, idx: number) => {
+            const folder = sportFolders.find((f) => f.id === log.folderId);
             const cals = Number(log.caloriesBurned) || 0;
             const dur = Number(log.durationMinutes) || 0;
             const kpm = dur > 0 ? cals / dur : 0;
@@ -277,7 +305,19 @@ export const SportView: React.FC = () => {
             return (
               <div
                 key={log.id}
-                className={`p-4 rounded-2xl bg-slate-900/80 border flex flex-col gap-2 ${log.done ? 'border-emerald-600/40 opacity-80' : 'border-slate-800'}`}
+                draggable
+                onDragStart={drag.onDragStart(idx, 'list')}
+                onDragOver={(e) => drag.onDragOver(e, idx)}
+                onDragEnter={() => drag.onDragEnter(idx)}
+                onDrop={(e) => drag.onDrop(e, idx)}
+                onDragEnd={drag.onDragEnd}
+                className={`p-4 rounded-2xl bg-slate-900/80 border flex flex-col gap-2 transition-all cursor-grab ${
+                  drag.isDragging(idx)
+                    ? 'opacity-40 border-amber-500'
+                    : drag.isOver(idx)
+                      ? 'border-amber-500/70'
+                      : log.done ? 'border-emerald-600/40 opacity-80' : 'border-slate-800 hover:border-slate-700'
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
@@ -292,11 +332,18 @@ export const SportView: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <span className={`shrink-0 px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 capitalize ${
-                    log.difficulty === 'epic' ? 'text-purple-300' : log.difficulty === 'hard' ? 'text-rose-300' : log.difficulty === 'medium' ? 'text-amber-300' : 'text-emerald-300'
-                  }`}>
-                    {t('task_difficulty_' + (log.difficulty || 'medium'), log.difficulty || 'medium')}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {folder && (
+                      <span className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 bg-slate-800 rounded-md px-2 py-0.5">
+                        <span>{folder.icon}</span> {folder.name}
+                      </span>
+                    )}
+                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 capitalize ${
+                      log.difficulty === 'epic' ? 'text-purple-300' : log.difficulty === 'hard' ? 'text-rose-300' : log.difficulty === 'medium' ? 'text-amber-300' : 'text-emerald-300'
+                    }`}>
+                      {t('task_difficulty_' + (log.difficulty || 'medium'), log.difficulty || 'medium')}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Professional Calorie Row (parity FIX 7) */}
@@ -330,7 +377,7 @@ export const SportView: React.FC = () => {
                         type="button"
                         onClick={() => openEdit(log)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
-                        title="Edit"
+                        title={t('task_edit_title', 'Edit')}
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -340,14 +387,14 @@ export const SportView: React.FC = () => {
                     type="button"
                     onClick={() => life.duplicateSport(log.id).then(() => life.sportRepsSummary().catch(() => undefined)).catch(() => undefined)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-sky-300 text-[10px] font-bold"
-                    title="Duplicate"
+                    title={t('task_duplicate_title', 'Duplicate')}
                   >
                     Dup
                   </button>
                   <button
                     onClick={() => deleteSportLog(log.id)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-auto"
-                    title="Delete"
+                    title={t('task_delete_title', 'Delete')}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -357,12 +404,32 @@ export const SportView: React.FC = () => {
           })}
         </div>
 
-        {sportLogs.length === 0 && (
+        {filteredSports.length === 0 && (
           <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
             <Dumbbell className="w-8 h-8 text-rose-500/40 mx-auto mb-2" />
-            <p className="text-sm font-semibold">{t('sport_no_logs_yet', 'Belum ada catatan olahraga.')}</p>
+            <p className="text-sm font-semibold">
+              {sportLogs.length === 0
+                ? t('sport_no_logs_yet', 'Belum ada catatan olahraga.')
+                : t('folder_empty', 'Folder kosong')}
+            </p>
           </div>
         )}
+
+        {/* Drop area "keluar dari folder" (parity drop_here_to_remove_folder PyQt) */}
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const idx = drag.dragIndex;
+            if (idx === null) return;
+            const it = filteredSports[idx];
+            if (it) moveTaskAcrossFolders('sport', it.id, null);
+          }}
+          className="flex items-center justify-center gap-2 mt-1 rounded-xl border-2 border-dashed border-slate-700/70 hover:border-sky-500/60 hover:bg-slate-900/60 transition-colors py-3 text-slate-500 text-xs font-semibold cursor-pointer"
+        >
+          <FolderOpen className="w-4 h-4" />
+          {t('drop_here_to_remove_folder', '📂 Taruh di sini untuk keluarkan dari folder')}
+        </div>
       </div>
 
       {/* Modal Tambah/Edit (parity AddSportActivityDialog) */}
@@ -490,7 +557,7 @@ export const SportView: React.FC = () => {
                   type="text"
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="e.g. 5km morning loop, 4 sets pullups"
+                  placeholder={t('sport_notes_ph', 'e.g. 5km morning loop, 4 sets pullups')}
                   className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
                 />
               </div>
