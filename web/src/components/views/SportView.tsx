@@ -26,18 +26,19 @@ interface SportFormState {
   autoCalc: boolean;
   calories: number;
   notes: string;
+  folderId: string | null;
 }
 
 const DIFFICULTIES: TaskDifficulty[] = ['easy', 'medium', 'hard', 'epic'];
 
 export const SportView: React.FC = () => {
-  const { user, sportLogs, addSportLog, updateSportLog, completeSportLog, deleteSportLog, reorderSportLogs, moveTaskAcrossFolders, applyTaskTemplate, showToast } = useGame();
+  const { user, sportLogs, addSportLog, updateSportLog, completeSportLog, deleteSportLog, duplicateSportLog, reorderSportLogs, moveTaskAcrossFolders, applyTaskTemplate, showToast } = useGame();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form state (parity AddSportActivityDialog PyQt)
   const [form, setForm] = useState<SportFormState>({
     id: null, name: '', sportType: 'running', difficulty: 'medium',
-    weight: 65.0, duration: 30, autoCalc: true, calories: 100, notes: '',
+    weight: 65.0, duration: 30, autoCalc: true, calories: 100, notes: '', folderId: null,
   });
 
   // Prefill berat: default 65 kg, ditimpa health_log terakhir (parity PyQt).
@@ -60,7 +61,7 @@ export const SportView: React.FC = () => {
   const kcalPerMin = form.duration > 0 ? calories / form.duration : 0;
 
   const openAdd = () => {
-    setForm({ id: null, name: '', sportType: 'running', difficulty: 'medium', weight: 65.0, duration: 30, autoCalc: true, calories: 100, notes: '' });
+    setForm({ id: null, name: '', sportType: 'running', difficulty: 'medium', weight: 65.0, duration: 30, autoCalc: true, calories: 100, notes: '', folderId: null });
     setIsModalOpen(true);
   };
 
@@ -75,6 +76,7 @@ export const SportView: React.FC = () => {
       autoCalc: false,
       calories: Number(log.caloriesBurned) || 0,
       notes: log.notes || '',
+      folderId: log.folderId ?? null,
     });
     setIsModalOpen(true);
   };
@@ -103,9 +105,10 @@ export const SportView: React.FC = () => {
         notes: form.notes,
         caloriesBurned: calories,
         durationMinutes: form.duration,
+        folderId: form.folderId ?? null,
       });
     } else {
-      addSportLog(body.sportType, body.sportName, body.icon, body.durationMinutes, body.caloriesBurned, body.intensity as any, body.notes, body.difficulty);
+      addSportLog(body.sportType, body.sportName, body.icon, body.durationMinutes, body.caloriesBurned, body.intensity as any, body.notes, body.difficulty, form.folderId ?? null);
     }
     setIsModalOpen(false);
   };
@@ -385,7 +388,7 @@ export const SportView: React.FC = () => {
                   )}
                   <button
                     type="button"
-                    onClick={() => life.duplicateSport(log.id).then(() => life.sportRepsSummary().catch(() => undefined)).catch(() => undefined)}
+                    onClick={() => duplicateSportLog(log.id)}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-sky-300 text-[10px] font-bold"
                     title={t('task_duplicate_title', 'Duplicate')}
                   >
@@ -472,6 +475,20 @@ export const SportView: React.FC = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">{t('dialog_folder', 'Folder')}</label>
+                <select
+                  value={form.folderId ?? ''}
+                  onChange={(e) => setForm((f) => ({ ...f, folderId: e.target.value === '' ? null : e.target.value }))}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                >
+                  <option value="">{t('dialog_no_folder', 'Tanpa Folder')}</option>
+                  {sportFolders.map((f) => (
+                    <option key={f.id} value={String(f.id)}>{f.icon} {f.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

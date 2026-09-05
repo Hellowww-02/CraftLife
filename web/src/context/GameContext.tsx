@@ -138,10 +138,11 @@ interface GameContextType {
 
   // Sport Tracker
   sportLogs: SportLog[];
-  addSportLog: (sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string, difficulty?: string) => void;
+  addSportLog: (sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string, difficulty?: string, folderId?: string | null) => void;
   updateSportLog: (id: string, body: Record<string, unknown>) => void;
   completeSportLog: (id: string) => void;
   deleteSportLog: (id: string) => void;
+  duplicateSportLog: (id: string) => void;
   reorderSportLogs: (ordered: SportLog[]) => void;
 
   // Nutrition & Water
@@ -1019,8 +1020,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [lastDelete, restoreTask])
 
   // Sport Tracker
-  const addSportLog = useCallback((sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string, difficulty?: string) => {
-    life.addSport({ sportType, sportName, icon, durationMinutes, caloriesBurned, intensity, difficulty, notes, complete: false }).then((res) => applyLive(res)).catch(notifyApiErr);
+  const addSportLog = useCallback((sportType: string, sportName: string, icon: string, durationMinutes: number, caloriesBurned: number, intensity: 'light' | 'moderate' | 'vigorous', notes?: string, difficulty?: string, folderId?: string | null) => {
+    life.addSport({ sportType, sportName, icon, durationMinutes, caloriesBurned, intensity, difficulty, notes, folderId: folderId || null, complete: false }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const updateSportLog = useCallback((id: string, body: Record<string, unknown>) => {
@@ -1033,6 +1034,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteSportLog = useCallback((id: string) => {
     life.deleteSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  }, [applyLive])
+
+  const duplicateSportLog = useCallback((id: string) => {
+    life.duplicateSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const reorderSportLogs = useCallback((ordered: SportLog[]) => {
@@ -1801,6 +1806,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateSportLog,
         completeSportLog,
         deleteSportLog,
+        duplicateSportLog,
         reorderSportLogs,
         mealLogs,
         addMealLog,
