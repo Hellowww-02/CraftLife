@@ -41,7 +41,7 @@ USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 
 # "supabase" = download dari Storage Supabase (masuk kuota cached egress).
 # "github"   = download dari GitHub Releases (egress gratis, TIDAK masuk kuota).
-UPDATE_SOURCE = "supabase"
+UPDATE_SOURCE = "github"
 GITHUB_REPO = "Hellowww-02/CraftLife"
 
 # Jangan tanya/unduh versi yang sama berulang dalam rentang ini (detik).

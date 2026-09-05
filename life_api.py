@@ -1016,13 +1016,20 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             duration_minutes=int(body.get("durationMinutes") or 30),
         )
         result = {"ok": True}
-        if body.get("complete", False):
-            sid = _last_sport_id(uid)
-            if sid is not None:
-                try:
-                    result = db.complete_sport_activity(uid, sid) or result
-                except Exception as e:
-                    result = {"ok": False, "msg": str(e)}
+        sid = _last_sport_id(uid)
+        # Parity AddSportActivityDialog._save: aktivitas baru bisa langsung
+        # dimasukkan ke folder (folderId opsional).
+        fid = body.get("folderId")
+        if sid is not None and fid not in (None, "", "null"):
+            try:
+                db.set_item_folder(uid, "sport", sid, int(fid))
+            except (TypeError, ValueError):
+                pass
+        if body.get("complete", False) and sid is not None:
+            try:
+                result = db.complete_sport_activity(uid, sid) or result
+            except Exception as e:
+                result = {"ok": False, "msg": str(e)}
         return {"result": result}
 
     if len(parts) >= 4 and parts[1] == "sport":
