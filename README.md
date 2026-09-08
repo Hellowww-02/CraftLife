@@ -19,6 +19,7 @@
 ![Vite](https://img.shields.io/badge/Vite-5.4-646CFF?style=flat-square&logo=vite&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-optional-3FCF8E?style=flat-square&logo=supabase&logoColor=white)
+![UI](https://img.shields.io/badge/UI-v2%20%E2%80%9CCraft%20Design%20System%E2%80%9D-a78bfa?style=flat-square)
 ![i18n](https://img.shields.io/badge/i18n-%F0%9F%87%AE%F0%9F%87%A9%20id%20%2B%20%F0%9F%87%AC%F0%9F%87%A7%20en-3%2C694%20keys-blueviolet?style=flat-square)
 
 **Python + SQLite is the brain. React is the skin. Cloud is optional.**
@@ -51,6 +52,27 @@ in a **local SQLite file you own**.
 ---
 
 <a id="whats-new"></a>
+
+## 🎨 UI v2 — Craft Design System (v1.5.0)
+
+> **Rilis kulit baru, mesin tetap.** Seluruh antarmuka web direkonstruksi dalam 12 fase
+> (U1–U12) menjadi sistem desain buatan sendiri — **tanpa satu baris pun** perubahan
+> backend, logika, handler, i18n, atau migrasi database.
+
+**Apa yang berubah** (41 file TSX/CSS di `web/src/`, ±90 class `ct-*`):
+
+| Lapisan | Isi |
+|---|---|
+| 🏗️ Sistem desain | Token warna/elevasi/radius/motion (`--ct-*`), aurora scene statis, kartu bevel `.ct-task-card`, tombol signature 3D `.ct-btn` (primary/gold/success/danger/secondary/ghost + stem press), socket ikon, chip & tab segmen, dialog spring seragam (`.ct-backdrop`/`.ct-dialog`) |
+| 🃏 Halaman | Dashboard, Task Core (habits/dailies/quests/folder), Pomodoro (timer ring ber-fase), Sport/Nutrition/Health (water bar), Economy (hero finansial), Supplies, Shop (hotbar equip), Craft, Pets, Achievements, Friends (chat bubbles), Guild (boss war-room), Love Space (tema rose), Leaderboard (podium), Music (vinyl disc + equalizer), Notes, Learning, Calendar, Reminders, Login/Onboarding/Profile/Settings |
+| ⚡ Performa | Aturan **R10 anti-flicker** untuk PyQt6 WebEngine: nol `backdrop-filter` di atas scene, nol animasi paint saat idle — gerak hanya saat interaksi (hover/press), scroll-reveal murni CSS `animation-timeline` |
+| 🌗 Tema | Semua preset tema (`modern_dark`, `modern_light`, `overworld`, `nether`, `the_end`, `ocean`, `ancient_city`) + high-contrast tetap jalan via token — ganti tema instan tanpa reload |
+
+**Verifikasi akhir (U12):** kontras teks 17.1:1 (body) / 7.8:1 (muted) — jauh di atas WCAG AA · `tsc --noEmit` 0 error · `vite build` clean (CSS 147 KB / JS 1.02 MB) · 20+ halaman diuji headless di WebEngine sungguhan.
+
+**Dokumentasi:** [`UIUX_ROADMAP_U1_U12.md`](UIUX_ROADMAP_U1_U12.md) (tracker 12/12 + rules R1–R10) · `UPDATES/2026-09-0*.md` (13 log per sesi, format 1–7).
+
+---
 
 ## ✨ What's New in v1.4.0
 
@@ -477,6 +499,11 @@ Also: `cd web && npm run lint` (= `tsc --noEmit`, expect 0 errors).
 ---
 
 ## 🗺️ Roadmap
+
+**✅ UI overhaul U1–U12 — COMPLETE (2026-09):** seluruh UI web direkonstruksi ke
+"Craft Design System" — lihat [`UIUX_ROADMAP_U1_U12.md`](UIUX_ROADMAP_U1_U12.md).
+Backlog UI v2.1: Esc-per-modal · count-up angka · code-splitting per view.
+
 
 **In the repo (code):** cloud phases 1–4 · couple 4f · `app_updates` · reward ledger 5a · shop/inventory 5b.
 

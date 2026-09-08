@@ -35,7 +35,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 
