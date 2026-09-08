@@ -52,7 +52,7 @@ export const PetsView: React.FC = () => {
       ) : (
         <>
           {/* Info aktif/maks (parity info_widget) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-center">
+          <div className="ct-panel p-4 text-center">
             <p className="text-sm font-bold text-amber-200">
               {tr('pets_active_info', {
                 active: activeCount, max: maxPets, level: userLevel, status: tr(statusKey, statusVars),
@@ -75,8 +75,8 @@ export const PetsView: React.FC = () => {
 
               return (
                 <div key={p.petId}
-                  className={`p-3 rounded-2xl border flex flex-col gap-2 ${
-                    p.isEquipped ? 'bg-slate-900/90 border-lime-500/50' : 'bg-slate-900/80 border-slate-800'
+                  className={`ct-task-card p-3 rounded-2xl flex flex-col gap-2 ${
+                    p.isEquipped ? 'border-lime-500/50 shadow-[0_0_22px_-8px_rgba(163,230,53,0.5)]' : ''
                   }`}>
                   {/* Header: icon + nama + tag aktif */}
                   <div className="flex items-center gap-2">
@@ -93,8 +93,8 @@ export const PetsView: React.FC = () => {
                   <div className="text-[11px] font-bold text-amber-400">
                     {tr('pets_level_label', { level: p.level })}
                   </div>
-                  <div className="relative h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-amber-500 to-amber-300"
+                  <div className="relative h-2 rounded-full ct-bar-track">
+                    <div className="h-full ct-bar-fill bg-gradient-to-r from-amber-500 to-amber-300"
                       style={{ width: `${Math.min(100, Math.round(((p.xp || 0) / need) * 100))}%` }} />
                   </div>
                   <div className="text-[10px] text-slate-500 font-mono">
@@ -102,8 +102,8 @@ export const PetsView: React.FC = () => {
                   </div>
 
                   {/* Hunger (parity hunger_bar chunk #f0a800) */}
-                  <div className="relative h-3 rounded-full bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-amber-500"
+                  <div className="relative h-3 rounded-full ct-bar-track">
+                    <div className="h-full ct-bar-fill bg-amber-500"
                       style={{ width: `${Math.min(100, Math.max(0, p.hunger ?? 100))}%` }} />
                     <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-slate-100">
                       {tr('pets_hunger', { hunger: p.hunger ?? 100 })}
@@ -119,21 +119,21 @@ export const PetsView: React.FC = () => {
                   <div className="flex flex-wrap gap-2 pt-1">
                     {p.isEquipped ? (
                       <button type="button" onClick={() => unequipPet(p.petId)}
-                        className="min-w-[80px] px-2 py-1.5 rounded-lg bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 text-[11px] font-bold">
+                        className="ct-btn ct-btn-sm bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 min-w-[80px] text-[11px]">
                         {tr('shop_unequip')}
                       </button>
                     ) : (
                       <button type="button" onClick={() => equipPet(p.petId)}
-                        className="min-w-[80px] px-2 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold">
+                        className="ct-btn ct-btn-primary ct-btn-sm min-w-[80px] text-[11px]">
                         {tr('shop_equip')}
                       </button>
                     )}
                     <button type="button" onClick={() => feedPet(p.petId)}
-                      className="min-w-[70px] px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-bold">
+                      className="ct-btn ct-btn-secondary ct-btn-sm min-w-[70px] text-amber-300 text-[11px]">
                       🍖 {tr('pets_feed', { cost: FEED_COST })}
                     </button>
                     <button type="button" onClick={() => trainPet(p.petId)}
-                      className="min-w-[70px] px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 text-[11px] font-bold">
+                      className="ct-btn ct-btn-secondary ct-btn-sm min-w-[70px] text-sky-300 text-[11px]">
                       ⚡ {tr('pets_train', { cost: trainCost(p.level) })}
                     </button>
                   </div>

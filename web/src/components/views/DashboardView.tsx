@@ -91,13 +91,15 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
   const totalCaloriesToday = mealLogs.reduce((acc, m) => acc + m.calories, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 ct-stagger">
       {/* Top Hero Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-700/60 p-5 sm:p-6 shadow-xl">
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-          <div className="flex items-center gap-4">
+      <div className="ct-hero relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 sm:p-6">
+        <div aria-hidden="true" className="absolute -top-20 -right-20 w-64 h-64 rounded-full opacity-20 blur-3xl pointer-events-none" style={{ background: currentClass.color }} />
+        <div className="relative z-10 flex flex-col gap-5">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+          <div className="flex items-center gap-4 min-w-0">
             <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl font-bold border-2 shadow-xl shrink-0"
+              className="w-[72px] h-[72px] rounded-2xl flex items-center justify-center text-4xl font-bold border-2 shrink-0 ct-glow"
               style={{
                 backgroundColor: `${currentClass.color}25`,
                 borderColor: currentClass.color,
@@ -108,8 +110,8 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black text-slate-100">{user.displayName || user.username}</h1>
-                <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full">
+                <h1 className="text-xl sm:text-2xl font-black text-slate-100 ct-title">{user.displayName || user.username}</h1>
+                <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-full ct-num">
                   Lv.{user.level} {currentClass.name}
                 </span>
               </div>
@@ -131,35 +133,38 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
               <button
                 type="button"
                 onClick={() => setWrappedOpen(true)}
-                className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 hover:bg-amber-500/30"
+                className="ct-btn ct-btn-gold justify-center"
               >
                 <Trophy className="w-3.5 h-3.5" /> {t('dash_wrapped_btn', lang === 'id' ? 'Tahun Ini' : 'Year Wrapped')}
               </button>
               <button
                 type="button"
                 onClick={() => setWidgetsOpen(true)}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 hover:bg-slate-700"
+                className="ct-btn ct-btn-secondary justify-center"
               >
                 <Settings2 className="w-3.5 h-3.5" /> {t('dash_widgets_btn', lang === 'id' ? 'Atur Widget' : 'Widgets')}
               </button>
             </div>
           </div>
+          </div>
 
-          {/* Quick Action Stats */}
+          <hr className="ct-hr" aria-hidden="true" />
+
+          {/* Quick Action Stats — strip bawah hero */}
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('dashboard_dailies', 'Dailies')}</div>
-              <div className="text-sm font-extrabold text-emerald-400">{completedDailiesCount}/{totalDailiesCount}</div>
+            <div className="ct-socket px-3 py-2 rounded-xl text-center min-w-[76px]">
+              <div className="text-[10px] text-slate-400 font-bold uppercase flex items-center justify-center gap-1"><CalendarCheck className="w-3 h-3 text-emerald-400" />{t('dashboard_dailies', 'Dailies')}</div>
+              <div className="text-sm font-extrabold text-emerald-400 ct-num">{completedDailiesCount}/{totalDailiesCount}</div>
             </div>
 
-            <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('dashboard_quests', 'Quests')}</div>
-              <div className="text-sm font-extrabold text-sky-400">{pendingQuests.length}</div>
+            <div className="ct-socket px-3 py-2 rounded-xl text-center min-w-[76px]">
+              <div className="text-[10px] text-slate-400 font-bold uppercase flex items-center justify-center gap-1"><CheckSquare className="w-3 h-3 text-sky-400" />{t('dashboard_quests', 'Quests')}</div>
+              <div className="text-sm font-extrabold text-sky-400 ct-num">{pendingQuests.length}</div>
             </div>
 
-            <div className="px-3.5 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-center min-w-[70px]">
-              <div className="text-[10px] text-slate-400 font-bold uppercase">{t('dash_water', lang === 'id' ? 'Air' : 'Water')}</div>
-              <div className="text-sm font-extrabold text-cyan-400">{Math.round((waterLog.amountMl / waterLog.targetMl) * 100)}%</div>
+            <div className="ct-socket px-3 py-2 rounded-xl text-center min-w-[76px]">
+              <div className="text-[10px] text-slate-400 font-bold uppercase flex items-center justify-center gap-1"><Droplets className="w-3 h-3 text-cyan-400" />{t('dash_water', lang === 'id' ? 'Air' : 'Water')}</div>
+              <div className="text-sm font-extrabold text-cyan-400 ct-num">{Math.round((waterLog.amountMl / waterLog.targetMl) * 100)}%</div>
             </div>
           </div>
         </div>
@@ -174,7 +179,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
       {wcfg.map((w) => {
         if (w.key === 'heatmap') {
           return (
-            <div key="heatmap" className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
+            <div key="heatmap" className="ct-panel p-4">
               <div className="flex items-baseline justify-between mb-2">
                 <h3 className="text-xs font-bold text-slate-300">{t('dash_heatmap_title', 'Heatmap 28 hari')}</h3>
                 <span className="text-[9px] text-slate-500">{t('heatmap_less', 'Less')} ⬜🟩🟩🟩 {t('heatmap_more', 'More')}</span>
@@ -186,7 +191,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                   const key = fmtYmd(base);
                   const n = dailyTaskCounts[key] ?? dailies.filter((x) => x.lastCompletedDate === key || (x.isCompletedToday && i === 27)).length;
                   const bg = n === 0 ? 'bg-slate-800' : n < 2 ? 'bg-emerald-900' : n < 4 ? 'bg-emerald-600' : 'bg-emerald-400';
-                  return <div key={key} title={`${key}: ${n}`} className={`${w.compact ? 'h-3' : 'h-4'} rounded-sm ${bg}`} />;
+                  return <div key={key} title={`${key}: ${n}`} className={`${w.compact ? 'h-3' : 'h-4'} ct-heat-cell ${bg}`} />;
                 })}
               </div>
             </div>
@@ -207,9 +212,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         <button
           onClick={() => navigate('learning')}
-          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-violet-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm"
+          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-violet-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm ct-card-hover ct-press ct-hub"
         >
-          <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 group-hover:scale-105 transition-transform shrink-0">
+          <div className="w-10 h-10 rounded-xl ct-socket border border-violet-500/30 flex items-center justify-center text-violet-400 group-hover:scale-105 transition-transform shrink-0">
             <BookOpen className="w-5 h-5" />
           </div>
           <div className="truncate">
@@ -222,9 +227,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
         <button
           onClick={() => navigate('music')}
-          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm"
+          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-emerald-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm ct-card-hover ct-press ct-hub"
         >
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform shrink-0">
+          <div className="w-10 h-10 rounded-xl ct-socket border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-105 transition-transform shrink-0">
             <Music2 className="w-5 h-5" />
           </div>
           <div className="truncate">
@@ -237,9 +242,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
         <button
           onClick={() => navigate('lovespace')}
-          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-rose-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm"
+          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-rose-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm ct-card-hover ct-press ct-hub"
         >
-          <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 group-hover:scale-105 transition-transform shrink-0">
+          <div className="w-10 h-10 rounded-xl ct-socket border border-rose-500/30 flex items-center justify-center text-rose-400 group-hover:scale-105 transition-transform shrink-0">
             <Heart className="w-5 h-5" />
           </div>
           <div className="truncate">
@@ -252,9 +257,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
         <button
           onClick={() => navigate('guild')}
-          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm"
+          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm ct-card-hover ct-press ct-hub"
         >
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform shrink-0">
+          <div className="w-10 h-10 rounded-xl ct-socket border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 transition-transform shrink-0">
             <Users className="w-5 h-5" />
           </div>
           <div className="truncate">
@@ -267,9 +272,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
         <button
           onClick={() => navigate('calendar')}
-          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm col-span-2 sm:col-span-1"
+          className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/50 rounded-2xl text-left transition-all group flex items-center gap-3 shadow-sm ct-card-hover ct-press ct-hub col-span-2 sm:col-span-1"
         >
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform shrink-0">
+          <div className="w-10 h-10 rounded-xl ct-socket border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-105 transition-transform shrink-0">
             <CalendarIcon className="w-5 h-5" />
           </div>
           <div className="truncate">
@@ -284,7 +289,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
       {/* Grid Overview Sections */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {/* Dailies Section */}
-        <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4.5 flex flex-col justify-between">
+        <div className="ct-panel p-4.5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -304,7 +309,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                 <div
                   key={daily.id}
                   onClick={() => toggleDaily(daily.id)}
-                  className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  className={`ct-row-press p-2.5 rounded-xl border flex items-center justify-between cursor-pointer ${
                     daily.isCompletedToday
                       ? 'bg-emerald-950/20 border-emerald-500/30 text-slate-400 line-through'
                       : 'bg-slate-800/60 border-slate-700/60 text-slate-200 hover:border-emerald-500/50'
@@ -329,14 +334,14 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
           <button
             onClick={() => navigate('dailies')}
-            className="w-full mt-4 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-xs font-semibold text-slate-300 transition-colors flex items-center justify-center gap-1.5"
+            className="ct-btn ct-btn-secondary ct-btn-sm w-full mt-4 justify-center"
           >
             <Plus className="w-3.5 h-3.5" /> {t('dash_manage_dailies', 'Kelola Dailies')}
           </button>
         </div>
 
         {/* Habits Section */}
-        <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4.5 flex flex-col justify-between">
+        <div className="ct-panel p-4.5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -345,7 +350,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
               </div>
               <button
                 onClick={() => navigate('habits')}
-                className="text-xs font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
+                className="ct-link text-xs text-amber-400 hover:text-amber-300"
               >
                 <span>{t('dash_view_all', 'Lihat Semua')}</span> <ArrowRight className="w-3 h-3" />
               </button>
@@ -366,7 +371,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                     {habit.isPositive && (
                       <button
                         onClick={() => triggerHabit(habit.id, true)}
-                        className="w-7 h-7 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold text-xs flex items-center justify-center border border-emerald-500/40 transition-colors"
+                        className="ct-socket ct-press w-8 h-8 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-black text-sm flex items-center justify-center border border-emerald-500/40"
                         title="+ Positive Action"
                       >
                         +
@@ -375,7 +380,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                     {habit.isNegative && (
                       <button
                         onClick={() => triggerHabit(habit.id, false)}
-                        className="w-7 h-7 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 font-bold text-xs flex items-center justify-center border border-rose-500/40 transition-colors"
+                        className="ct-socket ct-press w-8 h-8 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-black text-sm flex items-center justify-center border border-rose-500/40"
                         title="- Negative Action"
                       >
                         -
@@ -389,7 +394,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
           <button
             onClick={() => navigate('habits')}
-            className="w-full mt-4 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700/80 text-xs font-semibold text-slate-300 transition-colors flex items-center justify-center gap-1.5"
+            className="ct-btn ct-btn-secondary ct-btn-sm w-full mt-4 justify-center"
           >
             <Plus className="w-3.5 h-3.5" /> {t('dash_manage_habits', 'Kelola Habits')}
           </button>
@@ -404,7 +409,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                 <h3 className="font-bold text-sm text-red-300">{t('dash_dungeon_boss', 'Dungeon Boss')}</h3>
               </div>
               {activeBoss && (
-                <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                <span className="ct-chip ct-num px-2 py-0.5 text-[10px] font-bold uppercase text-red-300 border-red-500/40 bg-red-500/15">
                   {activeBoss.tier}
                 </span>
               )}
@@ -412,7 +417,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
             {activeBoss ? (
               <div className="space-y-3 text-center">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-3xl">
+                <div className="ct-socket w-14 h-14 mx-auto rounded-2xl bg-red-500/10 border border-red-500/40 flex items-center justify-center text-3xl">
                   {activeBoss.icon}
                 </div>
                 <div>
@@ -425,9 +430,9 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                     <span>Boss HP</span>
                     <span>{activeBossHp} / {activeBoss.maxHp}</span>
                   </div>
-                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                  <div className="w-full h-2 rounded-full overflow-hidden border border-slate-700 ct-bar-track">
                     <div
-                      className="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-300"
+                      className="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-300 ct-bar-fill"
                       style={{ width: `${Math.max(0, Math.min(100, (activeBossHp / activeBoss.maxHp) * 100))}%` }}
                     />
                   </div>
@@ -442,7 +447,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
           <button
             onClick={() => navigate('boss')}
-            className="w-full mt-4 py-2 px-3 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-xs font-bold text-red-300 border border-red-500/40 transition-colors flex items-center justify-center gap-1.5"
+            className="ct-btn ct-btn-danger ct-btn-sm w-full mt-4 justify-center"
           >
             <Swords className="w-3.5 h-3.5" /> {t('dash_enter_boss_arena', 'Masuk Boss Arena')}
           </button>
@@ -452,13 +457,13 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
       {/* Bottom Row: Quests, Sport, Water */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Active Quests Preview */}
-        <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
+        <div className="ct-panel p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <CheckSquare className="w-4 h-4 text-sky-400" />
               <h4 className="font-bold text-xs text-slate-200">{t('quest_quest_to_do_list', 'Quests (To-Do)')}</h4>
             </div>
-            <button onClick={() => navigate('quests')} className="text-[11px] text-sky-400 font-semibold hover:underline">
+            <button onClick={() => navigate('quests')} className="ct-link text-[11px] text-sky-400">
               {t('dash_open', 'Buka')}
             </button>
           </div>
@@ -468,7 +473,7 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
                 <div
                   key={q.id}
                   onClick={() => toggleQuest(q.id)}
-                  className="p-2 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/50 flex items-center justify-between text-xs cursor-pointer transition-colors"
+                  className="ct-row-press p-2 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/50 flex items-center justify-between text-xs cursor-pointer"
                 >
                   <span className="truncate">{q.title}</span>
                   <span className="text-[10px] text-amber-400 font-bold uppercase ml-2">{q.difficulty}</span>
@@ -483,13 +488,13 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
         </div>
 
         {/* Workout Progress Preview */}
-        <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
+        <div className="ct-panel p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Activity className="w-4 h-4 text-rose-400" />
               <h4 className="font-bold text-xs text-slate-200">{t('dash_sporttrack', 'SportTrack')}</h4>
             </div>
-            <button onClick={() => navigate('sport')} className="text-[11px] text-rose-400 font-semibold hover:underline">
+            <button onClick={() => navigate('sport')} className="ct-link text-[11px] text-rose-400">
               {t('dash_open', 'Buka')}
             </button>
           </div>
@@ -510,13 +515,13 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
         </div>
 
         {/* Water Hydration */}
-        <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4">
+        <div className="ct-panel p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Droplets className="w-4 h-4 text-cyan-400" />
               <h4 className="font-bold text-xs text-slate-200">{t('dash_water_hydration', 'Hidrasi Air')}</h4>
             </div>
-            <button onClick={() => navigate('nutrition')} className="text-[11px] text-cyan-400 font-semibold hover:underline">
+            <button onClick={() => navigate('nutrition')} className="ct-link text-[11px] text-cyan-400">
               {t('dash_open', 'Buka')}
             </button>
           </div>

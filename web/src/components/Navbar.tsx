@@ -75,14 +75,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   const hasBuffs = buffChips.length > 0;
 
   return (
-    <header className="shrink-0 z-30 ct-surface-solid backdrop-blur-md border-b ct-border px-4 py-2.5">
+    <header className="shrink-0 z-30 ct-surface-solid border-b ct-border px-4 py-2.5">
       <div className="flex items-center justify-between gap-3">
         {/* Left: Mobile Toggle + User Avatar & Vitals */}
         <div className="flex items-center gap-3">
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-slate-100 hover:bg-slate-700"
+              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-slate-100 hover:bg-slate-700 ct-press"
               title={t('nav_toggle_menu', 'Toggle Menu')}
             >
               <Menu className="w-5 h-5" />
@@ -99,7 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               {user.avatarEmoji || user.avatar || currentClass.icon}
             </div>
-            <span className="absolute -bottom-1.5 -right-1.5 px-1.5 py-0.2 text-[9px] font-bold bg-amber-500 text-slate-950 rounded-full border border-amber-300">
+            <span className="ct-num absolute -bottom-1.5 -right-1.5 px-1.5 py-0.2 text-[9px] font-bold bg-amber-500 text-slate-950 rounded-full border border-amber-300">
               Lv.{user.level}
             </span>
           </div>
@@ -120,9 +120,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
                 <span>{user.hp}/{user.maxHp}</span>
               </div>
-              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 rounded-full overflow-hidden ct-bar-track">
                 <div
-                  className="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-300 rounded-full"
+                  className="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-300 rounded-full ct-bar-fill"
                   style={{ width: `${hpPercentage}%` }}
                 />
               </div>
@@ -136,9 +136,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
                 <span>{user.mp}/{user.maxMp}</span>
               </div>
-              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 rounded-full overflow-hidden ct-bar-track">
                 <div
-                  className="h-full bg-gradient-to-r from-sky-600 to-blue-500 transition-all duration-300 rounded-full"
+                  className="h-full bg-gradient-to-r from-sky-600 to-blue-500 transition-all duration-300 rounded-full ct-bar-fill"
                   style={{ width: `${mpPercentage}%` }}
                 />
               </div>
@@ -152,9 +152,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-amber-300">{tr('nav_level_progress', { level: user.level })}</span>
             <span className="text-slate-400">{user.xp} / {user.xpToNextLevel} ({xpPercentage}%)</span>
           </div>
-          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
+          <div
+            className="w-full h-2 rounded-full overflow-hidden border border-slate-700/50 ct-bar-track"
+            title={`${user.xp} / ${user.xpToNextLevel} XP`}
+          >
             <div
-              className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-300 rounded-full"
+              className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-300 rounded-full ct-bar-fill"
               style={{ width: `${xpPercentage}%` }}
             />
           </div>
@@ -164,7 +167,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Gold — nilai LOKAL (offline-first source of truth). Sinkronisasi cloud
               best-effort; status sync lihat Settings → Cloud & Sync. */}
-          <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-extrabold text-xs sm:text-sm">
+          <div className="ct-sheen flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-extrabold text-xs sm:text-sm ct-num overflow-hidden">
             <Coins className="w-3.5 h-3.5 text-amber-400" />
             <span>{(user.gold ?? 0).toLocaleString()}</span>
           </div>
@@ -189,7 +192,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {onOpenPalette && (
             <button
               onClick={onOpenPalette}
-              className="hidden sm:flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-400"
+              className="hidden sm:flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-400 ct-press"
               title="Ctrl+K"
             >
               ⌘K
@@ -200,7 +203,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {onOpenAchievements && (
             <button
               onClick={onOpenAchievements}
-              className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors"
+              className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors ct-press"
               title={t('nav_achievements', 'Achievements')}
             >
               <Trophy className="w-4 h-4" />
@@ -216,7 +219,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors"
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors ct-press"
               title={t('nav_settings', 'Settings')}
             >
               <Settings className="w-4 h-4" />
@@ -226,7 +229,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Language Toggle */}
           <button
             onClick={() => setLang(lang === 'en' ? 'id' : 'en')}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 transition-colors"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 transition-colors ct-press"
             title={t('nav_toggle_language', 'Toggle Language')}
           >
             <Globe className="w-3.5 h-3.5 text-sky-400" />
@@ -243,7 +246,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span
               key={b.key}
               title={b.label}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-800/80 border border-slate-700/60 text-slate-300 whitespace-nowrap ct-chip-buff"
             >
               {b.label}
             </span>

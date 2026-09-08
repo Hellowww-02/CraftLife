@@ -126,14 +126,14 @@ const ZoomableViewer: React.FC<{ photo: any; t: (k: string, fb: string) => strin
 };
 
 const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }> = ({ title, onClose, children, wide }) => (
-  <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+  <div className="ct-backdrop fixed inset-0 z-[120] flex items-center justify-center p-4" onClick={onClose}>
     <div
-      className={`w-full ${wide ? 'max-w-3xl' : 'max-w-md'} bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto`}
+      className={`ct-dialog w-full ${wide ? 'max-w-3xl' : 'max-w-md'} p-5 space-y-3 max-h-[90vh] overflow-y-auto`}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-sm text-slate-200">{title}</h3>
-        <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400"><X className="w-4 h-4" /></button>
+        <button onClick={onClose} className="ct-act"><X className="w-4 h-4" /></button>
       </div>
       {children}
     </div>
@@ -171,10 +171,10 @@ const PROMPTS: Array<[string, string, string]> = [
 
 type TabId = 'overview' | 'connection' | 'cycle' | 'memories' | 'gallery' | 'plans';
 
-const inputCls = 'w-full px-2 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 text-xs';
-const btnRose = 'px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold';
-const btnGhost = 'px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold';
-const btnDanger = 'px-3 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-900 text-rose-200 text-xs font-bold';
+const inputCls = 'ct-input w-full px-2 py-1.5 rounded-lg text-slate-200 text-xs';
+const btnRose = 'ct-btn ct-btn-rose ct-btn-sm';
+const btnGhost = 'ct-btn ct-btn-secondary ct-btn-sm';
+const btnDanger = 'ct-btn ct-btn-danger ct-btn-sm';
 
 export const LoveSpaceView: React.FC = () => {
   const {
@@ -472,7 +472,7 @@ export const LoveSpaceView: React.FC = () => {
       {/* Header Hero Banner (parity header LovePage: title + edit profile + end couple) */}
       <div className="p-6 bg-gradient-to-r from-rose-950/60 via-slate-900 to-pink-950/40 border border-rose-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
         <div className="flex items-center gap-4 text-center md:text-left">
-          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-3xl shadow-lg shrink-0">
+          <div className="ct-socket w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center text-3xl shrink-0">
             {loveSpace.partnerAvatar || '🌸'}
           </div>
           <div>
@@ -528,8 +528,8 @@ export const LoveSpaceView: React.FC = () => {
           <button
             key={tb.id}
             onClick={() => setTab(tb.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
-              tab === tb.id ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            className={`ct-tab flex items-center gap-1.5 ${
+              tab === tb.id ? 'ct-tab-on ct-tab-rose' : ''
             }`}
           >
             {tb.icon}
@@ -856,7 +856,7 @@ export const LoveSpaceView: React.FC = () => {
           </div>
 
           {/* Album bar (parity love_album_* toolbar) */}
-          <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-900/70 border border-slate-800 rounded-2xl">
+          <div className="ct-panel flex flex-wrap items-center gap-2 p-3 rounded-2xl">
             <span className="text-[11px] text-slate-400 font-bold">{t('love_album_title', 'Album')}</span>
             <select value={gAlbum} onChange={(e) => setGAlbum(e.target.value)} className={`${inputCls} w-auto`}>
               <option value="">{t('love_album_all', 'Semua Album')}</option>
@@ -971,7 +971,7 @@ export const LoveSpaceView: React.FC = () => {
                         ><FolderOpen className="w-3 h-3" /></button>
                         <button
                           type="button"
-                          className="p-1 rounded bg-slate-800 hover:bg-rose-900 text-rose-300"
+                          className="ct-act text-rose-300"
                           title={t('love_delete', 'Hapus')}
                           onClick={() => { if (window.confirm(t('love_gallery_delete_confirm', 'Hapus foto ini?'))) deleteLovePhoto(pid); }}
                         ><Trash2 className="w-3 h-3" /></button>
@@ -1294,8 +1294,8 @@ export const LoveSpaceView: React.FC = () => {
                     key={s.key}
                     type="button"
                     onClick={() => setTrackingTab(i)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors ${
-                      trackingTab === i ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-slate-100'
+                    className={`ct-tab text-[11px] ${
+                      trackingTab === i ? 'ct-tab-on ct-tab-rose' : ''
                     }`}
                   >
                     {s.label}

@@ -130,6 +130,13 @@ const MainLayout: React.FC = () => {
     // Shell 1:1 dengan MainWindow PyQt: TopBar full-width di atas, lalu body row
     // = [nav rail | main content] (parity self._topbar + body.addWidget(nav_scroll|_stack)).
     <div className="h-screen ct-app flex flex-col overflow-hidden selection:bg-emerald-500/20 selection:text-emerald-300">
+      {/* Ambient scene — dekoratif murni (aria-hidden), tanpa logika */}
+      <div className="ct-scene" aria-hidden="true">
+        <div className="ct-scene-aurora" />
+        <div className="ct-scene-orbs" />
+        <div className="ct-scene-grain" />
+      </div>
+
       <Navbar
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         onOpenSettings={() => setActiveView('settings')}
@@ -146,7 +153,7 @@ const MainLayout: React.FC = () => {
         />
 
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
-          {renderActiveView()}
+          <div key={activeView} className="ct-view">{renderActiveView()}</div>
         </main>
       </div>
 
@@ -182,15 +189,15 @@ const HydrationGate: React.FC = () => {
 
   if (apiError) {
     return (
-      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="text-5xl">⛏️</div>
+      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4 p-8 text-center ct-enter">
+        <div className="text-5xl ct-float">⛏️</div>
         <h1 className="text-xl font-black text-rose-400">{t('web_api_offline', 'API lokal tidak merespons. Jalankan api_server di port 8765.')}</h1>
         <p className="text-sm text-slate-400 max-w-md">{t('web_offline_gate_hint', 'Koneksi ke server lokal terputus. Pastikan CraftLife API berjalan lalu coba lagi.')}</p>
         <code className="text-xs bg-slate-900 border border-slate-800 rounded px-2 py-1 text-slate-500">{apiError}</code>
         <button
           type="button"
           onClick={retryBootstrap}
-          className="mt-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors"
+          className="mt-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors ct-press"
         >
           {t('web_retry', 'Coba lagi')}
         </button>
@@ -200,8 +207,8 @@ const HydrationGate: React.FC = () => {
 
   if (!hydrated) {
     return (
-      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-3">
-        <div className="text-4xl animate-bounce">⛏️</div>
+      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-3 ct-app">
+        <div className="text-4xl ct-float">⛏️</div>
         <p className="text-sm text-slate-400 font-semibold">{t('web_loading', 'Memuat...')}</p>
       </div>
     );

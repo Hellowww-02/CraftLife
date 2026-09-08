@@ -31,13 +31,13 @@ export const YearWrappedDialog: React.FC<{ onClose: () => void; displayName?: st
   const money = (v: number) => `Rp ${Math.round(Number(v || 0)).toLocaleString()}`;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div className="max-w-md w-full bg-slate-900 border border-amber-500/40 rounded-2xl p-6 shadow-2xl space-y-3 max-h-[90vh] overflow-y-auto">
+    <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="ct-dialog max-w-md w-full p-6 space-y-3 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-amber-300 flex items-center gap-2">
             <Sparkles className="w-5 h-5" /> CraftLife Wrapped {(w?.year) || ''}
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><X className="w-4 h-4" /></button>
         </div>
         {!w || (!w.total_done && !w.focus_sessions) ? (
           <p className="text-sm text-slate-400 text-center py-10">Belum ada aktivitas di tahun ini. Mulai catat task-mu!</p>
@@ -85,7 +85,7 @@ export const YearWrappedDialog: React.FC<{ onClose: () => void; displayName?: st
             </div>
           </div>
         )}
-        <div className="flex justify-end"><button onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs">Tutup</button></div>
+        <div className="flex justify-end"><button onClick={onClose} className="ct-btn ct-btn-secondary ct-btn-sm">Tutup</button></div>
       </div>
     </div>
   );

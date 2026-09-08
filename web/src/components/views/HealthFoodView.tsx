@@ -263,7 +263,7 @@ export const HealthFoodView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* ── Date selector (◀ [tanggal] ▶ [Hari ini]) ── */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex items-center gap-2 flex-wrap">
+      <div className="ct-panel p-4 flex items-center gap-2 flex-wrap">
         <Salad className="w-6 h-6 text-teal-400" />
         <h2 className="text-xl font-black text-slate-100 mr-2">
           {t('page_health_title', 'Health & Food')}
@@ -284,7 +284,7 @@ export const HealthFoodView: React.FC = () => {
           ['food_carbs_stat', `${Math.round(nutrition.carbs)} / ${goals.carbs} g`, '#4da6ff'],
           ['food_fat_stat', `${Math.round(nutrition.fat)} / ${goals.fat} g`, '#e05050'],
         ] as const).map(([key, val, color]) => (
-          <div key={key} className="rounded-xl bg-slate-900 border border-slate-800 p-3">
+          <div key={key} className="ct-body-tile p-3">
             <div className="text-[11px] text-slate-400">{t(key, key)}</div>
             <div className="text-base font-bold" style={{ color }}>{val}</div>
           </div>
@@ -294,27 +294,27 @@ export const HealthFoodView: React.FC = () => {
         <div className="h-full transition-all duration-300" style={{ width: `${Math.min(100, calPct)}%`, background: calBarColor }} />
       </div>
       <div className="flex justify-end">
-        <button type="button" onClick={openGoals} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">
+        <button type="button" onClick={openGoals} className="ct-btn ct-btn-gold ct-btn-sm">
           {t('food_set_goals_btn', '🎯 Atur Target Nutrisi')}
         </button>
       </div>
 
       {/* ── Water section (parity _build_water_section) ── */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+      <div className="ct-panel p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Droplets className="w-4 h-4 text-cyan-400" /> {t('food_tab_water', '💧 Tracker Air')}</h3>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-300">{trv('food_water_goal', { goal: water.goalMl }, `Goal: ${water.goalMl} ml`)}</span>
-            <button type="button" onClick={() => { setWaterGoalInput(water.goalMl); setWaterGoalOpen(true); }} className="px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 text-[11px] font-black">{t('food_water_set_goal', 'Atur Target')}</button>
+            <button type="button" onClick={() => { setWaterGoalInput(water.goalMl); setWaterGoalOpen(true); }} className="ct-btn ct-btn-gold ct-btn-sm">{t('food_water_set_goal', 'Atur Target')}</button>
           </div>
         </div>
         <div className="text-[11px] text-slate-400">{trv('water_progress_format', { current: water.totalMl, goal: water.goalMl }, `${water.totalMl} / ${water.goalMl} ml`)}</div>
-        <div className="w-full h-5 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300" style={{ width: `${Math.min(100, (water.totalMl / Math.max(1, water.goalMl)) * 100)}%` }} />
+        <div className="w-full h-5 rounded-full border border-slate-700 overflow-hidden ct-water-track">
+          <div className="h-full transition-all duration-300 ct-water-fill" style={{ width: `${Math.min(100, (water.totalMl / Math.max(1, water.goalMl)) * 100)}%` }} />
         </div>
         <div className="flex gap-2 flex-wrap">
           {([250, 500, 1000] as const).map((amount) => (
-            <button key={amount} type="button" onClick={() => addWater(amount)} className="px-3 py-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-xs font-bold">
+            <button key={amount} type="button" onClick={() => addWater(amount)} className="ct-btn ct-btn-sm bg-cyan-500/20 border-cyan-500/40 text-cyan-300">
               {t(`food_water_add_${amount}`, `+${amount} ml`)}
             </button>
           ))}
@@ -324,7 +324,7 @@ export const HealthFoodView: React.FC = () => {
           <input type="number" min={1} max={5000} value={waterCustom} onChange={(e) => setWaterCustom(Math.max(1, Math.min(5000, Number(e.target.value) || 1000)))}
             className="w-24 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs" />
           <span className="text-[11px] text-slate-500">{t('unit_ml', ' ml')}</span>
-          <button type="button" onClick={() => addWater(waterCustom)} className="px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-[11px] font-bold">{t('dialog_add', '➕  Tambah')}</button>
+          <button type="button" onClick={() => addWater(waterCustom)} className="ct-btn ct-btn-primary ct-btn-sm">{t('dialog_add', '➕  Tambah')}</button>
         </div>
 
         <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2">
@@ -347,7 +347,7 @@ export const HealthFoodView: React.FC = () => {
       </div>
 
       {/* ── BMI section (parity _build_bmi_section) ── */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+      <div className="ct-panel p-4 space-y-3">
         <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> {t('food_bmi_title', '📏 BMI & Profil Tubuh')}</h3>
         <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
           <label className="space-y-1">
@@ -377,8 +377,8 @@ export const HealthFoodView: React.FC = () => {
           </label>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button type="button" onClick={saveBmi} className="px-3 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold">{t('food_bmi_save_profile', '💾 Simpan Profil')}</button>
-          <button type="button" onClick={calcBmi} className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">{t('food_bmi_calc', 'Hitung BMI')}</button>
+          <button type="button" onClick={saveBmi} className="ct-btn ct-btn-primary ct-btn-sm">{t('food_bmi_save_profile', '💾 Simpan Profil')}</button>
+          <button type="button" onClick={calcBmi} className="ct-btn ct-btn-secondary ct-btn-sm">{t('food_bmi_calc', 'Hitung BMI')}</button>
           <button type="button" onClick={setAutoGoals} className="px-3 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">{t('food_bmi_set_target', '🎯 Set Target Otomatis')}</button>
         </div>
         {bmiResult && (
@@ -388,9 +388,9 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── Action buttons parity _build_action_buttons ── */}
       <div className="flex gap-2 flex-wrap">
-        <button type="button" onClick={() => setCustomOpen(true)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold border border-slate-700">{t('food_add_custom', '➕ Tambah Makanan Kustom')}</button>
-        <button type="button" onClick={() => setRecipeCreateOpen(true)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold border border-slate-700">{t('food_recipes', '📖 Resep')}</button>
-        <button type="button" onClick={() => setExportOpen(true)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold border border-slate-700 flex items-center gap-1"><Download className="w-3.5 h-3.5" /> {t('food_export', '📤 Ekspor Nutrisi')}</button>
+        <button type="button" onClick={() => setCustomOpen(true)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('food_add_custom', '➕ Tambah Makanan Kustom')}</button>
+        <button type="button" onClick={() => setRecipeCreateOpen(true)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('food_recipes', '📖 Resep')}</button>
+        <button type="button" onClick={() => setExportOpen(true)} className="ct-btn ct-btn-secondary ct-btn-sm"><Download className="w-3.5 h-3.5" /> {t('food_export', '📤 Ekspor Nutrisi')}</button>
       </div>
 
       {/* ── Food explorer (parity AddFoodDialog mode "log") + catatan makanan (parity _refresh_food_log) ── */}
@@ -411,7 +411,7 @@ export const HealthFoodView: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('health_search_food_ph', 'Search food items...')}
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-teal-500" />
+                className="ct-input w-full pl-9 pr-3 py-2 rounded-xl text-xs text-slate-100 focus:border-transparent" />
             </div>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1.5 rounded-xl text-xs">
               <span className="text-slate-400 font-semibold">{t('health_portion', 'Portion:')}</span>
@@ -424,11 +424,11 @@ export const HealthFoodView: React.FC = () => {
             value={logNotes}
             onChange={(e) => setLogNotes(e.target.value)}
             placeholder={t('health_log_notes_ph', 'Log notes (optional, e.g. no rice, double protein)...')}
-            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-teal-500"
+            className="ct-input w-full px-3 py-2 rounded-xl text-xs text-slate-100 focus:border-transparent"
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
             {filteredFoods.slice(0, 60).map((food) => (
-              <div key={food.id} className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-teal-500/40 flex items-center justify-between gap-3 transition-all">
+              <div key={food.id} className="ct-row-press p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-teal-500/40 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="text-2xl">{food.icon}</span>
                   <div className="min-w-0">
@@ -496,7 +496,7 @@ export const HealthFoodView: React.FC = () => {
       </div>
 
       {/* ── Health input (parity _build_health_input_section) ── */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+      <div className="ct-panel p-4 space-y-3">
         <h3 className="font-bold text-sm text-slate-200">{t('health_tab_input', '📥 Input Data Kesehatan')}</h3>
         <div className="grid md:grid-cols-3 gap-4 text-xs">
           <div className="space-y-2 rounded-xl bg-slate-950/50 border border-slate-800 p-3">
@@ -532,7 +532,7 @@ export const HealthFoodView: React.FC = () => {
             <div className="font-bold text-slate-300">{t('health_notes_group', '📝 Catatan')}</div>
             <input type="text" value={hForm.notes} onChange={(e) => setHForm((f) => ({ ...f, notes: e.target.value }))} placeholder={t('health_notes_placeholder', 'Bagaimana kondisi tubuhmu hari ini…')}
               className="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
-            <button type="button" onClick={saveHealth} className="mt-auto px-3 py-2 rounded-xl bg-teal-500 text-slate-950 text-xs font-black">{t('health_save', '💾 Simpan Data')}</button>
+            <button type="button" onClick={saveHealth} className="ct-btn ct-btn-primary ct-btn-sm mt-auto">{t('health_save', '💾 Simpan Data')}</button>
           </div>
         </div>
       </div>
@@ -612,22 +612,22 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── Custom food modal (parity AddFoodDialog mode "add") ── */}
       {customOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-black text-slate-100">{t('food_add_custom', '➕ Tambah Makanan Kustom')}</h3>
             <form onSubmit={addCustomAndLog} className="space-y-3 text-xs">
-              <input type="text" required value={custom.name} onChange={(e) => setCustom((c) => ({ ...c, name: e.target.value }))} placeholder={t('food_custom_ph', 'Contoh: Smoothie Buah')} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
+              <input type="text" required value={custom.name} onChange={(e) => setCustom((c) => ({ ...c, name: e.target.value }))} placeholder={t('food_custom_ph', 'Contoh: Smoothie Buah')} className="ct-input w-full px-3 py-2 rounded-xl" />
               <div className="grid grid-cols-2 gap-3">
                 {(([['calories', 'food_calories_label'], ['protein', 'food_protein_label'], ['carbs', 'food_carbs_label'], ['fat', 'food_fat_label']] as const)).map(([k, l]) => (
                   <label key={k} className="block text-slate-300 font-semibold">
                     {t(l, l)}
-                    <input type="number" value={custom[k]} onChange={(e) => setCustom((c) => ({ ...c, [k]: Number(e.target.value) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
+                    <input type="number" value={custom[k]} onChange={(e) => setCustom((c) => ({ ...c, [k]: Number(e.target.value) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
                   </label>
                 ))}
               </div>
               <div className="flex items-center justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setCustomOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-semibold">{t('btn_cancel', 'Batal')}</button>
-                <button type="submit" className="px-4 py-2 rounded-xl bg-teal-500 text-slate-950 font-bold">{t('dialog_add', '➕  Tambah')}</button>
+                <button type="button" onClick={() => setCustomOpen(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
+                <button type="submit" className="ct-btn ct-btn-primary ct-btn-sm">{t('dialog_add', '➕  Tambah')}</button>
               </div>
             </form>
           </div>
@@ -636,20 +636,20 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── Nutrition goals dialog (parity SetGoalsDialog) ── */}
       {editGoals && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
             <h3 className="text-lg font-black text-slate-100">{t('health_daily_targets', '🎯 Target Nutrisi Harian')}</h3>
             <label className="block text-xs text-slate-300">{t('food_calories_label', 'Kalori (kcal)')}
-              <input type="number" min={500} max={10000} value={goalForm.calories} onChange={(e) => setGoalForm((g) => ({ ...g, calories: Math.max(500, Math.min(10000, Number(e.target.value) || 2000)) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
+              <input type="number" min={500} max={10000} value={goalForm.calories} onChange={(e) => setGoalForm((g) => ({ ...g, calories: Math.max(500, Math.min(10000, Number(e.target.value) || 2000)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_protein_label', 'Protein (g)')}
-              <input type="number" min={0} max={500} value={goalForm.protein} onChange={(e) => setGoalForm((g) => ({ ...g, protein: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
+              <input type="number" min={0} max={500} value={goalForm.protein} onChange={(e) => setGoalForm((g) => ({ ...g, protein: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_carbs_label', 'Karbohidrat (g)')}
-              <input type="number" min={0} max={500} value={goalForm.carbs} onChange={(e) => setGoalForm((g) => ({ ...g, carbs: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
+              <input type="number" min={0} max={500} value={goalForm.carbs} onChange={(e) => setGoalForm((g) => ({ ...g, carbs: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_fat_label', 'Lemak (g)')}
-              <input type="number" min={0} max={200} value={goalForm.fat} onChange={(e) => setGoalForm((g) => ({ ...g, fat: Math.max(0, Math.min(200, Number(e.target.value) || 0)) }))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
+              <input type="number" min={0} max={200} value={goalForm.fat} onChange={(e) => setGoalForm((g) => ({ ...g, fat: Math.max(0, Math.min(200, Number(e.target.value) || 0)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setEditGoals(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{t('btn_cancel', 'Batal')}</button>
-              <button type="button" onClick={async () => { await life.saveNutritionGoals(goalForm).catch(() => undefined); setEditGoals(false); showToast('success', t('food_save_goals', 'Target nutrisi tersimpan'), ''); loadDay(); }} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">{t('food_save_goals', '💾 Simpan Target')}</button>
+              <button type="button" onClick={() => setEditGoals(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
+              <button type="button" onClick={async () => { await life.saveNutritionGoals(goalForm).catch(() => undefined); setEditGoals(false); showToast('success', t('food_save_goals', 'Target nutrisi tersimpan'), ''); loadDay(); }} className="ct-btn ct-btn-gold ct-btn-sm">{t('food_save_goals', '💾 Simpan Target')}</button>
             </div>
           </div>
         </div>
@@ -657,14 +657,14 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── Water goal dialog (parity QInputDialog) ── */}
       {waterGoalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="max-w-xs w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
             <h3 className="text-base font-black text-slate-100">{t('food_water_goal_dialog_title', 'Atur Target Air')}</h3>
             <label className="block text-xs text-slate-300">{t('food_water_goal_dialog_label', 'Target harian (ml):')}
-              <input type="number" min={500} max={10000} step={100} value={waterGoalInput} onChange={(e) => setWaterGoalInput(Math.max(500, Math.min(10000, Number(e.target.value) || 2500)))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" /></label>
+              <input type="number" min={500} max={10000} step={100} value={waterGoalInput} onChange={(e) => setWaterGoalInput(Math.max(500, Math.min(10000, Number(e.target.value) || 2500)))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setWaterGoalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{t('btn_cancel', 'Batal')}</button>
-              <button type="button" onClick={saveWaterGoal} className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">💾 {t('btn_save', 'Simpan')}</button>
+              <button type="button" onClick={() => setWaterGoalOpen(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
+              <button type="button" onClick={saveWaterGoal} className="ct-btn ct-btn-gold ct-btn-sm">💾 {t('btn_save', 'Simpan')}</button>
             </div>
           </div>
         </div>
@@ -680,7 +680,7 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── Export dialog (parity _export_nutrition) ── */}
       {exportOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-black text-slate-100">{t('food_export_format_title', '📤 Ekspor Data Nutrisi')}</h3>
@@ -737,21 +737,21 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div className="max-w-lg w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
+    <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="ct-dialog max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-slate-100">{t('food_recipe_new_title', '🍲 Buat Resep Baru')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <label className="block text-slate-300 font-semibold">{t('food_recipe_name', 'Nama Resep')}
-            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
+            <input value={name} onChange={(e) => setName(e.target.value)} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
           </label>
           <label className="block text-slate-300 font-semibold">{t('food_recipe_icon', 'Ikon')}
-            <input value={icon} onChange={(e) => setIcon(e.target.value)} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
+            <input value={icon} onChange={(e) => setIcon(e.target.value)} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
           </label>
           <label className="block text-slate-300 font-semibold">{t('food_recipe_servings', 'Jumlah Porsi')}
-            <input type="number" step="0.5" min="0.5" value={servingSize} onChange={(e) => setServingSize(Math.max(0.5, Number(e.target.value) || 1))} className="w-full mt-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700" />
+            <input type="number" step="0.5" min="0.5" value={servingSize} onChange={(e) => setServingSize(Math.max(0.5, Number(e.target.value) || 1))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
           </label>
         </div>
         <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 text-xs">

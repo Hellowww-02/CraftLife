@@ -155,7 +155,7 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
   const low = items.filter((it) => it.minStock > 0 && it.stock <= it.minStock).length;
   const value = items.reduce((acc, it) => acc + it.stock * it.price, 0);
 
-  const fieldCls = 'bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm';
+  const fieldCls = 'ct-input rounded-xl px-3 py-2 text-sm';
 
   return (
     <div className="space-y-6">
@@ -166,14 +166,14 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
           ['supplies_stat_low', String(low), '#ff8c42', '⚠️'],
           ['supplies_stat_value', formatMoney(value, currency), '#80c000', '💵'],
         ] as const).map(([key, val, color, icon]) => (
-          <div key={key} className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4">
+          <div key={key} className="ct-body-tile rounded-2xl p-4">
             <div className="text-[11px] text-slate-400 flex items-center gap-1"><span>{icon}</span> {t(key, key)}</div>
             <div className="text-xl font-black mt-1" style={{ color }}>{val}</div>
           </div>
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-3 bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
+      <div className="ct-panel flex items-center justify-between gap-3 p-5">
         <div className="flex items-center gap-3">
           <Package className="w-8 h-8 text-amber-400" />
           <div>
@@ -182,10 +182,10 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => onNavigate?.('economy')} className="px-4 py-2 rounded-xl bg-teal-600 text-white text-sm font-bold">
+          <button onClick={() => onNavigate?.('economy')} className="ct-btn ct-btn-primary">
             💰 {t('supplies_open_economy', 'Open Economy')}
           </button>
-          <button onClick={openAdd} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold flex items-center gap-1">
+          <button onClick={openAdd} className="ct-btn ct-btn-success flex items-center gap-1">
             <Plus className="w-4 h-4" /> {t('supplies_add', 'Add')}
           </button>
         </div>
@@ -198,10 +198,10 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('supplies_search_ph', 'Search items…')}
-            className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-sm text-slate-100"
+            className="ct-input w-full px-4 py-2.5 rounded-xl text-sm text-slate-100"
           />
         </div>
-        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className="px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-sm text-slate-100">
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className="ct-input px-3 py-2.5 rounded-xl text-sm text-slate-100">
           <option value="">{t('supplies_all_categories', 'All Categories')}</option>
           {cats.map((c) => (<option key={c.name} value={c.name}>{c.name}</option>))}
         </select>
@@ -226,7 +226,7 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
 
       {/* ── Per-kategori panel (parity supplies_per_category) ── */}
       {cats.length > 0 && (
-        <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4">
+        <div className="ct-panel rounded-2xl p-4">
           <h3 className="text-xs font-bold text-slate-300 mb-2">{t('supplies_per_category', '📂 Per Category')}</h3>
           <div className="space-y-1">
             {cats.map((c) => (
@@ -245,7 +245,7 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
           <div
             key={it.id}
             onClick={() => setSelected((s) => (s?.id === it.id ? null : it))}
-            className={`flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/70 border cursor-pointer transition-colors ${selected?.id === it.id ? 'border-teal-500/60' : 'border-slate-800'}`}
+            className={`ct-row-press ct-task-card flex items-center justify-between gap-3 p-3 rounded-xl cursor-pointer ${selected?.id === it.id ? 'border-teal-500/60' : ''}`}
           >
             <div className="min-w-0">
               <div className="font-semibold text-sm text-slate-100 truncate">{it.name}</div>
@@ -264,18 +264,18 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
               </div>
             </div>
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => openTx(it, 'in')} className="p-2 rounded-lg bg-emerald-500/20 text-emerald-300" title={t('supplies_stock_in', 'Stock in')}><ArrowDownToLine className="w-4 h-4" /></button>
-              <button onClick={() => openTx(it, 'out')} className="p-2 rounded-lg bg-amber-500/20 text-amber-300" title={t('supplies_stock_out', 'Stock out')}><ArrowUpFromLine className="w-4 h-4" /></button>
-              <button onClick={() => openTx(it, 'adjust')} className="p-2 rounded-lg bg-sky-500/20 text-sky-300" title={t('web_supply_adjust', 'Set stock')}><Equal className="w-4 h-4" /></button>
-              <button onClick={() => openEdit(it)} className="p-2 rounded-lg bg-slate-800 text-slate-300" title={t('supplies_edit', 'Edit')}><Pencil className="w-4 h-4" /></button>
-              <button onClick={() => remove(it.id)} className="p-2 rounded-lg bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={() => openTx(it, 'in')} className="ct-press p-2 rounded-lg bg-emerald-500/20 text-emerald-300" title={t('supplies_stock_in', 'Stock in')}><ArrowDownToLine className="w-4 h-4" /></button>
+              <button onClick={() => openTx(it, 'out')} className="ct-press p-2 rounded-lg bg-amber-500/20 text-amber-300" title={t('supplies_stock_out', 'Stock out')}><ArrowUpFromLine className="w-4 h-4" /></button>
+              <button onClick={() => openTx(it, 'adjust')} className="ct-press p-2 rounded-lg bg-sky-500/20 text-sky-300" title={t('web_supply_adjust', 'Set stock')}><Equal className="w-4 h-4" /></button>
+              <button onClick={() => openEdit(it)} className="ct-press ct-socket p-2 rounded-lg text-slate-300" title={t('supplies_edit', 'Edit')}><Pencil className="w-4 h-4" /></button>
+              <button onClick={() => remove(it.id)} className="ct-press p-2 rounded-lg bg-rose-500/10 text-rose-400"><Trash2 className="w-4 h-4" /></button>
             </div>
           </div>
         ))}
       </div>
 
       {/* ── History panel per item (parity supplies_history_title) ── */}
-      <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4">
+      <div className="ct-panel rounded-2xl p-4">
         <h3 className="text-xs font-bold text-slate-300 mb-2">
           {t('supplies_history_title', '🧾 Transaction History')}
           {selected ? ` — ${selected.name}` : ''}
@@ -303,8 +303,8 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
 
       {/* Item add / edit modal */}
       {itemModal.open && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">
                 {t(itemModal.editing ? 'supplies_dlg_title_edit' : 'supplies_dlg_title_add', itemModal.editing ? 'Edit Item' : 'Add Item')}
@@ -346,8 +346,8 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
 
       {/* Transaction modal */}
       {txModal.open && txModal.item && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">
                 {t('supplies_tx_title', 'Stock Transaction')} — {txModal.item.name}

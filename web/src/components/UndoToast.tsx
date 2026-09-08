@@ -27,7 +27,7 @@ export const UndoToast: React.FC = () => {
   const label = lang === 'id' ? 'Tugas dihapus' : 'Task deleted';
 
   return (
-    <div className="fixed bottom-5 right-5 z-[80] flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800 border border-slate-600 shadow-2xl text-sm max-w-sm">
+    <div className="ct-pop fixed bottom-5 right-5 z-[80] flex items-center gap-3 px-4 py-3 rounded-xl ct-surface-solid border border-slate-600 shadow-2xl text-sm max-w-sm">
       <div className="min-w-0">
         <p className="text-slate-100 font-semibold truncate">{label}</p>
         <p className="text-xs text-slate-400 truncate">{lastDelete.label}</p>
@@ -38,7 +38,7 @@ export const UndoToast: React.FC = () => {
           undoDelete();
           setVisible(false);
         }}
-        className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs whitespace-nowrap flex items-center gap-1"
+        className="ct-press px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs whitespace-nowrap flex items-center gap-1"
       >
         <Undo2 className="w-3.5 h-3.5" />
         {lang === 'id' ? 'Urungkan' : 'Undo'}

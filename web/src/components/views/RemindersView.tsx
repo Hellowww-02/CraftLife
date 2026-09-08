@@ -183,13 +183,13 @@ export const RemindersView: React.FC = () => {
       <div className="flex items-center gap-2">
         <button
           type="button" onClick={openAdd}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black"
+          className="ct-btn ct-btn-gold ct-btn-sm flex items-center gap-1.5"
         >
           <Plus className="w-3.5 h-3.5" /> {tr('reminders_add')}
         </button>
         <button
           type="button" onClick={refresh}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
+          className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5"
         >
           <RefreshCw className="w-3.5 h-3.5" /> {tr('reminders_refresh')}
         </button>
@@ -208,7 +208,7 @@ export const RemindersView: React.FC = () => {
               key={r.id}
               type="button"
               onClick={() => setSelectedId(r.id)}
-              className={`w-full text-left px-4 py-3 flex items-center gap-2 border-b border-slate-800/60 last:border-0 transition-colors ${
+              className={`ct-row-press w-full text-left px-4 py-3 flex items-center gap-2 border-b border-slate-800/60 last:border-0 transition-colors ${
                 selected ? 'bg-amber-500/10 border-l-2 border-l-amber-400' : 'hover:bg-slate-800/40'
               } ${!r.isActive ? 'opacity-50' : ''}`}
             >
@@ -217,7 +217,7 @@ export const RemindersView: React.FC = () => {
                 : <BellOff className="w-4 h-4 text-slate-500 shrink-0" />}
               <span className="flex-1 min-w-0">
                 <span className="text-sm font-bold text-slate-100 truncate block">{r.title}</span>
-                <span className="text-[11px] text-slate-400 font-mono">{timeStr}</span>
+                <span className="ct-rem-time text-[11px] text-slate-400 font-mono">{timeStr}</span>
               </span>
               {r.triggered && <span className="text-emerald-400 text-sm shrink-0">✅</span>}
             </button>
@@ -228,29 +228,29 @@ export const RemindersView: React.FC = () => {
       {/* Tombol aksi item terpilih (parity action_row) */}
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={openEdit} disabled={!selectedId}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40">
+          className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5 disabled:opacity-40">
           <Pencil className="w-3.5 h-3.5" /> {tr('reminders_edit')}
         </button>
         <button type="button" onClick={() => { const r = reminders.find((x) => x.id === selectedId); if (r) setDeleteTarget(r); }} disabled={!selectedId}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 text-xs font-bold disabled:opacity-40">
+          className="ct-btn ct-btn-danger ct-btn-sm flex items-center gap-1.5 disabled:opacity-40">
           <Trash2 className="w-3.5 h-3.5" /> {tr('reminders_delete')}
         </button>
         <button type="button" onClick={doToggle} disabled={!selectedId}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40">
+          className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5 disabled:opacity-40">
           {selectedId && reminders.find((x) => x.id === selectedId)?.isActive
             ? <><BellOff className="w-3.5 h-3.5" /> {tr('reminders_toggle')}</>
             : <><Bell className="w-3.5 h-3.5" /> {tr('reminders_toggle')}</>}
         </button>
         <button type="button" onClick={openTest} disabled={!selectedId}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 text-xs font-bold disabled:opacity-40">
+          className="ct-btn ct-btn-sm flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 disabled:opacity-40">
           <Play className="w-3.5 h-3.5" /> {tr('reminders_test')}
         </button>
       </div>
 
       {/* ── Dialog tambah/edit (parity ReminderDialog) ── */}
       {formOpen && (
-        <div className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg space-y-3 max-h-[90vh] overflow-y-auto">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog p-6 w-full max-w-lg space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="text-sm font-black text-slate-100">
               {formOpen.mode === 'edit' ? tr('reminders_edit_title') : tr('reminders_add_title')}
             </h3>
@@ -261,7 +261,7 @@ export const RemindersView: React.FC = () => {
               <span className="text-[11px] uppercase tracking-wider text-slate-500">{tr('reminders_title_label')}</span>
               <input value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
                 placeholder={tr('reminders_title_ph')}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100" />
+                className="ct-input w-full px-3 py-2 rounded-xl text-sm text-slate-100" />
             </label>
 
             {/* Deskripsi */}
@@ -269,7 +269,7 @@ export const RemindersView: React.FC = () => {
               <span className="text-[11px] uppercase tracking-wider text-slate-500">{tr('reminders_desc_label')}</span>
               <textarea value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                 placeholder={tr('reminders_desc_ph')} rows={2}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 resize-none" />
+                className="ct-input w-full px-3 py-2 rounded-xl text-sm text-slate-100 resize-none" />
             </label>
 
             {/* Waktu (parity QDateTimeEdit yyyy-MM-dd HH:mm) */}
@@ -277,9 +277,9 @@ export const RemindersView: React.FC = () => {
               <span className="text-[11px] uppercase tracking-wider text-slate-500">{tr('reminders_datetime_label')}</span>
               <div className="flex gap-2">
                 <input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))}
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100" />
+                  className="ct-input flex-1 px-3 py-2 rounded-xl text-sm text-slate-100" />
                 <input type="time" value={form.time} onChange={(e) => setForm((p) => ({ ...p, time: e.target.value }))}
-                  className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 font-mono" />
+                  className="ct-input px-3 py-2 rounded-xl text-sm text-slate-100 font-mono" />
               </div>
             </label>
 
@@ -287,7 +287,7 @@ export const RemindersView: React.FC = () => {
             <label className="block space-y-1">
               <span className="text-[11px] uppercase tracking-wider text-slate-500">{tr('reminders_repeat_label')}</span>
               <select value={form.repeat} onChange={(e) => setForm((p) => ({ ...p, repeat: e.target.value as ReminderForm['repeat'] }))}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100">
+                className="ct-input w-full px-3 py-2 rounded-xl text-sm text-slate-100">
                 <option value="none">{tr('reminders_repeat_none')}</option>
                 <option value="daily">{tr('reminders_repeat_daily')}</option>
                 <option value="weekly">{tr('reminders_repeat_weekly')}</option>
@@ -323,7 +323,7 @@ export const RemindersView: React.FC = () => {
                   ...p, sound: e.target.value as ReminderForm['sound'],
                   ...(e.target.value !== 'custom' ? { soundFile: '', soundFileLabel: '' } : {}),
                 }))}
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100">
+                  className="ct-input flex-1 px-3 py-2 rounded-xl text-sm text-slate-100">
                   <option value="default">{tr('reminders_sound_default')}</option>
                   <option value="beep1">{tr('reminders_sound_beep1')}</option>
                   <option value="beep2">{tr('reminders_sound_beep2')}</option>
@@ -331,7 +331,7 @@ export const RemindersView: React.FC = () => {
                 </select>
                 <button type="button" disabled={form.sound !== 'custom'}
                   onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40">
+                  className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5 disabled:opacity-40">
                   <FolderOpen className="w-3.5 h-3.5" /> {tr('reminders_browse')}
                 </button>
                 <input ref={fileRef} type="file" accept=".mp3,audio/mpeg" className="hidden"
@@ -361,7 +361,7 @@ export const RemindersView: React.FC = () => {
       {/* ── Konfirmasi waktu lampau (parity past_datetime_confirm) ── */}
       {pastConfirm && (
         <div className="fixed inset-0 z-[80] bg-slate-950/80 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm space-y-4">
+          <div className="ct-dialog p-6 w-full max-w-sm space-y-4">
             <h3 className="text-sm font-black text-slate-100">{tr('confirm_title')}</h3>
             <p className="text-xs text-slate-300">{tr('reminders_past_datetime_confirm')}</p>
             <div className="flex justify-end gap-2">
@@ -377,7 +377,7 @@ export const RemindersView: React.FC = () => {
       {/* ── Konfirmasi hapus (parity reminders_delete_confirm) ── */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[80] bg-slate-950/80 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm space-y-4">
+          <div className="ct-dialog p-6 w-full max-w-sm space-y-4">
             <h3 className="text-sm font-black text-slate-100">{tr('confirm_title')}</h3>
             <p className="text-xs text-slate-300">{tr('reminders_delete_confirm')}</p>
             <div className="flex justify-end gap-2">
@@ -393,7 +393,7 @@ export const RemindersView: React.FC = () => {
       {/* ── Dialog tes suara (parity _test_selected: suara jalan → OK menghentikan) ── */}
       {testTarget && (
         <div className="fixed inset-0 z-[80] bg-slate-950/80 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm space-y-4 text-center">
+          <div className="ct-dialog p-6 w-full max-w-sm space-y-4 text-center">
             <h3 className="text-sm font-black text-slate-100">{tr('reminders_test_title')}</h3>
             <p className="text-xs text-slate-300">
               {tr('reminders_test_msg', { title: testTarget.title })}

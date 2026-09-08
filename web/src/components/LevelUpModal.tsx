@@ -10,17 +10,17 @@ export const LevelUpModal: React.FC = () => {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+      <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
         <motion.div
           initial={{ scale: 0.8, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.8, opacity: 0 }}
-          className="relative max-w-md w-full bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-2 border-amber-500/60 rounded-3xl p-6 shadow-2xl shadow-amber-500/20 text-center overflow-hidden"
+          className="ct-pop relative max-w-md w-full bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-2 border-amber-500/60 rounded-3xl p-6 shadow-2xl shadow-amber-500/20 text-center overflow-hidden"
         >
           {/* Ambient Glow */}
           <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-amber-500/20 border border-amber-400 flex items-center justify-center text-3xl shadow-lg animate-bounce">
+          <div className="ct-socket ct-pop w-16 h-16 mx-auto mb-3 rounded-2xl bg-amber-500/20 flex items-center justify-center text-3xl shadow-lg">
             🎉
           </div>
 
@@ -33,7 +33,7 @@ export const LevelUpModal: React.FC = () => {
               : `Your character has reached Level ${levelUpInfo.level}!`}
           </p>
 
-          <div className="my-5 p-4 rounded-2xl bg-slate-800/80 border border-slate-700/60 space-y-2.5 text-xs text-left">
+          <div className="ct-body-tile my-5 p-4 space-y-2.5 text-xs text-left">
             <div className="flex items-center justify-between text-red-300">
               <span className="flex items-center gap-2">
                 <Heart className="w-4 h-4 text-red-400 fill-red-400" /> {lang === 'id' ? 'Maksimal HP Meningkat' : 'Max HP Increased'}

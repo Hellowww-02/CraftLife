@@ -65,8 +65,8 @@ export const TaskTemplateDialog: React.FC<{
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div className="max-w-lg w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-hidden flex flex-col">
+    <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="ct-dialog max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-hidden flex flex-col">
         <div>
           <h3 className="text-lg font-black text-slate-100">
             {t('template_title', '📋 Template Habit Siap Pakai')}
@@ -96,7 +96,7 @@ export const TaskTemplateDialog: React.FC<{
             templates.map((tpl) => (
               <div
                 key={tpl.key}
-                className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700"
+                className="ct-row-press flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700 cursor-pointer text-left w-full"
               >
                 <span className="text-2xl shrink-0">{tpl.icon || '📋'}</span>
                 <div className="flex-1 min-w-0">

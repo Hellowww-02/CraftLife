@@ -52,10 +52,10 @@ export const CraftView: React.FC = () => {
 
           return (
             <div key={String(r.id || r.resultItemId)}
-              className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2">
+              className="ct-task-card p-4 rounded-2xl space-y-2">
               {/* Header: icon + nama output + buff + desc */}
               <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-xl bg-slate-800 border border-amber-500/40 flex items-center justify-center text-3xl shrink-0">
+                <div className="ct-socket w-12 h-12 rounded-xl flex items-center justify-center text-3xl shrink-0">
                   {out.icon || '🔨'}
                 </div>
                 <div>
@@ -77,7 +77,7 @@ export const CraftView: React.FC = () => {
                   const have = (ownedQty.get(req.itemId) || 0) >= 1;
                   return (
                     <span key={req.itemId}
-                      className={have ? 'text-amber-100' : 'text-rose-500'}>
+                      className={have ? 'text-emerald-300' : 'text-rose-400'}>
                       {have ? tr('crafting_have_tag') : tr('crafting_missing_tag')}{' '}
                       {it.icon || '❔'} {it.name || req.itemId}
                     </span>
@@ -87,7 +87,7 @@ export const CraftView: React.FC = () => {
 
               {/* Gold + aksi (parity foot) */}
               <div className="flex items-center gap-3 pt-1">
-                <span className={`text-[11px] font-bold ${goldOk ? 'text-amber-300' : 'text-rose-500'}`}>
+                <span className={`text-[11px] font-bold ${goldOk ? 'text-amber-300' : 'text-rose-400'}`}>
                   {tr('crafting_gold_cost', { gold: goldNeed })}
                 </span>
                 {!goldOk && (
@@ -101,9 +101,9 @@ export const CraftView: React.FC = () => {
                 ) : (
                   <button type="button" disabled={!ok}
                     onClick={() => craftItem(r.resultItemId)}
-                    className={`min-w-[130px] px-4 py-2 rounded-lg font-black text-[11px] ${
-                      ok ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                         : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    className={`ct-btn ct-btn-sm min-w-[130px] font-black text-[11px] ${
+                      ok ? 'ct-btn-gold'
+                         : 'ct-btn-secondary text-slate-500 cursor-not-allowed opacity-50'
                     }`}>
                     {tr('crafting_btn')}
                   </button>

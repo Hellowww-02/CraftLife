@@ -107,7 +107,7 @@ export const LeaderboardView: React.FC = () => {
         <select
           value={mode}
           onChange={(e) => setMode(e.target.value as Mode)}
-          className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-amber-500"
+          className="ct-input px-3 py-2 rounded-xl text-slate-100 text-sm focus:border-transparent"
         >
           <option value="cloud_productivity">{t('cloud_leaderboard_productivity', 'Produktivitas Online')}</option>
           <option value="cloud_guild">{t('cloud_leaderboard_guild', 'Guild Online')}</option>
@@ -138,7 +138,7 @@ export const LeaderboardView: React.FC = () => {
       )}
 
       {mode === 'local' || !cloudLinked ? (
-        <div className="rounded-2xl border border-slate-800 overflow-hidden overflow-x-auto">
+        <div className="ct-reveal ct-panel rounded-2xl overflow-hidden overflow-x-auto">
           <table className="w-full text-xs min-w-[680px]">
             <thead className="bg-slate-900 text-slate-400">
               <tr>
@@ -154,10 +154,16 @@ export const LeaderboardView: React.FC = () => {
                 return (
                   <tr
                     key={r.id}
-                    className={`border-t border-slate-800 ${isSelf ? 'bg-emerald-950/40 text-emerald-200' : 'text-slate-200'}`}
+                    className={`border-t border-slate-800 transition-colors hover:bg-slate-800/40 ${isSelf ? 'bg-emerald-950/60 text-emerald-200' : 'text-slate-200'}`}
                   >
                     <td className="p-2 font-bold">
-                      {i + 1 === 1 ? '🥇' : i + 1 === 2 ? '🥈' : i + 1 === 3 ? '🥉' : i + 1}
+                      {i + 1 <= 3 ? (
+                      <span className={`ct-chip px-2 py-0.5 font-black ${i + 1 === 1 ? 'ct-rank-gold' : i + 1 === 2 ? 'ct-rank-silver' : 'ct-rank-bronze'}`}>
+                        {i + 1 === 1 ? '🥇' : i + 1 === 2 ? '🥈' : '🥉'} {i + 1}
+                      </span>
+                    ) : (
+                      i + 1
+                    )}
                     </td>
                     <td className="p-2 font-semibold whitespace-nowrap">
                       {r.displayName || r.username}
@@ -194,14 +200,14 @@ export const LeaderboardView: React.FC = () => {
               )}
               {loading && (
                 <tr>
-                  <td colSpan={8} className="p-4 text-slate-500 text-center">…</td>
+                  <td colSpan={8} className="p-4"><div className="ct-skeleton h-3 rounded mb-2" /><div className="ct-skeleton h-3 w-2/3 mx-auto rounded" /></td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 overflow-hidden overflow-x-auto">
+        <div className="ct-reveal ct-panel rounded-2xl overflow-hidden overflow-x-auto">
           <table className="w-full text-xs min-w-[520px]">
             <thead className="bg-slate-900 text-slate-400">
               <tr>
@@ -214,7 +220,13 @@ export const LeaderboardView: React.FC = () => {
               {cloudRows.map((r, i) => (
                 <tr key={i} className="border-t border-slate-800 text-slate-200">
                   <td className="p-2 text-center font-bold">
-                    {i + 1 === 1 ? '🥇' : i + 1 === 2 ? '🥈' : i + 1 === 3 ? '🥉' : i + 1}
+                    {i + 1 <= 3 ? (
+                      <span className={`ct-chip px-2 py-0.5 font-black ${i + 1 === 1 ? 'ct-rank-gold' : i + 1 === 2 ? 'ct-rank-silver' : 'ct-rank-bronze'}`}>
+                        {i + 1 === 1 ? '🥇' : i + 1 === 2 ? '🥈' : '🥉'} {i + 1}
+                      </span>
+                    ) : (
+                      i + 1
+                    )}
                   </td>
                   {mode === 'cloud_guild' ? (
                     <>

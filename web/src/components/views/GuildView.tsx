@@ -261,7 +261,7 @@ export const GuildView: React.FC = () => {
         </header>
         <p className="text-sm text-slate-500">{tr('guild_no_guild')}</p>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
+        <div className="ct-panel p-4 space-y-2">
           <h3 className="text-sm font-black text-slate-100">{tr('guild_create')}</h3>
           <label className="block space-y-1">
             <span className="text-xs text-slate-500">{tr('dialog_name')}</span>
@@ -275,12 +275,12 @@ export const GuildView: React.FC = () => {
           </label>
           <button type="button"
             onClick={() => { if (gName.trim()) void post(studio.createGuild(gName.trim(), gDesc.trim())); }}
-            className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
+            className="ct-btn ct-btn-gold ct-btn-sm w-full justify-center font-black">
             {tr('guild_create_btn')}
           </button>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
+        <div className="ct-panel p-4 space-y-2">
           <h3 className="text-sm font-black text-slate-100">{tr('guild_request')}</h3>
           <input type="number" min={1} value={joinId} onChange={(e) => setJoinId(e.target.value)} placeholder="ID"
             className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100" />
@@ -319,23 +319,23 @@ export const GuildView: React.FC = () => {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={openGuildChat}
-            className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold">
+            className="ct-btn ct-btn-primary ct-btn-sm">
             💬 {tr('guild_chat_title')}
           </button>
           {isLeader && (
             <button type="button" onClick={() => setInviteFriendDlg(true)}
-              className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold">
+              className="ct-btn ct-btn-success ct-btn-sm">
               {tr('guild_invite_friend_btn')}
             </button>
           )}
           {isLeader && (
             <button type="button" onClick={() => setDescDraft(guild.description || '')}
-              className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold">
+              className="ct-btn ct-btn-secondary ct-btn-sm">
               ✏️ {tr('guild_edit_desc_btn')}
             </button>
           )}
           <button type="button" onClick={() => { if (window.confirm(tr('cloud_guild_leave_confirm'))) void post(studio.leaveGuild()); }}
-            className="px-3 py-2 rounded-xl bg-rose-900/50 hover:bg-rose-900/80 text-rose-200 text-xs font-bold">
+            className="ct-btn ct-btn-danger ct-btn-sm">
             {tr('guild_leave_btn')}
           </button>
         </div>
@@ -382,7 +382,7 @@ export const GuildView: React.FC = () => {
           {tr('guild_skill_info', { mp: user.mp || 0, max_mp: user.maxMp || 0, skill_icon: skill.icon, skill_name: skill.name, skill_cost: skill.mp_cost })}
         </p>
         <button type="button" onClick={() => void post(studio.guildSkill())}
-          className="min-w-[140px] px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-black">
+          className="ct-btn ct-btn-primary ct-btn-sm min-w-[140px] font-black">
           {tr('guild_use_skill_with_icon', { icon: skill.icon })}
         </button>
       </div>
@@ -390,7 +390,7 @@ export const GuildView: React.FC = () => {
       {/* Jika ada reward belum diklaim → tombol buka dialog */}
       {rewards.length > 0 && !rewardDlg && (
         <button type="button" onClick={() => setRewardDlg(true)}
-          className="w-full py-2.5 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-black">
+          className="ct-btn ct-btn-sm w-full justify-center bg-amber-500/20 border-amber-500/50 text-amber-300 font-black">
           {tr('guild_unclaimed_reward', { n: rewards.length })}
         </button>
       )}
@@ -411,7 +411,7 @@ export const GuildView: React.FC = () => {
       </section>
 
       {/* SECTION BOSS (parity _make_boss_section + _boss_selector) */}
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
+      <section className="ct-panel ct-war-panel p-4 space-y-3">
         <h3 className="text-sm font-black text-slate-100">{tr('guild_boss_battle')}</h3>
         {guild.bossMaxHp > 0 ? (
           <>
@@ -419,8 +419,8 @@ export const GuildView: React.FC = () => {
               <span className="font-bold" style={{ color: tierColor }}>{bossTitle}</span>
               <span className="text-slate-400 font-mono">{tr('guild_boss_hp', { hp: guild.bossHp ?? 0, max_hp: guild.bossMaxHp })}</span>
             </div>
-            <div className="h-5 rounded-xl bg-slate-800 overflow-hidden">
-              <div className="h-full" style={{ width: `${Math.max(3, (guild.bossHp / guild.bossMaxHp) * 100)}%`, background: tierColor }} />
+            <div className="h-5 rounded-xl ct-bar-track overflow-hidden">
+              <div className="h-full ct-bar-fill" style={{ width: `${Math.max(3, (guild.bossHp / guild.bossMaxHp) * 100)}%`, background: tierColor }} />
             </div>
             <p className="text-xs text-slate-400">
               {tr('guild_boss_atk_info', { atk: guild.bossAttack ?? 0, bonus: bossDamageBonus, total: 25 + bossDamageBonus })}
@@ -432,20 +432,20 @@ export const GuildView: React.FC = () => {
               <>
                 <p className="text-xs font-bold text-rose-400">{tr('guild_hp_zero')}</p>
                 <button type="button" onClick={() => void post(studio.guildQuickHeal())}
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
+                  className="ct-btn ct-btn-gold ct-btn-sm w-full justify-center font-black">
                   {tr('guild_quick_heal')}
                 </button>
               </>
             ) : (
               <div className="grid grid-cols-2 gap-2.5">
                 <button type="button" title={tr('boss_action_light_tip')} onClick={() => attack('light')}
-                  className="h-11 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black">{tr('boss_action_light_label')}</button>
+                  className="ct-btn ct-btn-gold h-11 text-xs font-black">{tr('boss_action_light_label')}</button>
                 <button type="button" title={tr('boss_action_heavy_tip')} onClick={() => attack('heavy')}
-                  className="h-11 rounded-xl bg-rose-700 hover:bg-rose-600 text-white text-xs font-black">{tr('boss_action_heavy_label')}</button>
+                  className="ct-btn ct-btn-danger h-11 text-xs font-black">{tr('boss_action_heavy_label')}</button>
                 <button type="button" title={tr('boss_action_block_tip')} onClick={() => attack('block')}
-                  className="h-11 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs font-black">{tr('boss_action_block_label')}</button>
+                  className="ct-btn ct-btn-secondary h-11 text-xs font-black">{tr('boss_action_block_label')}</button>
                 <button type="button" title={tr('boss_action_ultimate_tip')} onClick={() => attack('ultimate')}
-                  className="h-11 rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-xs font-black">{tr('boss_action_ultimate_label')}</button>
+                  className="ct-btn ct-btn-primary h-11 text-xs font-black">{tr('boss_action_ultimate_label')}</button>
               </div>
             )}
           </>
@@ -460,7 +460,7 @@ export const GuildView: React.FC = () => {
                 {TIERS.filter((t2) => t2 !== 'all').map((t2) => <option key={t2} value={t2}>{t2 === 'custom' ? tr('cboss_custom_tag') : t2.toUpperCase()}</option>)}
               </select>
               <select value={bossId} onChange={(e) => setBossId(e.target.value)}
-                className="flex-1 min-w-[200px] px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100">
+                className="ct-input flex-1 min-w-[200px] px-3 py-2 rounded-xl text-xs text-slate-100">
                 <option value="">—</option>
                 {filteredBosses.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -472,7 +472,7 @@ export const GuildView: React.FC = () => {
                 ))}
               </select>
               <button type="button" onClick={() => { setBossModal(true); setCbName(''); setCbIcon('👾'); setCbHp(1000); setCbAtk(20); setCbMinLvl(10); }}
-                className="px-4 py-2 rounded-xl bg-amber-900/60 hover:bg-amber-900/90 text-amber-200 text-xs font-bold">
+                className="ct-btn ct-btn-sm bg-amber-900/60 hover:bg-amber-900/90 text-amber-200">
                 {tr('cboss_btn')}
               </button>
             </div>
@@ -515,17 +515,17 @@ export const GuildView: React.FC = () => {
               {isLeader ? (
                 <>
                   <button type="button" onClick={startSolo}
-                    className="px-4 py-2 rounded-xl bg-rose-700 hover:bg-rose-600 text-white text-xs font-black">
+                    className="ct-btn ct-btn-danger ct-btn-sm font-black">
                     {tr('guild_start_boss')}
                   </button>
                   <button type="button" onClick={openTeamDialog}
-                    className="px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-xs font-black">
+                    className="ct-btn ct-btn-primary ct-btn-sm font-black">
                     🛡️ {tr('raid_team_selection')}
                   </button>
                 </>
               ) : (
                 <button type="button" disabled
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-500 text-xs font-bold cursor-not-allowed">
+                  className="ct-btn ct-btn-secondary ct-btn-sm text-slate-500 cursor-not-allowed opacity-50">
                   {tr('guild_only_leader')}
                 </button>
               )}
@@ -537,16 +537,16 @@ export const GuildView: React.FC = () => {
       {/* Invites & join requests (parity _add_requests_and_invites) */}
       <InvitesBlock invites={invites} onAct={(id, ok) => void post(ok ? studio.acceptGuildInvite(id) : studio.rejectGuildInvite(id))} />
       {isLeader && (guild.requests || []).length > 0 && (
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
+        <section className="ct-panel p-4 space-y-2">
           <h3 className="text-sm font-black text-slate-100">{tr('guild_join_requests')}</h3>
           {(guild.requests || []).map((req: any) => (
             <div key={req.id} className="flex items-center justify-between text-xs">
               <span>{tr('guild_join_request_format', { name: req.name, username: req.username })}</span>
               <span className="flex gap-1.5">
                 <button type="button" onClick={() => void post(studio.approveGuildRequest(req.id))}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">{tr('guild_accept')}</button>
+                  className="ct-btn ct-btn-success ct-btn-sm">{tr('guild_accept')}</button>
                 <button type="button" onClick={() => void post(studio.rejectGuildRequest(req.id))}
-                  className="px-3 py-1.5 rounded-lg bg-rose-900/60 text-rose-200 font-bold">{tr('guild_reject')}</button>
+                  className="ct-btn ct-btn-danger ct-btn-sm">{tr('guild_reject')}</button>
               </span>
             </div>
           ))}
@@ -555,8 +555,8 @@ export const GuildView: React.FC = () => {
 
       {/* ── Dialog raid team (parity _show_team_selection) ── */}
       {teamDlg && selectedBoss && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-3">
             <h3 className="text-lg font-black text-slate-100">{tr('raid_team_selection')}</h3>
             <p className="text-xs text-slate-400 whitespace-pre-line">
               {tr('raid_team_selection_info', {
@@ -579,7 +579,7 @@ export const GuildView: React.FC = () => {
               <button type="button" onClick={() => setTeamDlg(false)}
                 className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{tr('btn_cancel')}</button>
               <button type="button" onClick={startWithTeam}
-                className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-black">{tr('raid_start_btn')}</button>
+                className="ct-btn ct-btn-gold ct-btn-sm font-black">{tr('raid_start_btn')}</button>
             </div>
           </div>
         </div>
@@ -587,8 +587,8 @@ export const GuildView: React.FC = () => {
 
       {/* ── Dialog hasil serangan boss (parity _perform_action → _show) ── */}
       {attackModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-sm w-full p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">
                 {attackModal.variant === 'success' ? '🏆' : '⚔️'} {attackModal.title}
@@ -606,8 +606,8 @@ export const GuildView: React.FC = () => {
 
       {/* ── Dialog reward (parity _show_unclaimed_rewards) ── */}
       {rewardDlg && rewards.length > 0 && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">{tr('guild_unclaimed_rewards')}</h3>
               <button type="button" onClick={() => setRewardDlg(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
@@ -622,7 +622,7 @@ export const GuildView: React.FC = () => {
                     onClick={() => void post(studio.claimGuildReward(String(r.id))).then(() => {
                       setRewards((prev) => prev.filter((x) => x.id !== r.id));
                     })}
-                    className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
+                    className="ct-btn ct-btn-gold ct-btn-sm font-black">
                     {tr('guild_claim')}
                   </button>
                 </div>
@@ -634,8 +634,8 @@ export const GuildView: React.FC = () => {
 
       {/* ── Dialog custom boss (parity CustomBossDialog) ── */}
       {bossModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">{tr('cboss_title')}</h3>
               <button type="button" onClick={() => setBossModal(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
@@ -650,7 +650,7 @@ export const GuildView: React.FC = () => {
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {CUSTOM_BOSS_ICONS.map((ic) => (
                   <button key={ic} type="button" onClick={() => setCbIcon(ic)}
-                    className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center border ${cbIcon === ic ? 'bg-amber-500/20 border-amber-500/60' : 'bg-slate-800 border-slate-700'}`}>{ic}</button>
+                    className={`ct-socket w-9 h-9 rounded-lg text-lg flex items-center justify-center ${cbIcon === ic ? 'ct-glow bg-amber-500/20 border-amber-500/60' : 'bg-slate-800 border-slate-700'}`}>{ic}</button>
                 ))}
               </div>
             </div>
@@ -683,7 +683,7 @@ export const GuildView: React.FC = () => {
                   void post(studio.customBoss({ name: cbName.trim(), icon: cbIcon, hp: cbHp, atk: cbAtk, minLevel: cbMinLvl }));
                   setBossModal(false);
                 }}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
+                className="ct-btn ct-btn-gold ct-btn-sm">
                 {tr('cboss_create')}
               </button>
             </div>
@@ -693,7 +693,7 @@ export const GuildView: React.FC = () => {
 
       {/* ── Dialog Guild Chat (parity GuildChatDialog lokal) ── */}
       {chatOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-100">{tr('guild_chat_title')}</h3>
@@ -730,7 +730,7 @@ export const GuildView: React.FC = () => {
 
       {/* ── P26: Leader undang teman (server-enforced) ── */}
       {inviteFriendDlg && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-100">{tr('guild_invite_friend_title')}</h3>
@@ -799,16 +799,16 @@ function MemberCard({ m, isLeader, currentUserId, isMe, leadersView, onKick, onT
 function InvitesBlock({ invites, onAct }: { invites: { id: string; guildName: string }[]; onAct: (id: string, ok: boolean) => void }) {
   if (!invites.length) return null;
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
+    <section className="ct-panel p-4 space-y-2">
       <h3 className="text-sm font-black text-slate-100">{tr('guild_invites')}</h3>
       {invites.map((inv) => (
         <div key={inv.id} className="flex items-center justify-between text-xs">
           <span>{tr('guild_invite_from', { name: inv.guildName })}</span>
           <span className="flex gap-1.5">
             <button type="button" onClick={() => onAct(inv.id, true)}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">{tr('guild_accept')}</button>
+              className="ct-btn ct-btn-success ct-btn-sm">{tr('guild_accept')}</button>
             <button type="button" onClick={() => onAct(inv.id, false)}
-              className="px-3 py-1.5 rounded-lg bg-rose-900/60 text-rose-200 font-bold">{tr('guild_reject')}</button>
+              className="ct-btn ct-btn-danger ct-btn-sm">{tr('guild_reject')}</button>
           </span>
         </div>
       ))}

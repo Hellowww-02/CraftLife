@@ -249,7 +249,7 @@ export const FriendsView: React.FC = () => {
       <div className="flex gap-2">
         <input value={friendName} onChange={(e) => setFriendName(e.target.value)}
           placeholder={tr('friends_add_placeholder')}
-          className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100" />
+          className="ct-input flex-1 px-3 py-2 rounded-xl text-sm text-slate-100" />
         <button type="button"
           onClick={() => {
             const uname = friendName.trim();
@@ -258,14 +258,14 @@ export const FriendsView: React.FC = () => {
             setFriendName('');
             setTick((x) => x + 1);
           }}
-          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
+          className="ct-btn ct-btn-gold ct-btn-sm">
           {tr('friends_add_btn')}
         </button>
       </div>
 
       {/* Daftar permintaan masuk (parity pending_group) */}
       {(friendRequests || []).length > 0 && (
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
+        <section className="ct-panel p-4 space-y-2">
           <h3 className="text-sm font-black text-slate-100">{tr('friends_pending')}</h3>
           {friendRequests.map((req: any) => (
             <div key={req.id} className="flex items-center gap-2 text-xs">
@@ -275,9 +275,9 @@ export const FriendsView: React.FC = () => {
                 <span className="text-slate-500 block">@{req.username}</span>
               </span>
               <button type="button" onClick={() => acceptFriendRequest(req.id)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">{tr('guild_accept')}</button>
+                className="ct-btn ct-btn-success ct-btn-sm">{tr('guild_accept')}</button>
               <button type="button" onClick={() => rejectFriendRequest(req.id)}
-                className="px-3 py-1.5 rounded-lg bg-rose-900/60 text-rose-200 font-bold">{tr('guild_reject')}</button>
+                className="ct-btn ct-btn-danger ct-btn-sm">{tr('guild_reject')}</button>
             </div>
           ))}
         </section>
@@ -285,7 +285,7 @@ export const FriendsView: React.FC = () => {
 
       {/* Couple requests (parity couple_requests_group) */}
       {coupleRequests.length > 0 && (
-        <section className="rounded-2xl border border-pink-800/40 bg-slate-900/70 p-4 space-y-2">
+        <section className="ct-panel p-4 space-y-2 border-pink-800/40">
           <h3 className="text-sm font-black text-pink-300">{tr('couple_requests_title')}</h3>
           {coupleRequests.map((req) => (
             <div key={req.id} className="flex items-center justify-between text-xs">
@@ -293,13 +293,13 @@ export const FriendsView: React.FC = () => {
               {req.direction === 'incoming' ? (
                 <span className="flex gap-1.5">
                   <button type="button" onClick={() => void post(studio.coupleRespond(req.id, true))}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">{tr('couple_accept')}</button>
+                    className="ct-btn ct-btn-success ct-btn-sm">{tr('couple_accept')}</button>
                   <button type="button" onClick={() => void post(studio.coupleRespond(req.id, false))}
-                    className="px-3 py-1.5 rounded-lg bg-rose-900/60 text-rose-200 font-bold">{tr('couple_reject')}</button>
+                    className="ct-btn ct-btn-danger ct-btn-sm">{tr('couple_reject')}</button>
                 </span>
               ) : (
                 <button type="button" onClick={() => void post(studio.coupleCancel(req.id))}
-                  className="px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200 font-bold">{tr('couple_cancel')}</button>
+                  className="ct-btn ct-btn-secondary ct-btn-sm">{tr('couple_cancel')}</button>
               )}
             </div>
           ))}
@@ -315,9 +315,10 @@ export const FriendsView: React.FC = () => {
             const statusText = status === 'accepted' ? tr('couple_status_couple')
               : status === 'pending' ? tr('couple_status_pending') : tr('couple_status_friend');
             const presenceText = f.presence === 'online' ? tr('presence_online') : tr('presence_offline');
+            const online = f.presence === 'online';
             return (
-              <div key={f.id} className="flex items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2.5">
-                <span className="text-3xl">{f.avatarEmoji || '⚔️'}</span>
+              <div key={f.id} className="ct-task-card ct-row-press flex items-center gap-2.5 rounded-2xl px-3 py-2.5">
+                <span className={`text-3xl relative ${online ? 'ct-online:absolute right-0 bottom-0' : ''}`}>{f.avatarEmoji || '⚔️'}{online && <span className="ct-online absolute right-0 bottom-0"></span>}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold text-slate-100 truncate">{f.displayName || f.name}</div>
                   <div className="text-[10px] text-slate-500">
@@ -327,22 +328,22 @@ export const FriendsView: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
                   {status === 'friend' && (
                     <button type="button" onClick={() => void post(studio.coupleRequest(f.id))}
-                      className="px-2 py-1 rounded-lg bg-pink-700/50 hover:bg-pink-700/80 text-pink-100 text-[11px] font-bold">{tr('couple_connect')}</button>
+                      className="ct-btn ct-btn-sm bg-pink-700/50 hover:bg-pink-700/80 text-pink-100 text-[11px]">{tr('couple_connect')}</button>
                   )}
                   {status === 'accepted' && (
                     <button type="button" onClick={() => { if (window.confirm(tr('couple_end_confirm'))) void post(studio.endCouple()); }}
-                      className="px-2 py-1 rounded-lg bg-rose-900/60 text-rose-200 text-[11px] font-bold">{tr('couple_end')}</button>
+                      className="ct-btn ct-btn-sm bg-rose-900/60 text-rose-200 text-[11px]">{tr('couple_end')}</button>
                   )}
                   <button type="button" title={tr('pvp_btn')} onClick={() => sendPvpChallenge(f.id)}
-                    className="px-2 py-1 rounded-lg bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 text-[11px] font-bold">⚔️</button>
+                    className="ct-btn ct-btn-sm bg-amber-600/40 hover:bg-amber-600/70 text-amber-200 text-[11px]">⚔️</button>
                   <button type="button" onClick={() => openChat(f)}
-                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                    className="ct-btn ct-btn-secondary ct-btn-sm text-[11px]">
                     {f.unreadCount ? tr('friends_chat_unread', { count: f.unreadCount }) : tr('friends_chat_btn')}
                   </button>
                   <button type="button" onClick={() => studio.friendProfile(f.id).then((d) => setProfile(d?.profile || null)).catch(() => undefined)}
-                    className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">{tr('friends_profile_short')}</button>
+                    className="ct-btn ct-btn-secondary ct-btn-sm text-[11px]">{tr('friends_profile_short')}</button>
                   <button type="button" onClick={() => { if (window.confirm(tr('friends_remove_btn'))) void post(studio.removeFriend(f.id)); }}
-                    className="px-2 py-1 rounded-lg bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 text-[11px] font-bold">{tr('friends_remove_btn')}</button>
+                    className="ct-btn ct-btn-sm bg-rose-900/40 hover:bg-rose-900/70 text-rose-300 text-[11px]">{tr('friends_remove_btn')}</button>
                 </div>
               </div>
             );
@@ -365,9 +366,9 @@ export const FriendsView: React.FC = () => {
                     <div className="font-bold text-slate-100">⚔️ {it.opponentName}</div>
                     <div className="flex gap-1.5">
                       <button type="button" onClick={() => respondPvpChallenge(it.id, true)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">{tr('pvp_accept')}</button>
+                        className="ct-btn ct-btn-success ct-btn-sm">{tr('pvp_accept')}</button>
                       <button type="button" onClick={() => respondPvpChallenge(it.id, false)}
-                        className="px-3 py-1.5 rounded-lg bg-rose-900/60 text-rose-200 font-bold">{tr('pvp_decline')}</button>
+                        className="ct-btn ct-btn-danger ct-btn-sm">{tr('pvp_decline')}</button>
                     </div>
                   </>
                 ) : raw === 'pending' ? (
@@ -391,7 +392,7 @@ export const FriendsView: React.FC = () => {
                     </div>
                     {it.status === 'completed' && (
                       <button type="button" onClick={() => claimPvPReward(it.id)}
-                        className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-black">
+                        className="ct-btn ct-btn-gold ct-btn-sm">
                         {tr('claim')}
                       </button>
                     )}
@@ -405,8 +406,8 @@ export const FriendsView: React.FC = () => {
 
       {/* ── ChatDialog parity (select → aksi bar, reply label, reactions, attachments) ── */}
       {chatWith && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-2">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog w-full max-w-md p-5 space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-100">💬 {chatWith.displayName || chatWith.name}</h3>
               <div className="flex items-center gap-2">
@@ -439,7 +440,8 @@ export const FriendsView: React.FC = () => {
                 return (
                   <div key={m.id}
                     onClick={() => setSelectedMsg(selectedMsg?.id === m.id ? null : m)}
-                    className={`text-xs cursor-pointer rounded-lg px-1.5 py-1 ${m.isSelf ? 'text-right' : ''} ${selectedMsg?.id === m.id ? 'bg-slate-800/80' : ''}`}>
+                    className={`flex cursor-pointer ${m.isSelf ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`ct-bubble ${m.isSelf ? 'ct-bubble-self' : 'ct-bubble-other'} ${selectedMsg?.id === m.id ? 'ring-1 ring-sky-400/60' : ''}`}>
                     <div className="text-[9px] text-slate-500">
                       {m.isSelf ? tr('chat_you') : tr('chat_friend')}
                       {' · '}{fmtChatTime(m.createdAt, m.epoch)}
@@ -458,7 +460,7 @@ export const FriendsView: React.FC = () => {
                               <img
                                 src={`data:${a.mimeType || 'image/webp'};base64,${a.thumbnailData}`}
                                 alt={a.originalFilename || ''}
-                                className="inline-block w-24 h-24 object-cover rounded-lg border border-slate-700"
+                                className="inline-block w-24 h-24 object-cover rounded-lg border border-slate-700 transition-transform hover:scale-[1.06] cursor-zoom-in"
                               />
                             ) : null}
                             <div className="text-[9px] text-slate-400">📎 {a.originalFilename} ({(Number(a.sizeBytes || 0) / 1024).toFixed(1)} KB)</div>
@@ -467,8 +469,9 @@ export const FriendsView: React.FC = () => {
                       </div>
                     )}
                     {!!reactionText(m.reactions) && (
-                      <div className="text-[10px] text-slate-400">{reactionText(m.reactions)}</div>
+                      <div className="ct-chip text-[10px] text-slate-400 px-2 py-0.5 inline-block mt-0.5">{reactionText(m.reactions)}</div>
                     )}
+                    </div>
                   </div>
                 );
               })}
@@ -478,27 +481,27 @@ export const FriendsView: React.FC = () => {
             {selectedMsg && !selectedMsg.deletedAt && (
               <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 p-2">
                 <button type="button" onClick={() => { setReplyTarget(selectedMsg); setSelectedMsg(selectedMsg); }}
-                  className="px-2 py-1 rounded-lg bg-sky-700/50 text-sky-200 text-[11px] font-bold">{tr('chat_reply')}</button>
+                  className="ct-btn ct-btn-sm bg-sky-700/50 text-sky-200 text-[11px]">{tr('chat_reply')}</button>
                 {selectedMsg.isSelf && (
                   <>
                     <button type="button" onClick={() => { setEditingMsg(selectedMsg); setEditText(selectedMsg.text || ''); }}
-                      className="px-2 py-1 rounded-lg bg-slate-700 text-slate-100 text-[11px] font-bold">{tr('chat_edit')}</button>
+                      className="ct-btn ct-btn-secondary ct-btn-sm text-[11px]">{tr('chat_edit')}</button>
                     <button type="button" onClick={doDeleteMsg}
-                      className="px-2 py-1 rounded-lg bg-rose-900/60 text-rose-200 text-[11px] font-bold">{tr('chat_delete_message')}</button>
+                      className="ct-btn ct-btn-sm bg-rose-900/60 text-rose-200 text-[11px]">{tr('chat_delete_message')}</button>
                   </>
                 )}
                 {(selectedMsg.attachments || []).map((a: any) => (
                   <button key={a.id} type="button" onClick={() => doDownloadAttachment(a)}
                     title={tr('chat_download_attachment')}
-                    className="px-2 py-1 rounded-lg bg-slate-700 text-slate-100 text-[11px] font-bold">📎</button>
+                    className="ct-btn ct-btn-secondary ct-btn-sm text-[11px]">📎</button>
                 ))}
                 <div className="flex gap-0.5">
                   {REACTIONS.map((e) => (
                     <button key={e} type="button" onClick={() => doReact(e)}
-                      className="px-1.5 py-1 rounded-lg hover:bg-slate-800 text-sm">{e}</button>
+                      className="ct-btn ct-btn-ghost ct-btn-icon-sm text-sm">{e}</button>
                   ))}
                   <button type="button" onClick={() => doReact(null)} title={tr('chat_remove_reaction')}
-                    className="px-1.5 py-1 rounded-lg bg-slate-800 text-slate-400 text-[10px]">{tr('chat_remove_reaction')}</button>
+                    className="ct-btn ct-btn-secondary ct-btn-sm text-[10px]">{tr('chat_remove_reaction')}</button>
                 </div>
               </div>
             )}
@@ -517,11 +520,11 @@ export const FriendsView: React.FC = () => {
                 <input value={editText} onChange={(e) => setEditText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') doSaveEdit(); }}
                   placeholder={tr('chat_edit_prompt')}
-                  className="flex-1 px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-100" />
+                  className="ct-input flex-1 px-2 py-1.5 rounded-lg text-xs text-slate-100" />
                 <button type="button" onClick={doSaveEdit}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">✓</button>
+                  className="ct-btn ct-btn-success ct-btn-sm">✓</button>
                 <button type="button" onClick={() => setEditingMsg(null)}
-                  className="px-2 py-1.5 rounded-lg bg-slate-800 text-slate-400 text-xs">×</button>
+                  className="ct-btn ct-btn-secondary ct-btn-sm">×</button>
               </div>
             )}
 
@@ -538,12 +541,12 @@ export const FriendsView: React.FC = () => {
             <div className="flex gap-2">
               <button type="button" title={tr('chat_choose_attachment')}
                 onClick={() => fileRef.current?.click()}
-                className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-sm">📎</button>
+                className="ct-btn ct-btn-secondary">📎</button>
               <input value={chatInput} onChange={(e) => onChatInputChange(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
                 placeholder={tr('chat_input_placeholder')}
-                className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100" />
-              <button type="button" onClick={sendChat} className="px-3 py-2 rounded-xl bg-sky-600 text-white">
+                className="ct-input flex-1 px-3 py-2 rounded-xl text-xs text-slate-100" />
+              <button type="button" onClick={sendChat} className="ct-btn ct-btn-primary">
                 <Send className="w-4 h-4" />
               </button>
             </div>
@@ -553,8 +556,8 @@ export const FriendsView: React.FC = () => {
 
       {/* ── FriendProfileDialog parity (PyQt MainPyQt6.py:12726) ── */}
       {profile && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-slate-100">{tr('friend_profile_title')}</h3>
               <button type="button" onClick={() => setProfile(null)} className="text-slate-400 text-lg leading-none">×</button>
@@ -562,7 +565,7 @@ export const FriendsView: React.FC = () => {
 
             {/* Header: avatar + identitas */}
             <div className="flex flex-col items-center gap-1">
-              <div className="w-24 h-24 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center text-5xl overflow-hidden">
+              <div className="ct-socket w-24 h-24 rounded-full border-2 border-slate-600 flex items-center justify-center text-5xl overflow-hidden">
                 {profile.avatarEmoji ? <span className="text-5xl">{profile.avatarEmoji}</span> :
                   <span className="text-4xl text-slate-400">⚔️</span>}
               </div>
@@ -597,7 +600,7 @@ export const FriendsView: React.FC = () => {
             </div>
 
             {/* Info ringkas: bio, guild, sport/rebirth/join */}
-            <div className="rounded-xl bg-slate-800/50 border border-slate-700 px-3 py-2 space-y-1">
+            <div className="ct-body-tile px-3 py-2 space-y-1">
               {profile.bio && (
                 <p className="text-xs italic text-slate-500">💬 {profile.bio}</p>
               )}
@@ -616,8 +619,8 @@ export const FriendsView: React.FC = () => {
             {/* Progres XP */}
             <div className="space-y-1">
               <div className="text-[11px] text-slate-500">{tr('friend_xp_progress')}</div>
-              <div className="h-[18px] rounded-full bg-slate-800 overflow-hidden border border-slate-700">
-                <div className="h-full bg-gradient-to-r from-amber-600/80 to-amber-500/80 transition-all"
+              <div className="h-[18px] rounded-full ct-bar-track">
+                <div className="h-full ct-bar-fill bg-gradient-to-r from-amber-600/80 to-amber-500/80 transition-all"
                   style={{ width: `${Math.min(100, ((profile.xp ?? 0) / Math.max(1, profile.xpNeeded ?? 1)) * 100)}%` }} />
               </div>
               <div className="text-[11px] text-slate-400">
@@ -628,8 +631,8 @@ export const FriendsView: React.FC = () => {
             {/* Progres achievement */}
             <div className="space-y-1">
               <div className="text-[11px] text-slate-500">{tr('friend_achievements_progress', { done: profile.achievementsDone ?? 0, total: profile.achievementsTotal ?? 0 })}</div>
-              <div className="h-[18px] rounded-full bg-slate-800 overflow-hidden border border-slate-700">
-                <div className="h-full bg-gradient-to-r from-purple-600/80 to-purple-500/80 transition-all"
+              <div className="h-[18px] rounded-full ct-bar-track">
+                <div className="h-full ct-bar-fill bg-gradient-to-r from-purple-600/80 to-purple-500/80 transition-all"
                   style={{ width: `${Math.min(100, ((profile.achievementsDone ?? 0) / Math.max(1, profile.achievementsTotal ?? 1)) * 100)}%` }} />
               </div>
               <div className="text-[11px] text-slate-400">{profile.achievementsDone ?? 0}/{profile.achievementsTotal ?? 0}</div>
@@ -641,7 +644,7 @@ export const FriendsView: React.FC = () => {
                 <div className="text-[11px] text-slate-500">{tr('friend_latest_achievements')}</div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {profile.latestAchievements.map((ach: any, i: number) => (
-                    <div key={i} className="rounded-lg bg-slate-800/60 border border-slate-700 px-2 py-1 flex items-center gap-1.5 min-h-0">
+                    <div key={i} className="ct-body-tile px-2 py-1 flex items-center gap-1.5 min-h-0">
                       <span className="text-base shrink-0">{ach.icon || '🏆'}</span>
                       <span className="text-[11px] text-slate-300 leading-tight">{ach.name || ach.category || ''}</span>
                     </div>
@@ -664,7 +667,7 @@ export const FriendsView: React.FC = () => {
                   [tr('stats_pets'), String(profile.stats?.pet_count ?? 0)],
                   [tr('friend_pomodoro'), `${profile.pomodoroMinutes ?? 0} min`],
                 ].map(([label, value], i) => (
-                  <div key={i} className="rounded-lg bg-slate-800/60 border border-slate-700 px-2.5 py-1.5 flex flex-col gap-0.5">
+                  <div key={i} className="ct-body-tile px-2.5 py-1.5 flex flex-col gap-0.5">
                     <div className="text-sm font-bold text-slate-200">{value}</div>
                     <div className="text-[10px] text-slate-500 leading-tight">{label}</div>
                   </div>

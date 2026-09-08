@@ -77,15 +77,15 @@ export const QuestsView: React.FC = () => {
   const getDifficultyBadge = (diff: TaskDifficulty) => {
     switch (diff) {
       case 'trivial':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-800 text-slate-300">{t('task_difficulty_trivial', 'Trivial')}</span>;
+        return <span className="ct-diff ct-diff-trivial">{t('task_difficulty_trivial', 'Trivial')}</span>;
       case 'easy':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">{t('task_difficulty_easy', 'Easy')}</span>;
+        return <span className="ct-diff ct-diff-easy">{t('task_difficulty_easy', 'Easy')}</span>;
       case 'medium':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">{t('task_difficulty_medium', 'Medium')}</span>;
+        return <span className="ct-diff ct-diff-medium">{t('task_difficulty_medium', 'Medium')}</span>;
       case 'hard':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">{t('task_difficulty_hard', 'Hard')}</span>;
+        return <span className="ct-diff ct-diff-hard">{t('task_difficulty_hard', 'Hard')}</span>;
       case 'epic':
-        return <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">{t('task_difficulty_epic', 'Epic')}</span>;
+        return <span className="ct-diff ct-diff-epic">{t('task_difficulty_epic', 'Epic')}</span>;
     }
   };
 
@@ -108,14 +108,14 @@ export const QuestsView: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsTemplateOpen(true)}
-            className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-200"
+            className="ct-btn ct-btn-secondary ct-btn-sm"
           >
             {t('habit_templates', '📋 Templates')}
           </button>
           <button
             id="btn-create-quest"
             onClick={openCreateModal}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold text-xs shadow-lg shadow-blue-500/20 transition-all shrink-0"
+            className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
           >
             <Plus className="w-4 h-4" /> {t('quest_new_quest', 'New Quest')}
           </button>
@@ -127,12 +127,12 @@ export const QuestsView: React.FC = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('quest_search_quests', 'Search quests…')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 w-48"
+          className="ct-input px-3 py-1.5 rounded-xl text-xs w-48"
         />
         <select
           value={diffFilter}
           onChange={(e) => setDiffFilter(e.target.value)}
-          className="px-2 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-200"
+          className="ct-input px-2 py-1.5 rounded-xl text-xs"
         >
           <option value="all">{t('quest_all_priorities', 'All priorities')}</option>
           <option value="trivial">{t('task_difficulty_trivial', 'Trivial')}</option>
@@ -258,21 +258,21 @@ export const QuestsView: React.FC = () => {
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => duplicateQuest(quest.id)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                  className="ct-act text-slate-400"
                   title={t('habit_duplicate', 'Duplicate')}
                 >
                   <Calendar className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => openEditModal(quest)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                  className="ct-act text-slate-400"
                   title={t('quest_edit_quest', 'Edit Quest')}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => deleteQuest(quest.id)}
-                  className="p-1.5 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+                  className="ct-act text-rose-400"
                   title={t('task_delete_title', 'Delete')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -292,7 +292,7 @@ export const QuestsView: React.FC = () => {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-black text-slate-100">
               {editingId ? (t('quest_edit_quest', 'Edit Quest')) : (t('quest_new_quest', 'New Quest'))}
@@ -307,7 +307,7 @@ export const QuestsView: React.FC = () => {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder={t('ph_e_g_selesaikan_laporan_keuangan_q3', 'e.g. Selesaikan Laporan Keuangan Q3')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl focus:border-transparent"
                 />
               </div>
 
@@ -317,7 +317,7 @@ export const QuestsView: React.FC = () => {
                   <select
                     value={difficulty}
                     onChange={(e) => setDifficulty(e.target.value as TaskDifficulty)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="ct-input w-full px-3 py-2 rounded-xl focus:border-transparent"
                   >
                     <option value="trivial">{t('task_difficulty_trivial', 'Trivial')}</option>
                     <option value="easy">{t('task_difficulty_easy', 'Easy')}</option>
@@ -333,7 +333,7 @@ export const QuestsView: React.FC = () => {
                     type="date"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
+                    className="ct-input w-full px-3 py-2 rounded-xl focus:border-transparent"
                   />
                 </div>
               </div>
@@ -343,7 +343,7 @@ export const QuestsView: React.FC = () => {
                 <select
                   value={folderId}
                   onChange={(e) => setFolderId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl focus:border-transparent"
                 >
                   <option value="">{t('habit_no_folder', 'No Folder')}</option>
                   {questFolders.map((f) => (
@@ -361,7 +361,7 @@ export const QuestsView: React.FC = () => {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={t('ph_task_details_and_deliverables', 'Task details and deliverables...')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-blue-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl focus:border-transparent"
                 />
               </div>
 
@@ -369,13 +369,13 @@ export const QuestsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
+                  className="ct-btn ct-btn-secondary ct-btn-sm"
                 >
                   {t('habit_cancel', 'Cancel')}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold"
+                  className="ct-btn ct-btn-primary ct-btn-sm"
                 >
                   {t('habit_save', 'Save')}
                 </button>

@@ -271,10 +271,10 @@ export const NotesView: React.FC<NotesViewProps> = () => {
           <span className="truncate flex-1 font-semibold">{node.name}</span>
           {/* Aksi konteks folder (parity menu) */}
           <div className="hidden group-hover:flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-            <button title={t('notes_add_subfolder', 'Tambah subfolder')} onClick={() => setNewFolderName(node.id)} className="p-1 text-slate-500 hover:text-cyan-300"><FolderPlus className="w-3 h-3" /></button>
-            <button title={t('notes_edit_folder', 'Ubah nama folder')} onClick={() => setRenameFor({ id: node.id, name: node.name })} className="p-1 text-slate-500 hover:text-cyan-300"><Pencil className="w-3 h-3" /></button>
-            <button title={t('notes_edit_icon', 'Ubah ikon')} onClick={() => setIconPickerFor(node.id)} className="p-1 text-slate-500 hover:text-cyan-300"><Smile className="w-3 h-3" /></button>
-            <button title={t('notes_duplicate_folder', 'Duplikat folder')} onClick={() => duplicateNoteFolder(node.id)} className="p-1 text-slate-500 hover:text-cyan-300"><Copy className="w-3 h-3" /></button>
+            <button title={t('notes_add_subfolder', 'Tambah subfolder')} onClick={() => setNewFolderName(node.id)} className="ct-act text-cyan-300"><FolderPlus className="w-3 h-3" /></button>
+            <button title={t('notes_edit_folder', 'Ubah nama folder')} onClick={() => setRenameFor({ id: node.id, name: node.name })} className="ct-act text-cyan-300"><Pencil className="w-3 h-3" /></button>
+            <button title={t('notes_edit_icon', 'Ubah ikon')} onClick={() => setIconPickerFor(node.id)} className="ct-act text-cyan-300"><Smile className="w-3 h-3" /></button>
+            <button title={t('notes_duplicate_folder', 'Duplikat folder')} onClick={() => duplicateNoteFolder(node.id)} className="ct-act text-cyan-300"><Copy className="w-3 h-3" /></button>
             <button title={t('notes_delete', 'Hapus')} onClick={() => confirmDeleteFolder(node)} className="p-1 text-slate-500 hover:text-rose-400"><Trash2 className="w-3 h-3" /></button>
           </div>
         </div>
@@ -323,13 +323,13 @@ export const NotesView: React.FC<NotesViewProps> = () => {
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           placeholder={t('notes_search_placeholder', 'Cari catatan...')}
-          className="w-full bg-slate-900/80 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
+          className="ct-input w-full rounded-2xl pl-10 pr-4 py-2.5 text-sm text-slate-100"
         />
       </div>
 
       {/* ── Toolbar (parity buttons row) ── */}
       <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={handleAddFolder} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200">
+        <button onClick={handleAddFolder} className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5">
           <FolderPlus className="w-3.5 h-3.5" /> {t('notes_add_folder', '+ Folder')}
         </button>
         <button onClick={handleAddNote} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black">
@@ -343,10 +343,10 @@ export const NotesView: React.FC<NotesViewProps> = () => {
         <button
           onClick={() => (activeNote ? setLearnPicker(true) : showToast('damage', t('msg_error', 'Error'), t('notes_to_learning_no_note', 'Pilih catatan dulu.')))}
           title={t('notes_to_learning_title', 'Kirim ke Learning sebagai source')}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200">
+          className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5">
           <Send className="w-3.5 h-3.5" /> {t('notes_to_learning', '→ Learning')}
         </button>
-        <button onClick={handleDelete} disabled={!activeNote} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-xs font-bold text-white disabled:opacity-40">
+        <button onClick={handleDelete} disabled={!activeNote} className="ct-btn ct-btn-danger ct-btn-sm flex items-center gap-1.5 disabled:opacity-40">
           <Trash2 className="w-3.5 h-3.5" /> {t('notes_delete', 'Hapus')}
         </button>
       </div>
@@ -354,7 +354,7 @@ export const NotesView: React.FC<NotesViewProps> = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* ── LEFT: folder tree + notes list (parity splitter left) ── */}
         <div className="lg:col-span-4 xl:col-span-3 space-y-3">
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-3">
+          <div className="ct-panel p-3">
             <div className="flex items-center justify-between mb-1.5 px-1">
               <span className="text-[11px] font-bold text-slate-400">{t('notes_folder_label', 'Folder')}</span>
               <div className="flex gap-1">
@@ -381,7 +381,7 @@ export const NotesView: React.FC<NotesViewProps> = () => {
           </div>
 
           {/* Notes list (parity notes_list) */}
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-2 space-y-1.5 max-h-[430px] overflow-y-auto">
+          <div className="ct-panel p-2 space-y-1.5 max-h-[430px] overflow-y-auto">
             {visibleNotes.length === 0 && (
               <p className="text-[11px] text-slate-500 text-center py-6">{t('notes_empty', 'Tidak ada catatan.')}</p>
             )}
@@ -389,7 +389,7 @@ export const NotesView: React.FC<NotesViewProps> = () => {
               <div
                 key={n.id}
                 onClick={() => setCurrentNoteId(String(n.id))}
-                className={`group p-2.5 rounded-xl border cursor-pointer transition-all ${String(currentNoteId) === String(n.id) ? 'bg-cyan-950/50 border-cyan-500/40' : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700'}`}
+                className={`group ct-task-card ct-row-press p-2.5 rounded-xl cursor-pointer ${String(currentNoteId) === String(n.id) ? 'bg-cyan-950/50 border-cyan-500/40' : ''}`}
               >
                 <div className="flex items-center gap-1.5">
                   <span className={`font-bold text-xs truncate flex-1 ${String(currentNoteId) === String(n.id) ? 'text-cyan-300' : 'text-slate-200'}`}>
@@ -416,17 +416,17 @@ export const NotesView: React.FC<NotesViewProps> = () => {
         {/* ── RIGHT: editor (parity notes editor pane) ── */}
         <div className="lg:col-span-8 xl:col-span-9">
           {!activeNote ? (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-14 text-center text-slate-500">
+            <div className="ct-panel p-14 text-center text-slate-500">
               <p className="text-base font-semibold">{t('notes_select_hint', 'Pilih atau buat catatan untuk mulai menulis.')}</p>
             </div>
           ) : (
-            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="ct-panel p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
               {/* Format toolbar */}
               <div className="flex items-center gap-1.5 flex-wrap border-b border-slate-800 pb-2.5">
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm font-black text-slate-200 hover:bg-slate-700" title={t('notes_bold', 'Tebal')}>B</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm italic text-slate-200 hover:bg-slate-700" title={t('notes_italic', 'Miring')}>I</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('underline')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm underline text-slate-200 hover:bg-slate-700" title={t('notes_underline', 'Garis bawah')}>U</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('strikeThrough')} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm line-through text-slate-200 hover:bg-slate-700" title={t('notes_strike', 'Coret')}>S</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} className="ct-btn ct-btn-secondary ct-btn-sm text-sm font-black text-slate-200 " title={t('notes_bold', 'Tebal')}>B</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} className="ct-btn ct-btn-secondary ct-btn-sm text-sm italic text-slate-200 " title={t('notes_italic', 'Miring')}>I</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('underline')} className="ct-btn ct-btn-secondary ct-btn-sm text-sm underline text-slate-200 " title={t('notes_underline', 'Garis bawah')}>U</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={() => exec('strikeThrough')} className="ct-btn ct-btn-secondary ct-btn-sm text-sm line-through text-slate-200 " title={t('notes_strike', 'Coret')}>S</button>
                 <select
                   value={fontSize}
                   onChange={(e) => { const v = Number(e.target.value); setFontSize(v); exec('fontSize', String(Math.min(7, Math.max(1, Math.round(v / 4) + 1)))); }}
@@ -435,28 +435,28 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                 >
                   {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <label className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-slate-800 text-xs text-slate-300 cursor-pointer" title={t('notes_color', 'Warna teks')}>
+                <label className="flex items-center gap-1 ct-btn ct-btn-secondary ct-btn-sm px-1.5 py-1 rounded-lg text-xs text-slate-300 cursor-pointer" title={t('notes_color', 'Warna teks')}>
                   <Type className="w-3.5 h-3.5" />
                   <input type="color" value={fontColor} onChange={(e) => { setFontColor(e.target.value); exec('foreColor', e.target.value); }} className="w-5 h-5 bg-transparent border-0 cursor-pointer" />
                 </label>
-                <label className="flex items-center px-1.5 py-1 rounded-lg bg-slate-800 text-xs text-slate-300 cursor-pointer" title={t('notes_highlight', 'Highlight')}>
+                <label className="flex items-center ct-btn ct-btn-secondary ct-btn-sm px-1.5 py-1 rounded-lg text-xs text-slate-300 cursor-pointer" title={t('notes_highlight', 'Highlight')}>
                   🖍
                   <input type="color" defaultValue="#facc15" onChange={(e) => exec('hiliteColor', e.target.value)} className="w-5 h-5 bg-transparent border-0 cursor-pointer" />
                 </label>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => {
                   const sel = selectionText();
                   if (sel) insertHtmlAtCaret(`<sup>${sel}</sup>`); else insertTextFallback('x²');
-                }} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title={t('notes_superscript', 'Superskrip')}>x²</button>
+                }} className="ct-btn ct-btn-secondary ct-btn-sm text-xs text-slate-200 " title={t('notes_superscript', 'Superskrip')}>x²</button>
                 <button onMouseDown={(e) => e.preventDefault()} onClick={() => {
                   const sel = selectionText();
                   if (sel) insertHtmlAtCaret(`<sub>${sel}</sub>`); else insertTextFallback('x₁');
-                }} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title={t('notes_subscript', 'Subskrip')}>x₁</button>
-                <button onMouseDown={(e) => e.preventDefault()} onClick={insertFraction} className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs text-slate-200 hover:bg-slate-700" title={t('notes_fraction', 'Pecahan')}>⅟</button>
+                }} className="ct-btn ct-btn-secondary ct-btn-sm text-xs text-slate-200 " title={t('notes_subscript', 'Subskrip')}>x₁</button>
+                <button onMouseDown={(e) => e.preventDefault()} onClick={insertFraction} className="ct-btn ct-btn-secondary ct-btn-sm text-xs text-slate-200 " title={t('notes_fraction', 'Pecahan')}>⅟</button>
 
                 {/* Menu simbol Σ */}
                 <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowSymbols((s) => !s); setShowLatexMenu(false); }}
-                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-sm text-slate-200 hover:bg-slate-700" title={t('notes_symbols', 'Simbol')}>Σ</button>
+                    className="ct-btn ct-btn-secondary ct-btn-sm text-sm text-slate-200 " title={t('notes_symbols', 'Simbol')}>Σ</button>
                   {showSymbols && (
                     <div className="absolute top-full mt-1 left-0 z-30 w-64 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl grid grid-cols-6 gap-1">
                       {SYMBOLS.map((s, i) => (
@@ -527,12 +527,12 @@ export const NotesView: React.FC<NotesViewProps> = () => {
 
       {/* ── Modal: pratinjau chunk LaTeX (parity MathPreviewDialog) ── */}
       {mathChunks && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setMathChunks(null)}>
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setMathChunks(null)}>
+          <div className="ct-dialog p-6 max-w-lg w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-lg text-slate-100 mb-3">{t('notes_math_preview_title', 'Pratinjau Matematika')}</h3>
             <div className="overflow-y-auto space-y-2 flex-1 pr-1">
               {mathChunks.map((c, i) => (
-                <div key={i} className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+                <div key={i} className="ct-body-tile p-3">
                   <p className="text-[10px] text-slate-500 font-mono break-all">{c.raw}</p>
                   <p className="text-base text-cyan-300 font-semibold mt-1">{c.converted}</p>
                 </div>

@@ -91,7 +91,7 @@ export const CalendarView: React.FC = () => {
     for (let d = 1; d <= daysInMonth; d++) cells.push(`${year}-${pad(month)}-${pad(d)}`);
 
     return (
-      <div key={month} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 flex flex-col">
+      <div key={month} className="ct-panel ct-enter p-3 flex flex-col">
         <h3 className="text-center text-sm font-black text-amber-200 pb-2">{tr(`month_${pad(month)}`)}</h3>
         <div className="grid grid-cols-7 gap-1 text-center">
           {dayHeaders.map((d, i) => (
@@ -113,7 +113,7 @@ export const CalendarView: React.FC = () => {
                 onClick={() => openNote(ds)}
                 className={`min-h-[34px] rounded-md text-xs font-bold border transition-colors leading-tight ${
                   isToday
-                    ? 'bg-amber-500 text-slate-950 border-amber-300 border-2'
+                    ? 'ct-today bg-amber-500 text-slate-950 border-amber-300 border-2'
                     : 'bg-slate-950 border-slate-800 hover:bg-amber-500/80 hover:text-slate-950'
                 } ${isHoliday && !isToday ? 'text-rose-400' : ''} ${
                   hasNote ? 'border-amber-400/80' : ''
@@ -163,8 +163,8 @@ export const CalendarView: React.FC = () => {
 
       {/* ── Dialog catatan (parity _open_note_dialog) ── */}
       {noteDialog && (
-        <div className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md space-y-3">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog p-6 w-full max-w-md space-y-3">
             <h3 className="text-sm font-black text-slate-100">
               {tr('calendar_note_title', { date: noteDialog })}
             </h3>

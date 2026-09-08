@@ -42,14 +42,16 @@ export const ToastContainer: React.FC = () => {
         {toasts.map((toast) => (
           <motion.div
             key={toast.id}
+            layout
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9, y: 10 }}
-            className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl backdrop-blur-md ${getBorderColor(
+            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+            className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-xl border shadow-xl ${getBorderColor(
               toast.type
             )}`}
           >
-            {getIcon(toast.type)}
+            <span className="ct-pop">{getIcon(toast.type)}</span>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-bold text-slate-100">{toast.title}</div>
               <div className="text-xs text-slate-300 mt-0.5 break-words">{toast.message}</div>

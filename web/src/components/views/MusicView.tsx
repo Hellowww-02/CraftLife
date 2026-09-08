@@ -533,8 +533,8 @@ export const MusicView: React.FC = () => {
         {/* ── Center: hero + search + track table ── */}
         <div className="flex-1 min-w-0 flex flex-col p-5 space-y-4">
           {/* Hero (parity musicHero) */}
-          <div className="rounded-2xl p-5 flex items-center gap-5 bg-gradient-to-br from-emerald-800/50 to-slate-900 border border-emerald-900/30">
-            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl bg-slate-900 border border-emerald-500/30 flex items-center justify-center text-5xl shrink-0">
+          <div className="ct-reveal rounded-2xl p-5 flex items-center gap-5 bg-gradient-to-br from-emerald-800/50 to-slate-900 border border-emerald-900/30">
+            <div className={`ct-art-disc w-24 h-24 sm:w-32 sm:h-32 flex items-center justify-center text-5xl shrink-0 ${isLibraryPlaying ? 'ct-spinning' : ''}`}>
               {isLibraryPlaying ? <FileAudio className="w-12 h-12 text-emerald-300" /> : '♫'}
             </div>
             <div className="min-w-0">
@@ -550,7 +550,7 @@ export const MusicView: React.FC = () => {
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder={tr('music_search_placeholder')}
-                className="w-full bg-slate-900 border border-slate-700 rounded-full pl-9 pr-3 py-2 text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+                className="ct-input w-full rounded-full pl-9 pr-3 py-2 text-sm placeholder-slate-500" />
             </div>
             <span className="text-[11px] text-slate-500 whitespace-nowrap">{tr('music_track_count', { count: activeTracks.length })}</span>
           </div>
@@ -607,14 +607,14 @@ export const MusicView: React.FC = () => {
             <div className="text-white text-sm font-black mb-3">{tr('music_lyrics')}</div>
             <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
               {lyricsLoading ? (
-                <span className="text-slate-500">{tr('music_lyrics_searching')}</span>
+                <div className="space-y-2"><div className="ct-skeleton h-2.5 w-2/3 rounded" /><div className="ct-skeleton h-2.5 w-1/2 rounded" /><p className="text-slate-500">{tr('music_lyrics_searching')}</p></div>
               ) : syncedLines.length ? (
                 <>
                   <div className="text-[#1ed760] font-bold text-[11px] uppercase tracking-wide mb-2">{tr('music_lyrics_from_web')}</div>
                   <div className="space-y-1.5">
                     {syncedLines.map((ln, i) => (
                       <p key={i} ref={(el) => { lyricLineRefs.current[i] = el; }}
-                        className={`transition-all duration-200 leading-snug ${i === activeLyricLine ? 'text-white font-bold text-[13px]' : 'text-slate-500'}`}>
+                        className={`transition-all duration-200 leading-snug ${i === activeLyricLine ? 'ct-lyric-active text-white font-bold text-[13px]' : 'text-slate-500'}`}>
                         <span className="mr-1.5 font-mono text-[10px] text-slate-600 tabular-nums">{fmtTime(ln.ms)}</span>{ln.text}
                       </p>
                     ))}
@@ -647,23 +647,24 @@ export const MusicView: React.FC = () => {
         </div>
         {/* Controls row */}
         <div className="flex items-center gap-3 mt-1">
-          <div className="min-w-0 flex-1 truncate text-sm font-bold">
+          <div className="min-w-0 flex-1 truncate text-sm font-bold flex items-center gap-2">
             {isLibraryPlaying ? (playingFile?.title || playingFile?.name) : tr('music_nothing_playing')}
+            <span className={`ct-eq ${isPlaying ? 'is-playing' : ''}`}><span></span><span></span><span></span></span>
           </div>
           <button onClick={() => setShuffle((s) => !s)} title={tr('music_shuffle')}
-            className={`p-2 rounded-full transition-colors ${shuffle ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400 hover:text-white'}`}><Shuffle className="w-4 h-4" /></button>
-          <button onClick={handlePrevTrack} title={tr('music_prev')} className="p-2 text-slate-400 hover:text-white"><SkipBack className="w-5 h-5" /></button>
-          <button onClick={toggleTrackPlay} className="w-12 h-12 rounded-full bg-white hover:bg-emerald-400 text-slate-950 flex items-center justify-center transition-colors">
+            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full ${shuffle ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400'}`}><Shuffle className="w-4 h-4" /></button>
+          <button onClick={handlePrevTrack} title={tr('music_prev')} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><SkipBack className="w-5 h-5" /></button>
+          <button onClick={toggleTrackPlay} className="ct-btn ct-btn-gold w-12 h-12 rounded-full justify-center">
             {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
           </button>
-          <button onClick={handleNextTrack} title={tr('music_next')} className="p-2 text-slate-400 hover:text-white"><SkipForward className="w-5 h-5" /></button>
+          <button onClick={handleNextTrack} title={tr('music_next')} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><SkipForward className="w-5 h-5" /></button>
           <button onClick={() => setRepeat((r) => !r)} title={tr('music_repeat')}
-            className={`p-2 rounded-full transition-colors ${repeat ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400 hover:text-white'}`}><Repeat className="w-4 h-4" /></button>
-          <button onClick={toggleLyrics} className={`px-2 py-1.5 rounded-lg text-xs font-bold ${lyricsOpen ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}>
+            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full ${repeat ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400'}`}><Repeat className="w-4 h-4" /></button>
+          <button onClick={toggleLyrics} className={`ct-tab ${lyricsOpen ? 'ct-tab-on' : ''}`}>
             <Sparkles className="w-3.5 h-3.5 inline mr-1" />{tr('music_lyrics')}
           </button>
           <div className="flex items-center gap-2">
-            <button onClick={() => setIsMuted((m) => !m)} className="text-slate-400 hover:text-white">
+            <button onClick={() => setIsMuted((m) => !m)} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400">
               {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
             <input type="range" min={0} max={100} value={isMuted ? 0 : volume} onChange={(e) => { setVolume(Number(e.target.value)); setIsMuted(false); }}
@@ -674,23 +675,23 @@ export const MusicView: React.FC = () => {
 
       {/* ── yt-dlp downloader modal (parity _open_downloader) ── */}
       {dlOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-2xl space-y-3 max-h-[90vh] overflow-y-auto">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog p-5 w-full max-w-2xl space-y-3 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black flex items-center gap-2"><Download className="w-4 h-4 text-emerald-400" />{tr('music_download_title')}</h3>
-              <button onClick={() => setDlOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={() => setDlOpen(false)} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400">✕</button>
             </div>
             <div className="flex gap-2">
               <input value={ytQuery} onChange={(e) => setYtQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') searchYt(); }} placeholder={tr('music_search_web')}
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm" />
-              <button onClick={searchYt} disabled={ytBusy} className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold">{tr('music_btn_search')}</button>
+                className="ct-input flex-1 rounded-xl px-3 py-2 text-sm" />
+              <button onClick={searchYt} disabled={ytBusy} className="ct-btn ct-btn-success ct-btn-sm">{tr('music_btn_search')}</button>
             </div>
             <input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} placeholder={tr('music_url_placeholder')}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm" />
+              className="ct-input w-full rounded-xl px-3 py-2 text-sm" />
             <div className="flex items-center gap-2 text-xs">
               <span className="text-slate-400">{tr('music_target_playlist')}</span>
               <select value={String(dlTargetId || selectedPlaylistId || '')} onChange={(e) => setDlTargetId(e.target.value)}
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-sm text-slate-100">
+                className="ct-input flex-1 rounded-xl px-2 py-1.5 text-sm text-slate-100">
                 {playlists.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
               </select>
             </div>
@@ -698,12 +699,12 @@ export const MusicView: React.FC = () => {
               {ytResults.map((r) => (
                 <div key={r.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded-lg bg-slate-950 border border-slate-800">
                   <span className="truncate text-slate-200">{r.title}</span>
-                  <button onClick={() => downloadYt(r.url)} className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300">{tr('music_btn_download')}</button>
+                  <button onClick={() => downloadYt(r.url)} className="ct-btn ct-btn-sm shrink-0 bg-emerald-500/20 text-emerald-300">{tr('music_btn_download')}</button>
                 </div>
               ))}
             </div>
             <div className="flex gap-2">
-              <button onClick={() => downloadYt(ytUrl)} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-bold">{tr('music_download')}</button>
+              <button onClick={() => downloadYt(ytUrl)} className="ct-btn ct-btn-success ct-btn-sm w-full justify-center">{tr('music_download')}</button>
             </div>
             {ytJob && !ytJob.done && <p className="text-xs text-emerald-300">{tr('music_downloading', { pct: ytJob.percent || '0%' })}</p>}
           </div>

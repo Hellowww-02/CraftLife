@@ -28,14 +28,14 @@ const RANKS = [
 
 export const RankDialog: React.FC<{ rank: RankInfo; onClose: () => void }> = ({ rank, onClose }) => {
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" onClick={onClose}>
+    <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3"
+        className="ct-dialog w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-slate-100">{t('rank_dialog_title', '🏆 Daftar Rank')}</h3>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">
+          <button type="button" onClick={onClose} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400">
             <X className="w-5 h-5" />
           </button>
         </div>

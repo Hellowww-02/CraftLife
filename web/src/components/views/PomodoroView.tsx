@@ -2,6 +2,7 @@ import React from 'react';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { Pause, Play, RotateCcw, Volume2, X } from 'lucide-react';
+import { ProgressRing } from '../charts';
 
 /** Interpolasi {var} sederhana (gaya trv di LoveSpaceView). */
 const trv = (key: string, vars: Record<string, string | number>, fb: string) =>
@@ -45,14 +46,22 @@ export const PomodoroView: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* ── Kartu Timer (Parity: timer_card stretch 3) ─────────────── */}
-        <div className="lg:col-span-3 bg-slate-900/80 border border-slate-800 rounded-3xl p-8 flex flex-col items-center gap-5">
-          <span className={`text-sm font-bold ${stateCls}`}>{stateLabel}</span>
-          <div className="font-mono text-7xl font-black text-slate-100 tabular-nums tracking-tight">
-            {mins}:{secs}
-          </div>
-          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+        <div className={`lg:col-span-3 ct-panel rounded-3xl p-8 flex flex-col items-center gap-5 ${pomo.phase === 'break' ? 'ct-pomo-break' : 'ct-pomo-focus'}`}>
+          <span className={`ct-chip text-xs font-bold px-3 py-1 ${stateCls}`}>{stateLabel}</span>
+          <ProgressRing
+            size={230}
+            strokeWidth={11}
+            progress={progress / 100}
+            color={pomo.phase === 'break' ? '#7ac74c' : '#a78bfa'}
+            className="ct-ring"
+          >
+            <div className="ct-pomo-time font-mono text-6xl font-black text-slate-100 tabular-nums tracking-tight">
+              {mins}:{secs}
+            </div>
+          </ProgressRing>
+          <div className="w-full h-1.5 rounded-full overflow-hidden ct-bar-track">
             <div
-              className={`h-full rounded-full transition-all duration-1000 ${pomo.phase === 'break' ? 'bg-[#7ac74c]' : 'bg-violet-500'}`}
+              className={`h-full rounded-full transition-all duration-1000 ct-bar-fill ${pomo.phase === 'break' ? 'bg-[#7ac74c]' : 'bg-violet-500'}`}
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -61,7 +70,7 @@ export const PomodoroView: React.FC = () => {
             {!running && (
               <button
                 onClick={pomoStart}
-                className="flex items-center gap-1.5 px-6 py-3 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-sm"
+                className="ct-btn ct-btn-primary ct-btn-lg"
               >
                 <Play className="w-4 h-4" />
                 {t('pomodoro_start', '▶ Mulai Fokus')}
@@ -70,7 +79,7 @@ export const PomodoroView: React.FC = () => {
             {running && (
               <button
                 onClick={pomoPauseToggle}
-                className="flex items-center gap-1.5 px-6 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-sm"
+                className="ct-btn ct-btn-secondary ct-btn-lg"
               >
                 <Pause className="w-4 h-4" />
                 {pomo.paused ? t('pomodoro_resume', '▶ Lanjut') : t('pomodoro_pause', '⏸ Jeda')}
@@ -79,7 +88,7 @@ export const PomodoroView: React.FC = () => {
             {/* Reset selalu terlihat (parity) */}
             <button
               onClick={pomoReset}
-              className="flex items-center gap-1.5 px-6 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-sm"
+              className="ct-btn ct-btn-secondary ct-btn-lg"
             >
               <RotateCcw className="w-4 h-4" />
               {t('pomodoro_reset', '↺ Reset')}
@@ -87,7 +96,7 @@ export const PomodoroView: React.FC = () => {
             {running && (
               <button
                 onClick={pomoGiveUp}
-                className="flex items-center gap-1.5 px-6 py-3 rounded-2xl bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-sm"
+                className="ct-btn ct-btn-danger ct-btn-lg"
               >
                 <X className="w-4 h-4" />
                 {t('pomodoro_give_up', '✖ Menyerah (tanpa hadiah)')}
@@ -99,7 +108,7 @@ export const PomodoroView: React.FC = () => {
 
         {/* ── Kolom kanan: Settings + Stats (Parity: stretch 2) ─────── */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="ct-panel p-5 space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
               {t('pomodoro_task_label', 'Sedang mengerjakan apa? (opsional)')}
             </h3>
@@ -109,7 +118,7 @@ export const PomodoroView: React.FC = () => {
               onChange={(e) => pomoSetTask(e.target.value)}
               disabled={running}
               placeholder={t('pomodoro_task_placeholder', 'mis. Menulis laporan, Belajar bab 3...')}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-violet-500 disabled:opacity-50"
+              className="ct-input w-full rounded-xl px-3.5 py-2.5 text-sm disabled:opacity-50 focus:border-transparent"
             />
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -120,7 +129,7 @@ export const PomodoroView: React.FC = () => {
                     value={pomo.focusMin}
                     disabled={running}
                     onChange={(e) => pomoSetDurations(Number(e.target.value), pomo.breakMin)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-sm text-slate-100 disabled:opacity-50"
+                    className="ct-input w-full rounded-lg px-2.5 py-2 text-sm disabled:opacity-50"
                   />
                   <span className="text-[11px] text-slate-500 shrink-0">{t('pomodoro_minutes_unit', 'menit')}</span>
                 </div>
@@ -133,7 +142,7 @@ export const PomodoroView: React.FC = () => {
                     value={pomo.breakMin}
                     disabled={running}
                     onChange={(e) => pomoSetDurations(pomo.focusMin, Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-sm text-slate-100 disabled:opacity-50"
+                    className="ct-input w-full rounded-lg px-2.5 py-2 text-sm disabled:opacity-50"
                   />
                   <span className="text-[11px] text-slate-500 shrink-0">{t('pomodoro_minutes_unit', 'menit')}</span>
                 </div>
@@ -141,14 +150,14 @@ export const PomodoroView: React.FC = () => {
             </div>
             <button
               onClick={pomoTestAlarm}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-900/50 border border-indigo-500/40 text-indigo-200 hover:bg-indigo-800/60 text-sm font-semibold"
+              className="ct-btn ct-btn-secondary ct-btn-sm w-full justify-center text-indigo-200"
             >
               <Volume2 className="w-4 h-4" />
               {t('pomodoro_test_alarm', 'Uji Alarm Berulang')}
             </button>
           </div>
 
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <div className="ct-panel p-5 space-y-3">
             <p className="text-xs text-slate-300">
               📅 {t('pomodoro_today', 'Hari ini')}: {trv('pomodoro_stat_sessions', { n: pomodoroStats.todaySessions }, '{n} sesi')}
               {' · '}{trv('pomodoro_stat_minutes', { n: pomodoroStats.todayMinutes }, '{n} menit')}

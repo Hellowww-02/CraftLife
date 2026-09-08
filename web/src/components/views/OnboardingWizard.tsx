@@ -66,11 +66,11 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-950 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
+      <div className="ct-dialog ct-pop w-full max-w-lg rounded-3xl p-6 sm:p-8">
         {/* Step indicator */}
         <div className="flex items-center justify-center gap-2 mb-6">
           {steps.map((s, i) => (
-            <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${i === step ? 'bg-emerald-600 text-white' : i < step ? 'bg-emerald-900/60 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+            <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${i === step ? 'ct-chip ct-glow bg-emerald-600 text-white' : i < step ? 'ct-chip bg-emerald-900/60 text-emerald-400' : 'ct-chip bg-slate-800 text-slate-500'}`}>
               {s.icon}<span className="hidden sm:inline">{s.label}</span>
             </div>
           ))}
@@ -85,7 +85,7 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
                 ? 'Ubah kebiasaan sehari-hari jadi petualangan RPG. Selesaikan tugas, kumpulkan XP & gold, kalahkan boss, dan naik level bersama karaktermu.'
                 : 'Turn your daily habits into an RPG adventure. Complete tasks, earn XP & gold, defeat bosses, and level up your hero.'}
             </p>
-            <button onClick={next} className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors">
+            <button onClick={next} className="ct-btn ct-btn-success ct-btn-lg inline-flex items-center gap-2">
               <Rocket className="w-4 h-4" /> {lang === 'id' ? 'Mulai' : 'Get Started'} <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -102,7 +102,7 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={lang === 'id' ? 'Nama pahlawan (opsional)' : 'Hero name (optional)'}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                className="ct-input w-full rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
               />
               <div className="grid grid-cols-3 gap-2">
                 {(Object.keys(AVATAR_CLASSES) as AvatarClass[]).map((k) => {
@@ -110,7 +110,7 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
                   const sel = cls === k;
                   return (
                     <button type="button" key={k} onClick={() => setCls(k)}
-                      className={`p-3 rounded-xl border text-center transition-all ${sel ? 'bg-emerald-600/20 border-emerald-500' : 'bg-slate-950 border-slate-800 hover:border-slate-600'}`}>
+                      className={`ct-socket p-3 rounded-xl text-center ${sel ? 'ct-glow bg-emerald-600/20 border-emerald-500' : 'bg-slate-950 border-slate-800 hover:border-slate-600'}`}>
                       <div className="text-2xl">{AVATAR_EMOJIS[k]}</div>
                       <div className="text-xs font-bold text-slate-200 mt-1">{c.name}</div>
                       <div className="text-[9px] text-slate-500 leading-tight">{c.desc}</div>
@@ -122,11 +122,11 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
                 <span className="text-xs text-slate-400">{lang === 'id' ? 'Warna' : 'Color'}:</span>
                 {COLORS.map((cc) => (
                   <button type="button" key={cc} onClick={() => setColor(cc)}
-                    className={`w-7 h-7 rounded-full border-2 ${color === cc ? 'border-white' : 'border-transparent'}`} style={{ backgroundColor: cc }} />
+                    className={`w-7 h-7 rounded-full border-2 ${color === cc ? 'border-white ct-glow' : 'border-transparent'}`} style={{ backgroundColor: cc }} />
                 ))}
               </div>
               <div className="flex justify-between pt-2">
-                <button type="button" onClick={prev} className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"><ArrowLeft className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={prev} className="ct-btn ct-btn-secondary ct-btn-sm inline-flex items-center gap-1"><ArrowLeft className="w-3.5 h-3.5" /></button>
                 <button type="submit" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">OK <ArrowRight className="w-3.5 h-3.5" /></button>
               </div>
             </form>
@@ -156,7 +156,7 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
                 label={lang === 'id' ? 'Aktifkan suara' : 'Enable sound'} />
             </div>
             <div className="flex justify-between pt-2">
-              <button onClick={prev} className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"><ArrowLeft className="w-3.5 h-3.5" /></button>
+              <button onClick={prev} className="ct-btn ct-btn-secondary ct-btn-sm inline-flex items-center gap-1"><ArrowLeft className="w-3.5 h-3.5" /></button>
               <button onClick={next} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">{lang === 'id' ? 'Lanjut' : 'Next'} <ArrowRight className="w-3.5 h-3.5" /></button>
             </div>
           </div>
@@ -182,9 +182,9 @@ export const OnboardingWizard: React.FC<{ onDone: () => void }> = ({ onDone }) =
 };
 
 const ToggleRow: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label: string }> = ({ checked, onChange, label }) => (
-  <button onClick={() => onChange(!checked)} className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-left">
+  <button onClick={() => onChange(!checked)} className="ct-row-press w-full flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-left">
     <span className="text-xs text-slate-200">{label}</span>
-    <span className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${checked ? 'bg-emerald-500 justify-end' : 'bg-slate-700 justify-start'}`}>
+    <span className={`ct-switch ${checked ? 'ct-switch-on' : ''}`}>
       <span className="w-4 h-4 rounded-full bg-white" />
     </span>
   </button>

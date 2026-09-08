@@ -49,7 +49,7 @@ export const TaskFolderBar: React.FC<{
         type="button"
         onClick={() => onSelect('all')}
         className={`px-3 py-1.5 rounded-xl font-semibold shrink-0 ${
-          selected === 'all' ? accent : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+          selected === 'all' ? accent : 'bg-slate-800/60 text-slate-400 hover:text-slate-100 border border-transparent hover:border-slate-700'
         }`}
       >
         {allLabel} ({allCount})
@@ -58,7 +58,7 @@ export const TaskFolderBar: React.FC<{
         type="button"
         onClick={() => onSelect('unorganized')}
         className={`px-3 py-1.5 rounded-xl font-semibold shrink-0 ${
-          selected === 'unorganized' ? accent : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+          selected === 'unorganized' ? accent : 'bg-slate-800/60 text-slate-400 hover:text-slate-100 border border-transparent hover:border-slate-700'
         }`}
       >
         {t('ungrouped', 'Ungrouped')}
@@ -68,7 +68,7 @@ export const TaskFolderBar: React.FC<{
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('folder_new_placeholder', 'New folder')}
-          className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[11px] w-28"
+          className="ct-input px-2 py-1 rounded-lg text-[11px] w-28"
         />
         <button
           type="button"
@@ -77,7 +77,7 @@ export const TaskFolderBar: React.FC<{
             addTaskFolder(name.trim(), '📁', '#10b981', mode);
             setName('');
           }}
-          className="px-2 py-1 rounded-lg bg-slate-700 text-slate-100 text-[11px] font-bold"
+          className="ct-socket ct-press px-2 py-1 rounded-lg text-slate-200 text-[11px] font-bold border-0"
         >
           +
         </button>
@@ -97,7 +97,7 @@ export const TaskFolderBar: React.FC<{
             className={`flex items-center gap-1.5 px-3 py-1.5 font-semibold transition-all ${
               dragOver === f.id
                 ? 'bg-amber-500/30 text-amber-100 ring-1 ring-amber-400'
-                : selected === f.id ? accent : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                : selected === f.id ? accent : 'bg-slate-800/60 text-slate-400 hover:text-slate-100 border border-transparent hover:border-slate-700'
             }`}
           >
             <span>{f.icon}</span>
@@ -106,7 +106,7 @@ export const TaskFolderBar: React.FC<{
           <button
             type="button"
             onClick={() => rename(f)}
-            className="px-1.5 py-1.5 bg-slate-800/80 text-sky-400 hover:bg-sky-500/20"
+            className="ct-act text-sky-400 rounded-none"
             title={t('folder_tooltip_edit', 'Edit folder')}
           >
             ✎
@@ -114,7 +114,7 @@ export const TaskFolderBar: React.FC<{
           <button
             type="button"
             onClick={() => duplicate(f)}
-            className="px-1.5 py-1.5 bg-slate-800/80 text-emerald-400 hover:bg-emerald-500/20"
+            className="ct-act text-emerald-400 rounded-none"
             title={t('folder_tooltip_dup', 'Duplicate folder')}
           >
             ⧉
@@ -122,7 +122,7 @@ export const TaskFolderBar: React.FC<{
           <button
             type="button"
             onClick={() => deleteTaskFolder(f.id, mode)}
-            className="px-1.5 py-1.5 rounded-r-xl bg-slate-800/80 text-rose-400 hover:bg-rose-500/20"
+            className="ct-act text-rose-400 rounded-none"
             title={t('folder_tooltip_del', 'Delete folder')}
           >
             ×

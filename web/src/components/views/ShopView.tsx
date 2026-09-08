@@ -80,9 +80,9 @@ export const ShopView: React.FC = () => {
       <div className="inline-flex rounded-2xl bg-slate-900 border border-slate-800 p-1 gap-1">
         {(['items', 'pets', 'inventory'] as const).map((tb) => (
           <button key={tb} type="button" onClick={() => setTab(tb)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold tracking-wider transition-all ${tab === tb
-              ? 'bg-amber-500 text-slate-950 shadow-[0_2px_12px_rgba(251,191,36,0.35)]'
-              : 'text-slate-400 hover:text-slate-200'}`}>
+            className={`ct-tab ${tab === tb
+              ? 'ct-tab-on ct-tab-gold'
+              : ''}`}>
             {tb === 'items' ? tr('shop_tab_items') : tb === 'pets' ? tr('shop_tab_pets') : tr('shop_tab_inventory')}
           </button>
         ))}
@@ -90,7 +90,7 @@ export const ShopView: React.FC = () => {
 
       {/* ── TAB ITEMS (4 kolom) ── */}
       {tab === 'items' && (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <section className="ct-reveal grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {visibleItems.map((it: any) => {
             const inv: any = invMap.get(it.id);
             // backend snapshot pakai `quantity`, bukan `qty` — kalau salah, qty selalu
@@ -101,7 +101,7 @@ export const ShopView: React.FC = () => {
             const cost = Number(it.cost || 0);
             return (
               <div key={it.id}
-                className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
+                className="ct-task-card p-3 rounded-2xl flex flex-col gap-1.5 text-center">
                 <span className="text-3xl">{it.icon}</span>
                 <span className="text-xs font-bold text-slate-100">
                   {it.name}
@@ -130,7 +130,7 @@ export const ShopView: React.FC = () => {
                         </button>
                         <button type="button"
                           onClick={() => setSellDlg({ inv, it })}
-                          className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                          className="ct-btn ct-btn-secondary ct-btn-sm h-[30px] rounded-xl text-[11px]">
                           {tr('shop_sell')}
                         </button>
                         <span className="text-[10px] text-slate-500">{tr('shop_sell_price', { gold: sellPriceOf(cost) })}</span>
@@ -147,14 +147,14 @@ export const ShopView: React.FC = () => {
                           ) : (
                             <button type="button" onClick={() => equipItem(it.id)}
                               disabled={slotUsedCount >= MAX_EQUIP_SLOTS}
-                              className="h-[30px] rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+                              className="ct-btn ct-btn-success ct-btn-sm h-[30px] rounded-xl text-[11px] disabled:opacity-40 disabled:cursor-not-allowed">
                               {tr('shop_equip')}
                             </button>
                           )
                         )}
                         <button type="button"
                           onClick={() => setSellDlg({ inv, it })}
-                          className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                          className="ct-btn ct-btn-secondary ct-btn-sm h-[30px] rounded-xl text-[11px]">
                           {tr('shop_sell')}
                         </button>
                         <span className="text-[10px] text-slate-500">{tr('shop_sell_price', { gold: sellPriceOf(cost) })}</span>
@@ -172,7 +172,7 @@ export const ShopView: React.FC = () => {
                                 if ((user.xp || 0) < c) return;
                                 enchantItem(it.id);
                               }}
-                                className="h-[30px] rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-[11px] font-bold disabled:opacity-40"
+                                className="ct-btn ct-btn-primary ct-btn-sm h-[30px] rounded-xl text-[11px] disabled:opacity-40"
                                 disabled={(user.xp || 0) < enchantCost(elvl)}
                                 title={(user.xp || 0) < enchantCost(elvl) ? tr('db_enchant_no_xp', { cost: enchantCost(elvl) }) : undefined}>
                                 {tr(elvl > 0 ? 'enchant_btn' : 'enchant_first_btn', { lvl: elvl + 1, cost: enchantCost(elvl) })}
@@ -187,7 +187,7 @@ export const ShopView: React.FC = () => {
                   <>
                     <span className="text-xs font-black text-amber-400">💰 {cost} G</span>
                     <button type="button" onClick={() => buyItem(it.id)} disabled={gold < cost}
-                      className="h-[30px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="ct-btn ct-btn-gold ct-btn-sm h-[30px] rounded-xl text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
                       {tr('shop_buy')}
                     </button>
                   </>
@@ -209,10 +209,11 @@ export const ShopView: React.FC = () => {
             slotsLabel={tr('shop_equip_slots_label', { used: slotUsedCount, max: MAX_EQUIP_SLOTS })}
           />
 
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <section className="ct-reveal grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {inventory.length === 0 ? (
-            <div className="col-span-full rounded-2xl bg-slate-900/60 border border-slate-800 p-8 text-center text-slate-500 text-sm">
-              {tr('web_inv_empty')}
+            <div className="ct-empty col-span-full">
+              <span className="ct-empty-ico">🎒</span>
+              <p>{tr('web_inv_empty')}</p>
             </div>
           ) : inventory.map((inv: any) => {
             const it = SHOP_ITEMS[inv.itemId] || {
@@ -222,7 +223,7 @@ export const ShopView: React.FC = () => {
             const elvl = Number(inv.enchantLevel || inv.enchant_level || 0);
             return (
               <div key={inv.itemId}
-                className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
+                className="ct-task-card p-3 rounded-2xl flex flex-col gap-1.5 text-center">
                 <span className="text-3xl">{it.icon}</span>
                 <span className="text-xs font-bold text-slate-100">{it.name || inv.itemId}</span>
                 {elvl > 0 && <span className="text-[9px] font-bold text-violet-300">⛏️ +{elvl}</span>}
@@ -241,13 +242,13 @@ export const ShopView: React.FC = () => {
                   {isEquippable(it.type) && (
                     inv?.equipped ? (
                       <button type="button" onClick={() => unequipItem(it.id)}
-                        className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold">
+                        className="ct-btn ct-btn-secondary ct-btn-sm h-[30px] rounded-xl text-[11px]">
                         {tr('shop_unequip')}
                       </button>
                     ) : (
                       <button type="button" onClick={() => equipItem(it.id)}
                         disabled={slotUsedCount >= MAX_EQUIP_SLOTS}
-                        className="h-[30px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+                        className="ct-btn ct-btn-success ct-btn-sm h-[30px] rounded-xl text-[11px] disabled:opacity-40 disabled:cursor-not-allowed">
                         {tr('shop_equip')}
                       </button>
                     )
@@ -255,7 +256,7 @@ export const ShopView: React.FC = () => {
                   <button type="button"
                     onClick={() => setSellDlg({ inv, it })}
                     disabled={qty < 1}
-                    className="h-[30px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="ct-btn ct-btn-secondary ct-btn-sm h-[30px] rounded-xl text-[11px] disabled:opacity-40 disabled:cursor-not-allowed">
                     {tr('shop_sell')}
                   </button>
                 </div>
@@ -273,7 +274,7 @@ export const ShopView: React.FC = () => {
             const owned = ownedPetIds.has(pid);
             const active = activePetIds.has(pid);
             return (
-              <div key={pid} className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5 text-center">
+              <div key={pid} className="ct-task-card p-3 rounded-2xl flex flex-col gap-1.5 text-center">
                 <span className="text-3xl">{pet.icon}</span>
                 <span className="text-xs font-bold text-slate-100">{pet.name}</span>
                 <p className="text-[10px] font-bold text-cyan-300 leading-relaxed">{pet.bonus}</p>
@@ -296,7 +297,7 @@ export const ShopView: React.FC = () => {
                   <>
                     <span className="text-xs font-black text-amber-400">💰 {pet.cost} G</span>
                     <button type="button" onClick={() => adoptPet(pid)} disabled={gold < (pet.cost || 0)}
-                      className="h-[30px] rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
+                      className="ct-btn ct-btn-gold ct-btn-sm h-[30px] rounded-xl text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
                       {tr('shop_adopt')}
                     </button>
                   </>
@@ -344,7 +345,7 @@ function EquipmentSlots({ inventory, SHOP_ITEMS, onUnequip, slotsLabel }: {
   const slots = Array.from({ length: MAX_EQUIP_SLOTS }, (_, i) => i + 1);
 
   return (
-    <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-2">
+    <div className="ct-panel p-4 space-y-2">
       <div className="flex items-center justify-between">
         <h4 className="text-xs font-bold text-slate-300">{slotsLabel}</h4>
         <span className="text-[10px] text-slate-500">{tr('shop_equip_slot_hint')}</span>
@@ -363,8 +364,8 @@ function EquipmentSlots({ inventory, SHOP_ITEMS, onUnequip, slotsLabel }: {
               disabled={!inv}
               className={`relative aspect-square rounded-lg border flex items-center justify-center text-2xl transition
                 ${inv
-                  ? 'bg-slate-800 border-sky-500/50 hover:border-rose-500/60 cursor-pointer'
-                  : 'bg-slate-950/50 border-slate-800 cursor-default'}`}>
+                  ? 'ct-socket bg-slate-800 border-sky-500/50 hover:border-rose-500/60 cursor-pointer shadow-[0_0_18px_-4px_rgba(56,189,248,0.45)]'
+                  : 'bg-slate-950/50 border-dashed border-slate-700 cursor-default'}`}>
               {inv ? (
                 <>
                   <span>{it?.icon}</span>
@@ -393,8 +394,8 @@ function SellDialog({ inv, it, onClose, onSell }: {
   const [qty, setQty] = useState(1);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4"
+    <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="ct-dialog max-w-sm w-full p-6 space-y-4"
         style={{ minWidth: 300 }}
         onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-black text-slate-100">{tr('shop_sell_title')}</h3>
@@ -404,15 +405,15 @@ function SellDialog({ inv, it, onClose, onSell }: {
         <div className="flex items-center gap-3">
           <input type="number" min={1} max={maxQty} value={qty}
             onChange={(e) => setQty(Math.min(Math.max(1, Number(e.target.value) || 1), maxQty))}
-            className="w-24 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100" />
+            className="ct-input w-24 px-3 py-2 rounded-xl text-sm text-slate-100" />
           <span className="text-xs text-slate-500">(max {maxQty})</span>
           <span className="text-xs font-bold text-amber-400">= 💰 {pricePer * qty} G</span>
         </div>
         <div className="flex items-center justify-end gap-2 pt-1">
           <button type="button" onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">{tr('btn_cancel')}</button>
+            className="ct-btn ct-btn-secondary ct-btn-sm">{tr('btn_cancel')}</button>
           <button type="button" onClick={() => onSell(qty)}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">
+            className="ct-btn ct-btn-gold ct-btn-sm">
             {tr('shop_sell')}
           </button>
         </div>

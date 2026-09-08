@@ -55,7 +55,7 @@ export const MoneyInput: React.FC<MoneyInputProps> = ({
           if (n !== null) onValueChange(n);
         }}
         onBlur={() => setText(maskMoney(value))}
-        className={`w-full pl-8 pr-2 bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500 ${inputClassName ?? 'py-2 text-sm rounded-xl'}`}
+        className={`ct-input w-full pl-8 pr-2 text-slate-100 ${inputClassName ?? 'py-2 text-sm rounded-xl'}`}
       />
     </div>
   );

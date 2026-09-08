@@ -100,9 +100,9 @@ const MindMapView: React.FC<{ raw: unknown; lang: string; fontSize: number }> = 
           {tr('mind_map', '🧠 Mind Map')}
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={() => zoomStep(-0.2)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Zoom out"><ZoomOut className="w-3.5 h-3.5" /></button>
-          <button onClick={() => setZoom(1.15)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Fit"><Maximize className="w-3.5 h-3.5" /></button>
-          <button onClick={() => zoomStep(0.2)} className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-violet-300" title="Zoom in"><ZoomIn className="w-3.5 h-3.5" /></button>
+          <button onClick={() => zoomStep(-0.2)} className="ct-btn ct-btn-secondary ct-btn-icon-sm text-violet-300" title="Zoom out"><ZoomOut className="w-3.5 h-3.5" /></button>
+          <button onClick={() => setZoom(1.15)} className="ct-btn ct-btn-secondary ct-btn-icon-sm text-violet-300" title="Fit"><Maximize className="w-3.5 h-3.5" /></button>
+          <button onClick={() => zoomStep(0.2)} className="ct-btn ct-btn-secondary ct-btn-icon-sm text-violet-300" title="Zoom in"><ZoomIn className="w-3.5 h-3.5" /></button>
         </div>
       </div>
       <div className="max-h-[440px] overflow-auto">
@@ -378,7 +378,7 @@ export const LearningView: React.FC = () => {
     return (
       <div className="space-y-3">
         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center gap-3">
-          <button onClick={() => { const next = !isPodcastPlaying; setIsPodcastPlaying(next); if (next && lines[currentLineIndex]) speakLine(lines[currentLineIndex].line); else window.speechSynthesis?.cancel(); }} className="w-9 h-9 rounded-xl bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center">{isPodcastPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}</button>
+          <button onClick={() => { const next = !isPodcastPlaying; setIsPodcastPlaying(next); if (next && lines[currentLineIndex]) speakLine(lines[currentLineIndex].line); else window.speechSynthesis?.cancel(); }} className="ct-btn ct-btn-primary ct-btn-icon-sm w-9 h-9 rounded-xl justify-center">{isPodcastPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}</button>
           <div><h4 className="font-bold text-sm text-slate-200">{tr('deep_dive_episode', 'Deep Dive Episode')}</h4><p className="text-[10px] text-slate-500">{tr('hosts_alex_sam_text_to_speech', 'Hosts: Alex & Sam · Text-to-Speech')}</p></div>
         </div>
         <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
@@ -620,8 +620,8 @@ export const LearningView: React.FC = () => {
             >
               {notebooks.map((nb) => <option key={nb.id} value={nb.id}>{nb.icon || '📚'} {nb.title}</option>)}
             </select>
-            <button onClick={() => setShowNewNbModal(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold border border-slate-700"><Plus className="w-3.5 h-3.5" />{tr('learning_new_notebook', 'Baru')}</button>
-            <button onClick={() => { setRenameTitle(activeNotebook.title); setRenaming(true); }} className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700" title={tr('learning_rename_title', 'Ubah judul notebook')}><Pencil className="w-3.5 h-3.5" /></button>
+            <button onClick={() => setShowNewNbModal(true)} className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1"><Plus className="w-3.5 h-3.5" />{tr('learning_new_notebook', 'Baru')}</button>
+            <button onClick={() => { setRenameTitle(activeNotebook.title); setRenaming(true); }} className="ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5" title={tr('learning_rename_title', 'Ubah judul notebook')}><Pencil className="w-3.5 h-3.5" /></button>
             <button onClick={() => { if (notebooks.length > 1 && window.confirm(tr('learning_delete_confirm', 'Hapus notebook ini?'))) deleteNotebook(activeNotebook.id); }} className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-700/40 border border-slate-700" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
             <div className="ml-auto flex items-center gap-1">
               <button onClick={() => setShowSources((v) => !v)} className={`px-3 py-1.5 rounded-lg border font-semibold ${showSources ? 'bg-violet-600/20 border-violet-500/50 text-violet-200' : 'bg-slate-800 border-slate-700 text-slate-400'} transition-colors`}>{tr('learning_sources_panel', 'Sumber')}</button>
@@ -648,7 +648,7 @@ export const LearningView: React.FC = () => {
             >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_sources_panel', 'Sumber')} <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{activeNotebook.sources?.length || 0}</span></span>
-                  <button onClick={() => setShowNewSourceModal(true)} className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700" title={tr('learning_add_source', 'Tambah Sumber')}><Plus className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setShowNewSourceModal(true)} className="ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5" title={tr('learning_add_source', 'Tambah Sumber')}><Plus className="w-3.5 h-3.5" /></button>
                 </div>
                 {/* Parity _add_source_files + _add_source_paste */}
                 <div className="flex gap-1">
@@ -672,8 +672,8 @@ export const LearningView: React.FC = () => {
                         </div>
                         <p className="text-[11px] text-slate-500">{src.wordCount} {tr('words', 'words')}</p>
                         <div className="flex items-center gap-1 pt-1">
-                          <button onClick={() => handleViewSource(src.id)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-violet-300 text-[11px] font-semibold" title={tr('learning_view', 'Lihat')}><Eye className="w-3.5 h-3.5" />{tr('learning_view', 'Lihat')}</button>
-                          <button onClick={() => deleteNotebookSource(activeNotebook.id, src.id)} className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleViewSource(src.id)} className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1 text-[11px]" title={tr('learning_view', 'Lihat')}><Eye className="w-3.5 h-3.5" />{tr('learning_view', 'Lihat')}</button>
+                          <button onClick={() => deleteNotebookSource(activeNotebook.id, src.id)} className="ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       </div>
                     ))
@@ -687,10 +687,10 @@ export const LearningView: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_chat_panel', 'Chat AI')}</span>
                 <div className="flex items-center gap-1 text-xs text-slate-400">
-                  <button onClick={() => setChatFontSize((v) => clampFont(v - 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_decrease', 'A−')}</button>
+                  <button onClick={() => setChatFontSize((v) => clampFont(v - 1))} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_decrease', 'A−')}</button>
                   <span className="px-1 font-bold text-slate-200">{chatFontSize}px</span>
-                  <button onClick={() => setChatFontSize((v) => clampFont(v + 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_increase', 'A+')}</button>
-                  <button onClick={() => { updateNotebook(activeNotebook.id, { chatHistory: [] }); }} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500/50" title={tr('learning_clear_chat', 'Bersihkan chat')}><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setChatFontSize((v) => clampFont(v + 1))} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_increase', 'A+')}</button>
+                  <button onClick={() => { updateNotebook(activeNotebook.id, { chatHistory: [] }); }} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_clear_chat', 'Bersihkan chat')}><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
 
@@ -744,11 +744,11 @@ export const LearningView: React.FC = () => {
                 {/* Font controls (parity studio font row) */}
                 <div className="flex items-center gap-1 text-[11px] text-slate-400">
                   <span>{tr('learning_font_studio', 'Font Hasil')}:</span>
-                  <button onClick={() => setStudioFontSize((v) => clampFont(v - 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_decrease', 'A−')}</button>
+                  <button onClick={() => setStudioFontSize((v) => clampFont(v - 1))} className="ct-btn ct-btn-secondary ct-btn-sm">{tr('learning_font_decrease', 'A−')}</button>
                   <span className="px-1 font-bold text-slate-200">{studioFontSize}px</span>
-                  <button onClick={() => setStudioFontSize((v) => clampFont(v + 1))} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_increase', 'A+')}</button>
-                  <button onClick={() => setStudioFontSize(13)} className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-violet-500/50">{tr('learning_font_reset', 'Reset')}</button>
-                  <button onClick={handleExportStudio} className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white" title={tr('learning_export', 'Ekspor')}><Download className="w-3.5 h-3.5" /><span>{tr('learning_export_compact', 'Ekspor')}</span></button>
+                  <button onClick={() => setStudioFontSize((v) => clampFont(v + 1))} className="ct-btn ct-btn-secondary ct-btn-sm">{tr('learning_font_increase', 'A+')}</button>
+                  <button onClick={() => setStudioFontSize(13)} className="ct-btn ct-btn-secondary ct-btn-sm">{tr('learning_font_reset', 'Reset')}</button>
+                  <button onClick={handleExportStudio} className="ct-btn ct-btn-success ct-btn-sm ml-auto flex items-center gap-1" title={tr('learning_export', 'Ekspor')}><Download className="w-3.5 h-3.5" /><span>{tr('learning_export_compact', 'Ekspor')}</span></button>
                 </div>
 
                 {/* Topic input */}
@@ -789,7 +789,7 @@ export const LearningView: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{tr('learning_history', 'Riwayat')} ({activeGenList.length})</span>
                     {activeGenList.length > 0 && (
-                      <button onClick={() => { if (selectedGen) handleDeleteGeneration(selectedGen.id); }} className="ml-auto p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => { if (selectedGen) handleDeleteGeneration(selectedGen.id); }} className="ml-auto ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
                     )}
                   </div>
                   <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
@@ -816,8 +816,8 @@ export const LearningView: React.FC = () => {
 
       {/* Modal: New Notebook */}
       {showNewNbModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog p-6 max-w-md w-full space-y-4">
             <h3 className="font-bold text-lg text-slate-100">{tr('create_new_notebook', 'Create New Notebook')}</h3>
             <div className="space-y-3 text-sm">
               <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_title_label', 'Title')}</label><input type="text" value={newNbTitle} onChange={(e) => setNewNbTitle(e.target.value)} placeholder={tr('learning_nb_title_ph', 'e.g. Physics Dynamics, Machine Learning')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
@@ -834,7 +834,7 @@ export const LearningView: React.FC = () => {
 
       {/* Modal: Rename Notebook (parity LearningPage._rename_notebook) */}
       {renaming && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
             <h3 className="font-bold text-lg text-slate-100">{tr('learning_rename_title', 'Judul notebook baru:')}</h3>
             <input type="text" value={renameTitle} onChange={(e) => setRenameTitle(e.target.value)} autoFocus className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" />
@@ -848,7 +848,7 @@ export const LearningView: React.FC = () => {
 
       {/* Modal: View Source (parity LearningPage._view_source) */}
       {viewingSource && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
             <h3 className="font-bold text-lg text-slate-100 mb-3 shrink-0">{viewingSource.title}</h3>
             <div className="overflow-y-auto pr-1 flex-1"><pre className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300 font-mono bg-slate-950/60 border border-slate-800 rounded-xl p-4">{viewingSource.content}</pre></div>
@@ -859,12 +859,12 @@ export const LearningView: React.FC = () => {
 
       {/* Modal: New Source */}
       {showNewSourceModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
             <h3 className="font-bold text-lg text-slate-100">{tr('add_study_source', 'Add Study Source')}</h3>
             <div className="space-y-3 text-sm">
               <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('source_title', 'Source Title')}</label><input type="text" value={newSourceTitle} onChange={(e) => setNewSourceTitle(e.target.value)} placeholder={tr('learning_source_title_ph', 'e.g. Chapter 1 Notes, Article summary')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_type_label', 'Type')}</label><div className="flex gap-2">{(['text', 'doc', 'pdf', 'url'] as const).map((tt) => (<button key={tt} onClick={() => setNewSourceType(tt)} className={`px-3 py-1.5 uppercase text-xs font-bold rounded-lg border ${newSourceType === tt ? 'bg-violet-600/30 border-violet-500 text-violet-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>{tt}</button>))}</div></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_type_label', 'Type')}</label><div className="flex gap-2">{(['text', 'doc', 'pdf', 'url'] as const).map((tt) => (<button key={tt} onClick={() => setNewSourceType(tt)} className={`ct-socket px-3 py-1.5 uppercase text-xs font-bold rounded-lg ${newSourceType === tt ? 'ct-glow bg-violet-600/30 border-violet-500 text-violet-300' : 'text-slate-400'}`}>{tt}</button>))}</div></div>
               <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('content_text', 'Content / Text')}</label><textarea rows={6} value={newSourceContent} onChange={(e) => setNewSourceContent(e.target.value)} placeholder={tr('learning_source_content_ph', 'Paste notes, textbook paragraphs, or document content here...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 text-xs focus:outline-none focus:border-violet-500 font-mono" /></div>
             </div>
             <div className="flex justify-end gap-3 pt-2">

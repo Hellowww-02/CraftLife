@@ -99,12 +99,12 @@ export const AchievementsView: React.FC = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('achievement_search', '🔍 Cari achievement...')}
-          className="flex-1 px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-amber-500"
+          className="ct-input flex-1 px-3 py-2.5 rounded-xl text-slate-100 text-sm focus:border-transparent"
         />
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 text-sm capitalize focus:outline-none focus:border-amber-500"
+          className="ct-input px-3 py-2.5 rounded-xl text-slate-100 text-sm capitalize focus:border-transparent"
         >
           <option value="all">{t('achievement_all', 'Semua')}</option>
           {CATEGORIES.map((c) => (
@@ -116,11 +116,12 @@ export const AchievementsView: React.FC = () => {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-10 text-center text-slate-400 text-sm">
-          {t('achievement_empty', 'Belum ada achievement yang cocok.')}
+        <div className="ct-empty col-span-full">
+          <span className="ct-empty-ico">🏆</span>
+          <p>{t('achievement_empty', 'Belum ada achievement yang cocok.')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="ct-reveal grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((a) => {
             const pct = Math.max(
               0,
@@ -131,14 +132,14 @@ export const AchievementsView: React.FC = () => {
                 key={a.id}
                 className={`rounded-2xl p-4 border flex flex-col gap-2 transition-all ${
                   a.isUnlocked
-                    ? 'bg-slate-900 border-amber-500/50 shadow-lg shadow-amber-500/5'
-                    : 'bg-slate-900/70 border-slate-800 opacity-80'
+                    ? 'ct-ach-gold bg-slate-900 border-amber-500/50'
+                    : 'ct-ach-locked bg-slate-900/70 border-slate-800'
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <div
                     className={`w-11 h-11 rounded-2xl text-2xl flex items-center justify-center shrink-0 ${
-                      a.isUnlocked ? 'bg-amber-500/15' : 'bg-slate-800 grayscale'
+                      a.isUnlocked ? 'ct-socket bg-amber-500/15' : 'ct-socket bg-slate-800 grayscale'
                     }`}
                   >
                     <span className={a.isUnlocked ? '' : 'opacity-50'}>{a.icon}</span>
@@ -151,9 +152,9 @@ export const AchievementsView: React.FC = () => {
 
                 {/* progress bar parity achievement_progress_format */}
                 <div>
-                  <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-2 rounded-full ct-bar-track">
                     <div
-                      className={`h-full transition-all ${a.isUnlocked ? 'bg-amber-400' : 'bg-sky-500/70'}`}
+                      className={`h-full ct-bar-fill transition-all ${a.isUnlocked ? 'bg-amber-400' : 'bg-sky-500/70'}`}
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -184,7 +185,7 @@ export const AchievementsView: React.FC = () => {
                         type="button"
                         disabled={busyId === a.id}
                         onClick={() => claim(a)}
-                        className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-black disabled:opacity-50 active:scale-95 transition-all"
+                        className="ct-btn ct-btn-gold ct-btn-sm text-[11px] font-black disabled:opacity-50"
                       >
                         {t('achievement_claim', 'Klaim Reward')}
                       </button>

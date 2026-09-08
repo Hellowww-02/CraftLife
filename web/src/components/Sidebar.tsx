@@ -105,13 +105,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm lg:hidden transition-opacity"
+          className="ct-backdrop fixed inset-0 z-40 lg:hidden transition-opacity"
         />
       )}
 
       {/* ── Left nav rail (parity NavBar + nav_scroll di MainWindow._build) ── */}
       <aside
-        className={`w-[102px] shrink-0 h-full ct-surface-solid border-r ct-border flex flex-col z-50 transition-transform duration-300 ease-in-out
+        className={`w-[102px] shrink-0 h-full ct-surface-solid border-r ct-border flex flex-col z-50 transition-transform duration-300 [transition-timing-function:var(--ct-ease-spring)]
           max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:w-64
           ${isOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}
           lg:translate-x-0 lg:static`}
@@ -144,21 +144,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 id={`nav-tab-${item.id}`}
                 onClick={() => handleSelect(item.id)}
                 title={label}
-                className={`relative w-full flex flex-col items-center gap-1 px-1 py-2 rounded-xl border text-[10px] font-bold leading-tight transition-all
+                className={`relative w-full flex flex-col items-center gap-1 px-1 py-2 rounded-xl border text-[10px] font-bold leading-tight ct-nav-item
                   ${isActive
-                    ? 'bg-gradient-to-b from-emerald-600/25 to-slate-800 border-emerald-500/40 text-emerald-200 shadow-sm'
+                    ? 'ct-nav-active'
                     : 'border-transparent text-slate-400 hover:bg-slate-800/70 hover:text-slate-100'}`}
               >
                 {/* Active left indicator (parity navindicator / border-left) */}
                 <span
-                  className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full transition-all ${
-                    isActive ? 'bg-emerald-400' : 'bg-transparent'
+                  className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full ${
+                    isActive ? 'ct-nav-pill' : 'bg-transparent'
                   }`}
                 />
-                <span className={`relative text-xl leading-none ${isActive ? '' : accent}`}>
+                <span className={`relative text-xl leading-none ct-nav-icon ${isActive ? '' : accent}`}>
                   {item.icon}
                   {badge > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black flex items-center justify-center border border-emerald-300">
+                    <span className="ct-pop ct-num absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black flex items-center justify-center border border-emerald-300">
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}

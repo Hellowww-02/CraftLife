@@ -27,20 +27,20 @@ const AdminDebugPanel: React.FC = () => {
     apiPost('/api/admin/debug', { action, amount }).then(() => window.location.reload()).catch(() => undefined);
   };
   return (
-    <div className="rounded-2xl bg-slate-900 border border-rose-800/40 p-5 space-y-3">
+    <div className="ct-panel p-5 space-y-3 border-rose-800/40">
       <h3 className="font-bold text-xs text-rose-300 uppercase tracking-wider">{t('admin_panel', 'Panel Admin')}</h3>
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <input type="number" value={xp} onChange={(e) => setXp(Number(e.target.value))} className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700" />
-        <button type="button" onClick={() => run('add_xp', xp)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_add_xp', '+ XP')}</button>
-        <input type="number" value={gold} onChange={(e) => setGold(Number(e.target.value))} className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700" />
-        <button type="button" onClick={() => run('add_gold', gold)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_add_gold', '+ Gold')}</button>
-        <button type="button" onClick={() => run('fill_hp_mp')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_fill_hp_mp', 'Isi HP/MP')}</button>
-        <button type="button" onClick={() => run('max_level')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_max_level', 'Max Level (50)')}</button>
-        <button type="button" onClick={() => run('complete_tasks')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_complete_tasks', 'Tuntaskan Semua Tugas')}</button>
-        <button type="button" onClick={() => run('pet_level_up')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_pet_level_up', 'Pet +1 Level')}</button>
-        <input type="number" value={petExp} onChange={(e) => setPetExp(Number(e.target.value))} className="w-24 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700" />
-        <button type="button" onClick={() => run('pet_add_exp', petExp)} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_pet_add_exp', 'Pet + EXP')}</button>
-        <button type="button" onClick={() => run('pet_feed')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 font-bold">{t('admin_pet_feed', 'Beri Makan Semua Pet')}</button>
+        <input type="number" value={xp} onChange={(e) => setXp(Number(e.target.value))} className="ct-input w-24 px-2 py-1 rounded-lg" />
+        <button type="button" onClick={() => run('add_xp', xp)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_add_xp', '+ XP')}</button>
+        <input type="number" value={gold} onChange={(e) => setGold(Number(e.target.value))} className="ct-input w-24 px-2 py-1 rounded-lg" />
+        <button type="button" onClick={() => run('add_gold', gold)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_add_gold', '+ Gold')}</button>
+        <button type="button" onClick={() => run('fill_hp_mp')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_fill_hp_mp', 'Isi HP/MP')}</button>
+        <button type="button" onClick={() => run('max_level')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_max_level', 'Max Level (50)')}</button>
+        <button type="button" onClick={() => run('complete_tasks')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_complete_tasks', 'Tuntaskan Semua Tugas')}</button>
+        <button type="button" onClick={() => run('pet_level_up')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_level_up', 'Pet +1 Level')}</button>
+        <input type="number" value={petExp} onChange={(e) => setPetExp(Number(e.target.value))} className="ct-input w-24 px-2 py-1 rounded-lg" />
+        <button type="button" onClick={() => run('pet_add_exp', petExp)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_add_exp', 'Pet + EXP')}</button>
+        <button type="button" onClick={() => run('pet_feed')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_feed', 'Beri Makan Semua Pet')}</button>
       </div>
       <p className="text-[11px] text-rose-300/80">{t('admin_warning', 'Alat debug — mengubah data game Anda. Gunakan untuk keperluan pengujian.')}</p>
     </div>
@@ -271,7 +271,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* ===== Akun lokal (custom web) ===== */}
-      <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-3">
+      <div className="ct-panel rounded-3xl p-6 space-y-3">
         <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
           <User className="w-4 h-4 text-emerald-400" />
           <span>{t('web_local_account', 'Local game account')}</span>
@@ -291,7 +291,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* ===== Cloud & Sync (sudah ada, dipertahankan) ===== */}
-      <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4">
+      <div className="ct-panel rounded-3xl p-6 space-y-4">
         <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
           <Cloud className="w-4 h-4 text-sky-400" />
           <span>{t('cloud_group', 'Cloud & Sync')}</span>
@@ -329,7 +329,7 @@ export const SettingsView: React.FC = () => {
           <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudSyncNow(), t('cloud_sync_success', 'Cloud sync selesai.'))} className="px-3 py-2 rounded-xl bg-yellow-500 disabled:opacity-40 text-slate-950 text-xs font-black inline-flex items-center gap-1">
             <RefreshCw className="w-3 h-3" /> {t('cloud_sync_now', 'Sync Sekarang')}
           </button>
-          <button disabled={cloudBusy || !linked} onClick={() => { if (window.confirm(t('cloud_migrate_local', 'Antrikan data lokal ke cloud?'))) runCloud(() => cloudMigrateLocal()); }} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200">
+          <button disabled={cloudBusy || !linked} onClick={() => { if (window.confirm(t('cloud_migrate_local', 'Antrikan data lokal ke cloud?'))) runCloud(() => cloudMigrateLocal()); }} className="ct-btn ct-btn-secondary ct-btn-sm disabled:opacity-40">
             {t('cloud_migrate_local', 'Migrasikan Data Lokal')}
           </button>
           <button disabled={cloudBusy || !linked} onClick={async () => {
@@ -341,19 +341,19 @@ export const SettingsView: React.FC = () => {
             } catch (e: any) {
               showToast('info', String(e?.message || e), '');
             }
-          }} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200 inline-flex items-center gap-1">
+          }} className="ct-btn ct-btn-secondary ct-btn-sm inline-flex items-center gap-1 disabled:opacity-40">
             <Smartphone className="w-3 h-3" /> {t('cloud_devices_title', 'Kelola Perangkat')}
           </button>
-          <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudQueueRetry())} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-40 text-xs font-bold text-slate-200">
+          <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudQueueRetry())} className="ct-btn ct-btn-secondary ct-btn-sm disabled:opacity-40">
             {t('cloud_queue_retry', 'Coba Lagi')}
           </button>
-          <button disabled={cloudBusy || !cloud?.linked} onClick={() => runCloud(() => cloudLogout())} className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold inline-flex items-center gap-1">
+          <button disabled={cloudBusy || !cloud?.linked} onClick={() => runCloud(() => cloudLogout())} className="ct-btn ct-btn-danger ct-btn-sm inline-flex items-center gap-1">
             <LogOut className="w-3 h-3" /> {t('cloud_sign_out', 'Sign Out Cloud')}
           </button>
         </div>
 
         {showDevices && (
-          <div className="rounded-2xl bg-slate-950 border border-slate-800 p-3 space-y-2">
+          <div className="ct-body-tile p-3 space-y-2">
             <p className="text-[11px] text-slate-500">{t('cloud_devices_info', 'UUID perangkat bukan credential.')}</p>
             {(devices.length ? devices : []).map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-2 text-xs text-slate-300">
@@ -376,7 +376,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* ===== Parity SettingsPage: THEME group — radio semua db.THEMES + glow preview dot ===== */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+      <div className="ct-panel p-5 space-y-3">
         <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
           <Palette className="w-4 h-4 text-fuchsia-400" /> {t('settings_theme', 'Tema')}
         </span>
@@ -396,7 +396,7 @@ export const SettingsView: React.FC = () => {
                 }}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
                   active
-                    ? 'bg-fuchsia-500/15 border-fuchsia-400/60 text-fuchsia-200'
+                    ? 'ct-glow bg-fuchsia-500/15 border-fuchsia-400/60 text-fuchsia-200'
                     : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
                 }`}
               >
@@ -419,7 +419,7 @@ export const SettingsView: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* ===== Parity SettingsPage: LANGUAGE group (id/en + restart prompt) ===== */}
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+        <div className="ct-panel p-5 space-y-3">
           <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
             <Globe className="w-4 h-4 text-sky-400" /> {t('settings_language', 'Bahasa')}
           </span>
@@ -448,7 +448,7 @@ export const SettingsView: React.FC = () => {
         </div>
 
         {/* ===== Parity SettingsPage: SOUND group ===== */}
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+        <div className="ct-panel p-5 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
               {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
@@ -477,7 +477,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* ===== Parity SettingsPage: CURRENCY combo IDR/USD/EUR ===== */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
+      <div className="ct-panel p-5 space-y-2">
         <span className="text-xs font-bold text-slate-300">{t('settings_currency', 'Mata uang')}</span>
         <select
           value={currency}
@@ -488,7 +488,7 @@ export const SettingsView: React.FC = () => {
               confirmRestart();
             }).catch(() => undefined);
           }}
-          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs"
+          className="ct-input w-full px-3 py-2 rounded-xl text-xs"
         >
           {['IDR', 'USD', 'EUR'].map((c) => (
             <option key={c} value={c}>{c}</option>
@@ -497,7 +497,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* ===== Parity SettingsPage: A11Y group (font scale combo + high contrast + hint) ===== */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-3">
+      <div className="ct-panel p-5 space-y-3">
         <span className="text-xs font-bold text-slate-300">{t('a11y_group', 'Aksesibilitas')}</span>
         <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300">
           <label className="flex items-center gap-2">
@@ -512,7 +512,7 @@ export const SettingsView: React.FC = () => {
                   confirmRestart();
                 }).catch(() => undefined);
               }}
-              className="px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700"
+              className="ct-btn ct-btn-secondary ct-btn-sm"
             >
               {[80, 90, 100, 110, 120, 130, 140].map((v) => (
                 <option key={v} value={v}>{v}%</option>
@@ -539,13 +539,13 @@ export const SettingsView: React.FC = () => {
       {isAdmin && <AdminDebugPanel />}
 
       {/* ===== Parity SettingsPage: DATA MANAGEMENT (export/import + backup) ===== */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-4">
+      <div className="ct-panel p-5 space-y-4">
         <h3 className="font-bold text-xs text-slate-300 uppercase tracking-wider">{t('settings_data_management', 'Manajemen Data')}</h3>
 
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <button
             onClick={handleExportData}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2 transition-colors"
+            className="ct-btn ct-btn-secondary ct-btn-sm w-full sm:w-auto flex items-center justify-center gap-2"
           >
             <Download className="w-4 h-4 text-sky-400" />
             <span>{t('settings_export_tracker', 'Ekspor Tracker (JSON)')}</span>
@@ -560,7 +560,7 @@ export const SettingsView: React.FC = () => {
           {/* Parity _manual_backup: tombol Backup Sekarang → db.backup_database() di server */}
           <button
             onClick={handleBackupNow}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2 transition-colors"
+            className="ct-btn ct-btn-secondary ct-btn-sm w-full sm:w-auto flex items-center justify-center gap-2"
           >
             <RefreshCcw className="w-4 h-4 text-amber-400" />
             <span>{t('settings_backup_now', 'Backup Sekarang')}</span>
@@ -580,7 +580,7 @@ export const SettingsView: React.FC = () => {
 
       {/* ===== Parity SettingsPage: UPDATE + DATABASE group ===== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
+        <div className="ct-panel p-5 space-y-2">
           <span className="text-xs font-bold text-slate-300">{t('update_group_title', 'Pembaruan Aplikasi')}</span>
           <p className="text-[11px] text-slate-400">
             {t('update_version', 'Versi: {version}').replace('{version}', appVersion || '…')}
@@ -594,7 +594,7 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
 
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 space-y-2">
+        <div className="ct-panel p-5 space-y-2">
           <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
             <Database className="w-4 h-4 text-amber-400" /> {t('settings_database', 'Database')}
           </span>

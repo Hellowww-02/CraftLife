@@ -66,13 +66,13 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 ct-app">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4 shadow-xl"
+        className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4 shadow-xl ct-surface ct-pop"
       >
         <div>
-          <h1 className="text-xl font-black text-emerald-300">{t('app_logo', 'CraftLife')}</h1>
+          <h1 className="text-xl font-black text-emerald-300 ct-title ct-gradient-text">{t('app_logo', 'CraftLife')}</h1>
           <p className="text-xs text-slate-400 mt-1">
             {mode === 'login'
               ? t('web_login_subtitle', 'Masuk ke petualanganmu')
@@ -80,7 +80,7 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
           </p>
         </div>
         <input
-          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+          className="ct-input w-full px-3 py-2 rounded-xl text-sm"
           placeholder={t('web_username', 'Username')}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -89,14 +89,14 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
         {mode === 'register' && (
           <>
             <input
-              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+              className="ct-input w-full px-3 py-2 rounded-xl text-sm"
               placeholder={t('web_display_name', 'Nama tampilan')}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
             {/* Parity _register_tab: bio + combobox kelas (ikon — nama — bonus) */}
             <input
-              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+              className="ct-input w-full px-3 py-2 rounded-xl text-sm"
               placeholder={t('register_bio', 'Bio')}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
@@ -120,9 +120,9 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
               <button
                 type="button"
                 onClick={() => setResetMethod('backup')}
-                className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border ${
+                className={`ct-socket flex-1 py-1.5 rounded-xl text-[11px] font-bold ${
                   resetMethod === 'backup'
-                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
+                    ? 'ct-glow bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
                     : 'bg-slate-800 border-slate-700 text-slate-400'
                 }`}
               >
@@ -131,9 +131,9 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
               <button
                 type="button"
                 onClick={() => setResetMethod('security')}
-                className={`flex-1 py-1.5 rounded-xl text-[11px] font-bold border ${
+                className={`ct-socket flex-1 py-1.5 rounded-xl text-[11px] font-bold ${
                   resetMethod === 'security'
-                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
+                    ? 'ct-glow bg-emerald-500/20 border-emerald-500/50 text-emerald-200'
                     : 'bg-slate-800 border-slate-700 text-slate-400'
                 }`}
               >
@@ -142,14 +142,14 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
             </div>
             {resetMethod === 'backup' ? (
               <input
-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+                className="ct-input w-full px-3 py-2 rounded-xl text-sm"
                 placeholder={t('web_backup_code', 'Kode cadangan')}
                 value={backupCode}
                 onChange={(e) => setBackupCode(e.target.value)}
               />
             ) : (
               <input
-                className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+                className="ct-input w-full px-3 py-2 rounded-xl text-sm"
                 placeholder={t('reset_password_security_question', 'Jawaban pertanyaan keamanan')}
                 value={secAnswer}
                 onChange={(e) => setSecAnswer(e.target.value)}
@@ -159,7 +159,7 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
         )}
         <input
           type="password"
-          className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-sm"
+          className="ct-input w-full px-3 py-2 rounded-xl text-sm"
           placeholder={t('web_password', 'Password')}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -169,7 +169,7 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
         <button
           type="submit"
           disabled={busy}
-          className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm"
+          className="ct-btn ct-btn-gold w-full justify-center font-black text-sm"
         >
           {busy
             ? t('web_connecting', 'Menghubungkan…')

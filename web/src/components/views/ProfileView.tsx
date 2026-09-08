@@ -61,10 +61,10 @@ const ProfilePhotoCard: React.FC<{ lang: string; showToast: (k: any, a: string, 
   };
 
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+    <div className="ct-panel p-4 space-y-3">
         <div className="text-xs font-bold text-slate-300">{t('profile_photo', lang === 'id' ? 'Foto profil' : 'Profile photo')}</div>
       <div className="flex items-center gap-4">
-        <div className="w-20 h-20 rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-4xl shrink-0">
+        <div className="ct-socket w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center text-4xl shrink-0">
           {user.hasProfilePhoto ? (
             <img
               src={`${apiBase()}/api/profile/photo?v=${photoVersion}`}
@@ -139,12 +139,12 @@ const ProfileTitleCard: React.FC<{ lang: string; showToast: (k: any, a: string, 
   };
 
   return (
-    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+    <div className="ct-panel p-4 space-y-2">
       <label className="block text-xs font-bold text-slate-300">
         {t('title_selector_label', '🎖️ Gelar Profil (tampil di leaderboard):')}
       </label>
       <select value={sel} onChange={(e) => apply(e.target.value)}
-        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm">
+        className="ct-input w-full px-3 py-2 rounded-xl text-sm">
         <option value="">{t('title_none', '(Tanpa gelar)')}</option>
         {unlocked.map((t0) => (
           <option key={t0.key} value={t0.key}>{t0.name}</option>
@@ -174,7 +174,7 @@ const TalentPanel: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
           <div className="text-[10px] uppercase text-slate-500">Tier {t}</div>
           <div className="grid sm:grid-cols-2 gap-2">
             {(tiers[t] || []).map((n: any) => (
-              <div key={n.key} className="rounded-xl bg-slate-950 border border-slate-800 p-2 text-xs">
+              <div key={n.key} className="ct-body-tile p-2 text-xs">
                 <div className="font-bold">{n.icon} {n.name}</div>
                 <div className="text-slate-500">{n.desc}</div>
                 {n.unlocked ? (
@@ -182,7 +182,7 @@ const TalentPanel: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
                 ) : (
                   <button
                     type="button"
-                    className="mt-1 px-2 py-1 rounded bg-amber-500 text-slate-950 text-[10px] font-black"
+                    className="ct-btn ct-btn-gold ct-btn-sm mt-1 text-[10px] font-black"
                     onClick={() => apiPost('/api/profile/talent', { key: n.key }).then(() => { showToast('success', n.key, ''); load(); }).catch((e) => showToast('info', String(e?.message || e), ''))}
                   >
                     Unlock
@@ -272,8 +272,8 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
       </button>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-black text-slate-100">{t('profile_rebirth_confirm_title', '🌀 Konfirmasi Rebirth')}</h3>
             <p className="text-sm font-bold text-rose-300">{t('profile_rebirth_confirm_warning', 'Anda yakin ingin melakukan Rebirth?')}</p>
             <p className="text-xs text-slate-400 leading-relaxed">{t('profile_rebirth_confirm_detail', 'Progres akan direset, tetapi inventory, pet, task, dan folder dipertahankan.')}</p>
@@ -288,7 +288,7 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
               />
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button type="button" onClick={() => { setModalOpen(false); setConfirmText(''); }} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold">
+              <button type="button" onClick={() => { setModalOpen(false); setConfirmText(''); }} className="ct-btn ct-btn-secondary ct-btn-sm">
                 {t('btn_cancel', lang === 'id' ? 'Batal' : 'Cancel')}
               </button>
               <button type="button" onClick={doRebirth} className="px-4 py-2 rounded-xl bg-violet-500 text-slate-950 font-bold">
@@ -387,13 +387,13 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
 
         {/* Identitas ringkas */}
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-slate-800 text-3xl flex items-center justify-center">{emoji}</div>
+          <div className="ct-socket w-12 h-12 rounded-2xl text-3xl flex items-center justify-center">{emoji}</div>
           <div className="min-w-0">
             <div className="text-base font-black truncate">{user.displayName || user.name || user.username}</div>
             <div className="text-[11px] text-slate-400">@{user.username} · Lv {user.level}</div>
           </div>
           {onOpenSettings && (
-            <button type="button" onClick={onOpenSettings} className="ml-auto px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-300 hover:text-slate-100">
+            <button type="button" onClick={onOpenSettings} className="ct-btn ct-btn-secondary ct-btn-sm ml-auto">
               {t('nav_settings', lang === 'id' ? 'Pengaturan' : 'Settings')}
             </button>
           )}
@@ -447,7 +447,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
+              className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
             />
           </div>
           <div>
@@ -455,7 +455,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
             <select
               value={heroClass}
               onChange={(e) => changeClass(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
+              className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
             >
               {(classes.length ? classes : DEFAULT_CLASSES).map((c: any) => (
                 <option key={c.key} value={c.key}>
@@ -479,7 +479,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             placeholder={t('ph_e_g_master_of_habits_conqueror_of_procra', 'e.g. Master of habits, conqueror of procrastination.')}
-            className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-yellow-500"
+            className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
           />
         </div>
 
@@ -487,7 +487,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           <button
             type="button"
             onClick={save}
-            className="px-5 py-2.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-black text-xs shadow-lg shadow-yellow-500/20 active:scale-95 transition-all inline-flex items-center gap-1"
+            className="ct-btn ct-btn-gold ct-btn-sm inline-flex items-center gap-1"
           >
             <Save className="w-3.5 h-3.5" /> {t('web_profile_save', 'Simpan Perubahan')}
           </button>
@@ -515,7 +515,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           ['Gems', String(user.gems || 0)],
           ['Inv', String(inventory.length)],
         ].map(([k, v]) => (
-          <div key={k} className="rounded-2xl bg-slate-900 border border-slate-800 p-3">
+          <div key={k} className="ct-panel p-3">
             <div className="text-[10px] uppercase text-slate-500">{k}</div>
             <div className="font-black">{v}</div>
           </div>
@@ -526,18 +526,18 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
 
       <TalentPanel lang={lang} showToast={showToast} />
 
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+      <div className="ct-panel p-4 space-y-2">
         <div className="text-xs font-bold text-slate-300">{t('profile_security', '🔐 Pertanyaan Keamanan (untuk reset password)')}</div>
         <select
           value={secQ}
           onChange={(e) => setSecQ(e.target.value)}
-          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs"
+          className="ct-input w-full px-3 py-2 rounded-xl text-xs"
         >
           {Array.from({ length: 7 }, (_, i) => i + 1).map((i) => (
             <option key={i} value={String(i)}>{t(`security_q${i}`, `Q${i}`)}</option>
           ))}
         </select>
-        <input value={secA} onChange={(e) => setSecA(e.target.value)} placeholder={t('profile_security_answer', 'Jawaban (simpan baik-baik)')} className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
+        <input value={secA} onChange={(e) => setSecA(e.target.value)} placeholder={t('profile_security_answer', 'Jawaban (simpan baik-baik)')} className="ct-input w-full px-3 py-2 rounded-xl text-xs" />
         <button
           type="button"
           onClick={() => {
@@ -550,7 +550,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
               setSecA('');
             }).catch((e) => showToast('info', String(e?.message || e), ''));
           }}
-          className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold"
+          className="ct-btn ct-btn-secondary ct-btn-sm"
         >
           {t('profile_save_security_btn', 'Simpan Pertanyaan Keamanan')}
         </button>
@@ -571,7 +571,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
                   showToast('success', t('backup_codes_copy', 'Salin kode'), '');
                 } catch { /* clipboard unavailable */ }
               }}
-              className="mt-1 px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 text-[11px] font-bold"
+              className="ct-btn ct-btn-sm mt-1 bg-amber-500/20 text-amber-300 text-[11px]"
             >
               {t('backup_codes_copy', 'Salin kode')}
             </button>
@@ -593,7 +593,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
       </div>
 
       {/* Account security: change password + lock/unlock (parity with PyQt) */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+      <div className="ct-panel p-4 space-y-2">
         <div className="text-xs font-bold text-slate-300">{t('account_security', lang === 'id' ? 'Keamanan Akun' : 'Account Security')}</div>
         <div className="grid sm:grid-cols-2 gap-2">
           <input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} placeholder={t('old_password', lang === 'id' ? 'Kata sandi lama' : 'Current password')} className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />
@@ -607,7 +607,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
               if (r.ok) { setOldPw(''); setNewPw(''); }
             }).catch((e) => showToast('info', String(e?.message || e), ''));
           }}
-          className="px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold"
+          className="ct-btn ct-btn-secondary ct-btn-sm"
         >
           {t('change_password', lang === 'id' ? 'Ganti kata sandi' : 'Change password')}
         </button>
@@ -651,7 +651,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
         )}
       </div>
 
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+      <div className="ct-panel p-4 space-y-2">
         <div className="text-xs font-bold text-slate-300">{t('redeem_code', lang === 'id' ? 'Kode redeem' : 'Redeem code')}</div>
         <div className="flex gap-2">
           <input value={code} onChange={(e) => setCode(e.target.value)} className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs" />

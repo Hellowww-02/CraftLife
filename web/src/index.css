@@ -1,28 +1,254 @@
 @import "tailwindcss";
 
-/* ── Tema (parity db.THEMES) ─────────────────────────────────────────────
-   Default = modern_dark ("Aurora Dark"). applyTheme() di utils/theme.ts
-   menimpa --ct-* dari palet /api/catalog/themes. UI memakai warna tema via
-   kelas .ct-* di bawah; depth & accent non-tetap tetap Tailwind. */
+/* ════════════════════════════════════════════════════════════════════════
+   CraftLife UI v2.1 — "AURORA CRAFT II" Design System
+   ────────────────────────────────────────────────────────────────────────
+   Fondasi UI/UX premium — offline-first, token-driven, theme-adaptive.
+   Metodologi: UI UX Pro Max (glassmorphism spec: layered depth, backdrop
+   blur 10–20px, translucent 10–30%, border 1px light, light source,
+   contrast 4.5:1, visible focus, reduced-motion).
+
+   Lapisan sistem:
+     0. Tailwind @theme ……… ramp slate aurora-tint (lightness-matched)
+     1. Tokens …………………… font, radius, easing, timing, elevation, scene
+     2. Base ……………………… focus ring ganda, caret, accent-color, selection
+     3. Shell …………………… .ct-app + ambient dasar (grid + vignette)
+     4. Scene …………………… .ct-scene (aurora blobs, XP orbs, film grain)
+                              → dipasang 1× di App shell, aria-hidden
+     5. Surfaces ……………… glass 2.0 (light-source top highlight)
+     6. Motion library …… 20+ keyframes bermakna, semua reduced-motion safe
+     7. Components ………… card 2.0 (bevel+sheen), bars HUD (notches), chips,
+                              buttons (glow/ripple), skeleton, dialog kit
+     8. Guards ……………… high-contrast & prefers-reduced-motion
+
+   KONTRAK: semua warna/gerak mengalir dari --ct-* milik tema backend
+   (db.THEMES via applyTheme) → 7 tema (modern_dark/light, overworld,
+   nether, the_end, ocean, ancient_city) otomatis mengganti suasana.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. Tailwind 4 theme: slate → aurora slate (violet-tint, lightness-matched) ── */
+@theme {
+  --color-slate-50:  #f7f8fc;
+  --color-slate-100: #eeeef8;
+  --color-slate-200: #dcddf0;
+  --color-slate-300: #c0c2e0;
+  --color-slate-400: #9ba0c8;
+  --color-slate-500: #737aa4;
+  --color-slate-600: #5a5f86;
+  --color-slate-700: #454a68;
+  --color-slate-800: #2d314d;
+  --color-slate-900: #171a2c;
+  --color-slate-950: #0a0b16;
+}
+
+/* ── 1. TOKENS ─────────────────────────────────────────────────────────── */
 :root {
+  /* Palet inti (parity db.THEMES "modern_dark" — ditimpa applyTheme) */
   --ct-primary: #8b5cf6; --ct-light: #a78bfa;
   --ct-bg: #0b0b16; --ct-bg2: #14122c; --ct-bg3: #0c1a26;
   --ct-panel: rgba(26, 28, 50, 0.90); --ct-border: rgba(150, 140, 255, 0.22);
   --ct-accent: #22d3ee; --ct-accent2: #8b5cf6; --ct-accent3: #22d3ee;
   --ct-glow: #a78bfa; --ct-text: #eef0ff; --ct-muted: #9b9fc4;
+  /* U12 QA fix: alias tier teks (dipakai .ct-tab/.ct-empty; sebelumnya yatim) */
+  --ct-t1: var(--ct-text);
+  --ct-t2: color-mix(in srgb, var(--ct-text) 88%, var(--ct-bg));
+  --ct-t3: var(--ct-muted);
   --ct-theme: modern_dark;
+
+  /* Tipografi — system stacks premium (offline-safe, tanpa webfont) */
+  --ct-font-sans: "Segoe UI Variable Text", "Segoe UI", Inter, Roboto,
+    "Helvetica Neue", Arial, system-ui, sans-serif;
+  --ct-font-display: "Segoe UI Variable Display", "Segoe UI Variable Text",
+    "Segoe UI", Inter, system-ui, sans-serif;
+  --ct-font-mono: "Cascadia Code", "Cascadia Mono", Consolas,
+    "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  /* Bentuk */
+  --ct-r-sm: 0.625rem; --ct-r-md: 0.875rem; --ct-r-lg: 1.125rem;
+  --ct-r-xl: 1.375rem; --ct-r-2xl: 1.625rem;
+
+  /* Gerak — easing berkepribadian + timing berjarak (bukan satu durasi) */
+  --ct-ease: cubic-bezier(0.22, 1, 0.36, 1);           /* out-quint */
+  --ct-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* overshoot */
+  --ct-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ct-t-fast: 140ms; --ct-t-med: 240ms; --ct-t-slow: 420ms; --ct-t-xslow: 700ms;
+
+  /* Elevasi berlapis (light source dari atas → inset highlight) */
+  --ct-elev-1: 0 1px 2px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --ct-elev-2: 0 2px 4px rgba(0, 0, 0, 0.35), 0 6px 16px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --ct-elev-3: 0 4px 10px rgba(0, 0, 0, 0.40), 0 14px 36px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --ct-elev-glow: 0 0 28px -8px color-mix(in srgb, var(--ct-accent) 55%, transparent);
+
+  /* Scene ambient — intensitas (diubah per-tema via [data-theme]) */
+  --ct-scene-blob-o: 0.16;      /* opasitas gumpalan aurora */
+  --ct-scene-orb-o: 0.55;       /* opasitas XP orbs */
+  --ct-grain-o: 0.05;           /* film grain */
+  --ct-vignette-o: 0.42;        /* gelap tepi */
 }
 
+/* ── 2. BASE ───────────────────────────────────────────────────────────── */
 @layer base {
-  * {
-    border-color: rgba(255, 255, 255, 0.08);
+  * { border-color: rgba(255, 255, 255, 0.08); }
+
+  html {
+    color-scheme: dark;
+    font-family: var(--ct-font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+
+  /* Interaksi dasar: pointer jelas, disabled jelas, focus ring ganda */
+  button:not(:disabled), [role="button"]:not(:disabled),
+  select:not(:disabled), summary { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ct-accent) 85%, transparent);
+    outline-offset: 2px;
+    border-radius: 4px;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ct-accent) 22%, transparent);
+  }
+
+  /* Kontrol native ikut tema: checkbox/radio/range/switch */
+  input, textarea, select { accent-color: var(--ct-accent); caret-color: var(--ct-accent); }
+
+  ::selection {
+    background: color-mix(in srgb, var(--ct-accent) 30%, transparent);
+    color: var(--ct-text);
   }
 }
 
-/* Permukaan inti yang mengikuti tema (shell / sidebar / navbar / panel) */
-.ct-app { background: var(--ct-bg); color: var(--ct-text); }
-.ct-surface { background: var(--ct-panel); border-color: var(--ct-border); }
-.ct-surface-solid { background: var(--ct-bg2); border-color: var(--ct-border); }
+/* ── 3. SHELL ──────────────────────────────────────────────────────────── */
+.ct-app {
+  background:
+    radial-gradient(1100px 520px at 12% -8%, color-mix(in srgb, var(--ct-accent2) 14%, transparent), transparent 60%),
+    radial-gradient(900px 480px at 88% -12%, color-mix(in srgb, var(--ct-accent) 10%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--ct-bg) 0%, color-mix(in srgb, var(--ct-bg2) 55%, var(--ct-bg)) 130%),
+    var(--ct-bg);
+  color: var(--ct-text);
+  position: relative;
+  /* Stacking context sendiri — scene (z-index negatif) melukis di atas
+     background .ct-app tapi DI BAWAH seluruh konten, TANPA mengubah
+     position anak. (Rule lama `.ct-app > * { position: relative }` menimpa
+     Tailwind `.fixed` pada UndoToast/Toast/QuickAdd/Palette/LevelUp →
+     popup nyangkut kiri-bawah. JANGAN kembali ke pola itu.) */
+  isolation: isolate;
+}
+/* Grid blok halus + vignette — lapisan ambient dasar (ada di semua layar .ct-app) */
+.ct-app::before {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.016) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(1200px 700px at 50% 0%, rgba(0, 0, 0, 0.9), transparent 75%);
+  z-index: -1;
+}
+
+/* ── 4. SCENE — lapisan hidup di atas shell (1 div aria-hidden di App) ── */
+.ct-scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1;          /* di atas bg .ct-app, di bawah seluruh konten (isolation) */
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Vignette bioskop: fokus ke tengah, tepi turun perlahan */
+.ct-scene::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 55%,
+    rgba(0, 0, 0, var(--ct-vignette-o)) 100%);
+}
+
+/* Gumpalan aurora — 3 blob radial lembut (STATIS: zero per-frame cost;
+   motion budget dipindah ke komponen interaktif) */
+.ct-scene-aurora {
+  position: absolute; inset: -20%;
+}
+.ct-scene-aurora::before,
+.ct-scene-aurora::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+}
+.ct-scene-aurora::before {
+  width: 55vw; height: 55vw; left: -12vw; top: -18vw;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--ct-accent2) calc(var(--ct-scene-blob-o) * 100%), transparent), transparent 70%);
+}
+.ct-scene-aurora::after {
+  width: 48vw; height: 48vw; right: -14vw; top: 22vh;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--ct-accent) calc(var(--ct-scene-blob-o) * 72%), transparent), transparent 70%);
+}
+
+/* XP orbs — STATIS PENUH (flick-fix): twinkle opacity walau elemennya 4px
+   memaksa re-filter SEMUA backdrop-filter di atasnya tiap frame → flicker
+   di Navbar/Sidebar WebEngine. Gerak hidup di budget interaksi saja. */
+.ct-scene-orbs {
+  position: absolute; inset: 0;
+}
+.ct-scene-orbs::before {
+  content: "";
+  position: absolute;
+  width: 4px; height: 4px; left: 18%; top: 30%;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--ct-accent) 90%, white 10%);
+  opacity: var(--ct-scene-orb-o);
+  box-shadow:
+    12vw 8vh 0 -1px color-mix(in srgb, var(--ct-accent2) 80%, transparent),
+    34vw -6vh 0 -1px color-mix(in srgb, var(--ct-accent) 80%, transparent),
+    52vw 14vh 0 -2px color-mix(in srgb, var(--ct-light) 85%, transparent),
+    66vw -12vh 0 -1px color-mix(in srgb, var(--ct-accent) 70%, transparent),
+    78vw 22vh 0 -2px color-mix(in srgb, var(--ct-accent2) 75%, transparent),
+    6vw 46vh 0 -2px color-mix(in srgb, var(--ct-light) 70%, transparent),
+    44vw 52vh 0 -1px color-mix(in srgb, var(--ct-accent) 60%, transparent),
+    88vw 48vh 0 -1px color-mix(in srgb, var(--ct-accent2) 65%, transparent);
+}
+
+/* Film grain — tekstur halus, data-URI inline (offline-safe).
+   TANPA mix-blend-mode: blend mode memaksa composite layar penuh tiap frame. */
+.ct-scene-grain {
+  position: absolute; inset: 0;
+  opacity: var(--ct-grain-o);
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+
+/* Adaptasi suasana per-tema (applyTheme menulis data-theme ke <html>) —
+   warna blob/orbs otomatis ikut token; di sini hanya menyetel intensitas */
+[data-theme="modern_light"] {
+  --ct-scene-blob-o: 0.10; --ct-scene-orb-o: 0.28;
+  --ct-grain-o: 0.035; --ct-vignette-o: 0.16;
+}
+[data-theme="overworld"]    { --ct-scene-blob-o: 0.15; --ct-scene-orb-o: 0.65; }
+[data-theme="nether"]       { --ct-scene-blob-o: 0.20; --ct-scene-orb-o: 0.40; --ct-vignette-o: 0.5; }
+[data-theme="the_end"]      { --ct-scene-blob-o: 0.18; --ct-scene-orb-o: 0.5; }
+[data-theme="ocean"]        { --ct-scene-blob-o: 0.17; --ct-scene-orb-o: 0.35; --ct-vignette-o: 0.48; }
+[data-theme="ancient_city"] { --ct-scene-blob-o: 0.13; --ct-scene-orb-o: 0.45; }
+
+/* ── 5. SURFACES — glass 2.0 (light source atas, depth berlapis) ───────── */
+.ct-surface {
+  background: var(--ct-panel);
+  border-color: var(--ct-border);
+  /* flick-fix: tanpa backdrop-filter — blur di atas scene beranimasi
+     memaksa re-filter tiap frame (flicker). Kedalaman tetap via elevasi. */
+  box-shadow: var(--ct-elev-1);
+}
+.ct-surface-solid {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ct-bg2) 92%, white 8%) 0%, var(--ct-bg2) 140%);
+  border-color: var(--ct-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--ct-elev-1);
+}
 .ct-text { color: var(--ct-text); }
 .ct-muted { color: var(--ct-muted); }
 .ct-accent { color: var(--ct-accent); }
@@ -32,47 +258,764 @@
 .ct-primary-bg { background: var(--ct-primary); }
 .ct-radius { border-radius: 1rem; }
 
-/* High-contrast override (parity SettingsPage high contrast toggle) */
 html.high-contrast {
   --ct-panel: var(--ct-bg2); --ct-border: rgba(255, 255, 255, 0.28);
 }
 html.high-contrast .ct-muted { color: var(--ct-text); }
+html.high-contrast .ct-app::before,
+html.high-contrast .ct-scene { display: none; }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* ── 6. MOTION LIBRARY — keyframes ─────────────────────────────────────── */
+@keyframes ct-fade-up   { from { opacity: 0; transform: translateY(12px); }  to { opacity: 1; transform: none; } }
+@keyframes ct-view-in   { from { opacity: 0; transform: translateY(12px) scale(0.992); }
+                          to   { opacity: 1; transform: none; } }
+@keyframes ct-pop       { 0% { opacity: 0; transform: scale(0.86); } 60% { transform: scale(1.03); } 100% { opacity: 1; transform: none; } }
+@keyframes ct-block-pop { 0% { opacity: 0; transform: scale(0.6); } 70% { opacity: 1; transform: scale(1.08); } 100% { transform: none; } }
+@keyframes ct-slide-in-r { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ct-slide-in-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ct-float     { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes ct-breathe   { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.028); } }
+@keyframes ct-shake     { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-4px); } 40% { transform: translateX(4px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } }
+@keyframes ct-shimmer   { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes ct-bar-shine { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(320%) skewX(-18deg); } }
+@keyframes ct-ring-ping { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes ct-wiggle    { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* ── 7. COMPONENTS ─────────────────────────────────────────────────────── */
 
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.pixel-art {
-  image-rendering: pixelated;
-}
-
-/* P27: transisi sliding 3-tab Learning (Sources/Chat/Studio) ala NotebookLM.
-   PyQt compact mode memakai toggle visibility; di sini ditambahkan animasi
-   masuk-dari-kanan/kiri yang halus agar "sliding" terasa, tanpa mengubah
-   logika switching tab. */
-@keyframes ct-slide-in-r {
-  from { opacity: 0; transform: translateX(18px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@keyframes ct-slide-in-l {
-  from { opacity: 0; transform: translateX(-18px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.ct-slide-in { animation: ct-slide-in-r 0.22s ease-out; }
+/* Entrance & view transitions
+   ⚠️ ANTI-CONTAINING-BLOCK: semua entrance pakai fill-mode `backwards`, BUKAN `both`.
+   Quirk Chromium: fill `both` + keyframe berakhir transform:none tetap disimpan sebagai
+   matrix(identity) → elemen jadi containing block permanen untuk anak position:fixed
+   (modal bergeser kiri-bawah). `backwards` visualnya identik dan melepas transform
+   setelah animasi selesai. */
+/* Entrance & view transitions */
+.ct-view    { animation: ct-view-in var(--ct-t-slow) var(--ct-ease) backwards; }
+.ct-enter   { animation: ct-fade-up var(--ct-t-slow) var(--ct-ease) backwards; }
+.ct-pop     { animation: ct-pop var(--ct-t-med) var(--ct-ease-spring) backwards; }
+.ct-block   { animation: ct-block-pop 360ms var(--ct-ease-spring) backwards; }
+.ct-slide-in   { animation: ct-slide-in-r 0.22s ease-out; }
 .ct-slide-in-r { animation: ct-slide-in-r 0.22s ease-out; }
 .ct-slide-in-l { animation: ct-slide-in-l 0.22s ease-out; }
+
+/* Stagger — anak-anak container masuk berurutan */
+.ct-stagger > * { animation: ct-fade-up var(--ct-t-slow) var(--ct-ease) backwards; }
+.ct-stagger > *:nth-child(1)  { animation-delay: 0ms; }
+.ct-stagger > *:nth-child(2)  { animation-delay: 60ms; }
+.ct-stagger > *:nth-child(3)  { animation-delay: 120ms; }
+.ct-stagger > *:nth-child(4)  { animation-delay: 180ms; }
+.ct-stagger > *:nth-child(5)  { animation-delay: 240ms; }
+.ct-stagger > *:nth-child(6)  { animation-delay: 300ms; }
+.ct-stagger > *:nth-child(7)  { animation-delay: 360ms; }
+.ct-stagger > *:nth-child(8)  { animation-delay: 420ms; }
+.ct-stagger > *:nth-child(9)  { animation-delay: 480ms; }
+.ct-stagger > *:nth-child(10) { animation-delay: 540ms; }
+.ct-stagger > *:nth-child(n+11) { animation-delay: 600ms; }
+
+/* Card 2.0 — permukaan bevel + sweep cahaya sekali saat hover */
+.ct-card {
+  position: relative;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 45%),
+              var(--ct-panel);
+  border: 1px solid var(--ct-border);
+  border-radius: var(--ct-r-lg);
+  box-shadow: var(--ct-elev-1);
+  overflow: hidden;
+  transition: transform var(--ct-t-med) var(--ct-ease), box-shadow var(--ct-t-med) var(--ct-ease),
+              border-color var(--ct-t-med) var(--ct-ease);
+}
+.ct-card::before {                      /* sheen: sapuan cahaya saat hover */
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.10) 50%, transparent 60%);
+  transform: translateX(-130%);
+  pointer-events: none;
+}
+.ct-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--ct-accent) 45%, var(--ct-border));
+  box-shadow: var(--ct-elev-2), var(--ct-elev-glow);
+}
+.ct-card:hover::before { transform: translateX(130%); transition: transform var(--ct-t-xslow) var(--ct-ease); }
+
+.ct-card-hover { transition: transform var(--ct-t-med) var(--ct-ease), box-shadow var(--ct-t-med) var(--ct-ease), border-color var(--ct-t-med) var(--ct-ease); }
+.ct-card-hover:hover { transform: translateY(-3px); box-shadow: var(--ct-elev-2), var(--ct-elev-glow); }
+
+/* Hover aman untuk elemen yang ME-RENDER ANAK position:fixed (dialog/toast):
+   glow + border saja — TANPA transform (containing block) dan TANPA overflow
+   clip. Lihat lesson U2.3/U3.1. */
+.ct-hover-glow { transition: box-shadow var(--ct-t-med) var(--ct-ease), border-color var(--ct-t-med) var(--ct-ease), filter var(--ct-t-med) var(--ct-ease); }
+.ct-hover-glow:hover { box-shadow: var(--ct-elev-2), var(--ct-elev-glow); filter: brightness(1.05); }
+
+/* Frame rarity — tier glow untuk item/pet/achievement (dipakai mulai U7) */
+.ct-frame-common    { border-color: rgba(160, 165, 190, 0.35); }
+.ct-frame-rare      { border-color: color-mix(in srgb, #3b82f6 55%, var(--ct-border)); box-shadow: var(--ct-elev-1), 0 0 18px -8px #3b82f6; }
+.ct-frame-epic      { border-color: color-mix(in srgb, #a855f7 60%, var(--ct-border)); box-shadow: var(--ct-elev-1), 0 0 22px -8px #a855f7; }
+.ct-frame-legendary { border-color: color-mix(in srgb, #f59e0b 65%, var(--ct-border)); box-shadow: var(--ct-elev-1), 0 0 26px -6px #f59e0b; }
+.ct-frame-mythic    { border-color: color-mix(in srgb, #f43f5e 65%, var(--ct-border)); box-shadow: var(--ct-elev-1), 0 0 30px -6px #f43f5e; }
+
+/* Buttons — press physics, glow CTA, ripple */
+.ct-press { transition: transform var(--ct-t-fast) var(--ct-ease), box-shadow var(--ct-t-fast) var(--ct-ease),
+            background-color var(--ct-t-fast) var(--ct-ease), color var(--ct-t-fast) var(--ct-ease); }
+.ct-press:not(:disabled):hover  { transform: translateY(-1px); }
+.ct-press:not(:disabled):active { transform: translateY(0) scale(0.96); }
+
+.ct-btn-glow {
+  position: relative;
+  background: linear-gradient(135deg, var(--ct-accent2), var(--ct-accent));
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--ct-accent) 70%, transparent),
+              inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform var(--ct-t-fast) var(--ct-ease), box-shadow var(--ct-t-med) var(--ct-ease), filter var(--ct-t-fast) var(--ct-ease);
+}
+.ct-btn-glow:not(:disabled):hover  { transform: translateY(-1px); filter: brightness(1.1); box-shadow: 0 6px 20px -4px color-mix(in srgb, var(--ct-accent) 80%, transparent), inset 0 1px 0 rgba(255,255,255,.25); }
+.ct-btn-glow:not(:disabled):active { transform: translateY(0) scale(0.96); }
+
+.ct-ripple { position: relative; }
+.ct-ripple::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.28), transparent 62%);
+  opacity: 0; transform: scale(0.55); pointer-events: none;
+  transition: transform 0.4s var(--ct-ease), opacity 0.5s var(--ct-ease);
+}
+.ct-ripple:active::after { opacity: 1; transform: scale(1); transition: 0s; }
+
+/* Bars / HUD — track cekung + notch ala Minecraft, fill berkilau */
+.ct-bar-track {
+  position: relative;
+  background: color-mix(in srgb, var(--ct-bg) 72%, transparent);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+.ct-bar-track::after {                  /* notch tersegmentasi */
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 0, 0, 0.30) 7px 9px);
+  pointer-events: none;
+}
+.ct-bar { position: relative; overflow: hidden; }
+.ct-bar-fill { position: relative; overflow: hidden; }
+.ct-bar-fill::after {
+  content: "";
+  position: absolute; top: 0; bottom: 0; left: 0; width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  opacity: 0; transition: opacity var(--ct-t) var(--ct-ease);
+}
+/* flick-fix: shine HANYA saat hover bar (motion-on-interaction) */
+.ct-bar-fill:hover::after { opacity: 1; animation: ct-bar-shine 1.6s var(--ct-ease) infinite; }
+/* flick-fix: low-stock = glow statis (bukan pulse box-shadow per frame) */
+.ct-bar-low { --ct-glow: #ef4444; box-shadow: 0 0 18px -6px var(--ct-glow); }
+
+/* Chips & badges (tanpa backdrop-filter: elemen kecil, blur tak terlihat,
+   tapi mahal kalau banyak) */
+.ct-chip {
+  border-radius: 9999px;
+  border: 1px solid var(--ct-border);
+  background: color-mix(in srgb, var(--ct-bg2) 80%, transparent);
+}
+.ct-chip-buff {
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--ct-accent) 40%, transparent);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--ct-accent2) 16%, transparent), color-mix(in srgb, var(--ct-accent) 12%, transparent));
+  box-shadow: 0 0 16px -6px color-mix(in srgb, var(--ct-accent) 60%, transparent);
+}
+
+/* Teks display */
+.ct-title { font-family: var(--ct-font-display); letter-spacing: -0.018em; font-weight: 800; }
+.ct-num   { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+.ct-gradient-text {
+  background: linear-gradient(100deg, var(--ct-text) 20%, var(--ct-light) 40%, var(--ct-accent) 60%, var(--ct-text) 80%);
+  background-size: 220% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  /* flick-fix: gradient statis — animasi background-position = paint/frame */
+}
+.ct-text-gold {
+  background: linear-gradient(180deg, #fde68a, #f59e0b 55%, #b45309);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* Divider bercahaya */
+.ct-hr {
+  border: none; height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ct-accent) 45%, transparent), transparent);
+}
+
+/* Skeleton loading */
+.ct-skeleton {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--ct-bg2) 70%, transparent) 40%, color-mix(in srgb, var(--ct-bg3) 60%, white 6%) 50%, color-mix(in srgb, var(--ct-bg2) 70%, transparent) 60%);
+  background-size: 200% 100%;
+  animation: ct-shimmer 1.6s linear infinite;
+  border-radius: var(--ct-r-md);
+}
+
+/* Dialog kit — untuk U2+ (command palette, modal sweep) */
+.ct-backdrop {
+  /* flick-fix: scrim pekat TANPA blur fullscreen — blur(6px) di atas scene
+     = recomposite layar penuh tiap frame selama dialog terbuka */
+  background: rgba(4, 5, 12, 0.74);
+}
+.ct-dialog {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ct-bg2) 96%, white 4%) 0%, var(--ct-bg2) 130%);
+  border: 1px solid color-mix(in srgb, var(--ct-accent) 25%, var(--ct-border));
+  border-radius: var(--ct-r-xl);
+  box-shadow: var(--ct-elev-3);
+  animation: ct-pop var(--ct-t-med) var(--ct-ease-spring) backwards;
+}
+
+/* Utilities mikro */
+.ct-float      { animation: ct-float 5s ease-in-out infinite; }
+.ct-pulse-glow { box-shadow: 0 0 24px -6px var(--ct-glow); } /* flick-fix: statis */
+.ct-breathe    { animation: ct-breathe 3.2s ease-in-out infinite; }
+.ct-shake      { animation: ct-shake 0.4s ease-in-out; }
+.ct-wiggle:hover > svg, .ct-wiggle:hover { animation: ct-wiggle 0.4s var(--ct-ease); }
+.ct-sheen { position: relative; overflow: hidden; }
+.ct-sheen::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.12) 50%, transparent 60%);
+  transform: translateX(-130%); pointer-events: none;
+}
+.ct-sheen:hover::before { transform: translateX(130%); transition: transform var(--ct-t-xslow) var(--ct-ease); }
+.ct-ping { position: relative; }
+.ct-ping::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  border: 2px solid currentColor; animation: ct-ring-ping 1.6s var(--ct-ease) infinite;
+}
+
+/* Scrollbar 2.0 — ramping, glow, track halus */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ct-accent2) 45%, rgba(255, 255, 255, 0.12)), rgba(255, 255, 255, 0.14));
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ct-accent) 60%, rgba(255, 255, 255, 0.2)), rgba(255, 255, 255, 0.24));
+  background-clip: padding-box;
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(150, 140, 255, 0.35) transparent; }
+
+.pixel-art { image-rendering: pixelated; }
+
+/* ── U3.3: SIGNATURE BUTTON SYSTEM — bahasa tombol khas CraftLife ────────
+   "Game-HUD bevel": setiap tombol punya STEM 3D di bawah (seperti tombol
+   fisik), ditekan → stem collapse (translateY + shadow turun). Ikon memakai
+   SOCKET inset ala slot inventory. Semua varian/ukuran dari U3.2 tetap
+   dipakai (className sama, tampilan naik kelas otomatis). */
+.ct-btn {
+  --ct-stem: rgba(0, 0, 0, 0.38);
+  position: relative; isolation: isolate; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-weight: 800; letter-spacing: 0.02em; white-space: nowrap;
+  padding: 0.55rem 1.15rem;
+  border-radius: 0.7rem;
+  border: 1px solid transparent;
+  user-select: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 3px 0 var(--ct-stem),
+    0 6px 14px -6px rgba(0, 0, 0, 0.5);
+  transition: transform var(--ct-t-fast) var(--ct-ease),
+    box-shadow var(--ct-t-fast) var(--ct-ease), filter var(--ct-t-fast) var(--ct-ease),
+    background-color var(--ct-t-fast) var(--ct-ease), color var(--ct-t-fast) var(--ct-ease),
+    border-color var(--ct-t-fast) var(--ct-ease);
+}
+.ct-btn:not(:disabled):hover { transform: translateY(-1px); filter: brightness(1.06); }
+.ct-btn:not(:disabled):active {
+  transform: translateY(2px);                                    /* ditekan masuk */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 1px 0 var(--ct-stem),
+    0 2px 6px -3px rgba(0, 0, 0, 0.4);
+}
+.ct-btn:disabled { opacity: 0.5; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 1px 0 var(--ct-stem); }
+
+/* Ukuran */
+.ct-btn-sm      { padding: 0.4rem 0.85rem; font-size: 0.75rem; border-radius: 0.55rem; gap: 0.375rem; }
+.ct-btn-lg      { padding: 0.75rem 1.5rem; font-size: 0.95rem; border-radius: 0.85rem; }
+.ct-btn-icon    { padding: 0.5rem; width: 2.5rem; height: 2.5rem; }
+.ct-btn-icon-sm { padding: 0.25rem; width: 1.9rem; height: 1.9rem; border-radius: 0.55rem; }
+
+/* Varian — primary & gold memakai gradient metalik + stem gelap + sheen hover */
+.ct-btn-primary {
+  --ct-stem: color-mix(in srgb, var(--ct-accent2) 55%, #000 45%);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ct-accent2) 82%, #fff 18%) 0%,
+    var(--ct-accent2) 45%,
+    color-mix(in srgb, var(--ct-accent2) 80%, #000 20%) 100%);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--ct-accent2) 60%, #000 40%);
+}
+.ct-btn-primary:not(:disabled):hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 3px 0 var(--ct-stem),
+    0 8px 22px -6px color-mix(in srgb, var(--ct-accent) 65%, transparent);
+}
+.ct-btn-gold {
+  --ct-stem: #8a5a10;
+  background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 55%, #c2740a 100%);
+  color: #241300;
+  border-color: #9a620f;
+}
+.ct-btn-gold:not(:disabled):hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 0 var(--ct-stem),
+    0 8px 22px -6px rgba(245, 158, 11, 0.55);
+}
+.ct-btn-secondary {
+  --ct-stem: rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ct-bg2) 88%, #fff 12%) 0%, var(--ct-bg2) 100%);
+  border-color: var(--ct-border);
+  color: var(--ct-text);
+}
+.ct-btn-secondary:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--ct-accent) 45%, var(--ct-border));
+}
+.ct-btn-ghost {
+  --ct-stem: transparent;
+  background: transparent;
+  color: var(--ct-muted);
+  box-shadow: none;
+}
+.ct-btn-ghost:not(:disabled):hover { background: rgba(255, 255, 255, 0.07); color: var(--ct-text); }
+.ct-btn-ghost:not(:disabled):active { transform: translateY(0) scale(0.94); box-shadow: none; }
+.ct-btn-danger {
+  --ct-stem: #7f1d3a;
+  background: linear-gradient(180deg, #fb7185 0%, #e11d48 60%, #be123c 100%);
+  color: #fff;
+  border-color: #9f123f;
+}
+.ct-btn-danger:not(:disabled):hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 3px 0 var(--ct-stem),
+    0 8px 22px -6px rgba(244, 63, 94, 0.55);
+}
+
+/* Sheen sweep pada CTA metalik (hover saja — nol biaya idle) */
+.ct-btn-primary::after, .ct-btn-gold::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.38) 50%, transparent 60%);
+  transform: translateX(-130%);
+  transition: transform var(--ct-t-xslow) var(--ct-ease);
+}
+.ct-btn-primary:hover::after, .ct-btn-gold:hover::after { transform: translateX(130%); }
+
+/* SOCKET — slot inset ala inventory (ikon, avatar, tile statistik) */
+.ct-socket {
+  background: color-mix(in srgb, var(--ct-bg) 75%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: box-shadow var(--ct-t-med) var(--ct-ease), border-color var(--ct-t-med) var(--ct-ease);
+}
+.ct-socket:hover {
+  border-color: color-mix(in srgb, var(--ct-accent) 40%, rgba(255, 255, 255, 0.09));
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 0 12px -4px color-mix(in srgb, var(--ct-accent) 35%, transparent),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* Tombol ikon = socket kecil (kecuali ghost murni yang diberi versi lembut) */
+.ct-btn-icon, .ct-btn-icon-sm {
+  background: color-mix(in srgb, var(--ct-bg) 75%, transparent);
+  border-color: rgba(255, 255, 255, 0.09);
+  --ct-stem: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+.ct-btn-icon:not(:disabled):active, .ct-btn-icon-sm:not(:disabled):active {
+  transform: translateY(1px) scale(0.94);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6), inset 0 0 10px -4px color-mix(in srgb, var(--ct-accent) 45%, transparent);
+}
+.ct-btn-ghost.ct-btn-icon-sm {
+  background: transparent;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Kartu hub dashboard — panah '›' muncul saat hover (CSS murni) */
+.ct-hub::after {
+  content: "\203A";
+  margin-left: auto; align-self: center;
+  font-size: 1.35rem; font-weight: 900; line-height: 1;
+  color: var(--ct-accent);
+  opacity: 0; transform: translateX(-6px);
+  transition: opacity var(--ct-t-med) var(--ct-ease), transform var(--ct-t-med) var(--ct-ease);
+}
+.ct-hub:hover::after, .ct-hub:focus-visible::after { opacity: 1; transform: translateX(0); }
+
+/* ── U12: FINAL POLISH ── */
+/* Hit-area minimal untuk aksi ikon kecil (adaptasi desktop dari target 44px) */
+.ct-act { min-width: 28px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; }
+
+/* ── U11: GLOBAL MOTION KIT ── */
+/* Scroll-reveal — murni CSS (animation-timeline), TANPA listener; browser tanpa
+   dukungan otomatis skip (elemen langsung tampil). Transform+opacity saja. */
+@supports (animation-timeline: view()) {
+  .ct-reveal { animation: ct-reveal-up both; animation-timeline: view();
+    animation-range: entry 0% entry 55%; }
+  @keyframes ct-reveal-up { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .ct-reveal { animation: none; } }
+}
+
+/* Empty state — block-art mini: socket emoji + teks muted, siap CTA */
+.ct-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.625rem; padding: 2.5rem 1rem; text-align: center;
+  color: var(--ct-t3); font-size: 0.8125rem;
+  border: 1px dashed var(--ct-border); border-radius: var(--ct-r-lg);
+  background: color-mix(in srgb, var(--ct-bg2) 55%, transparent); }
+.ct-empty-ico { width: 56px; height: 56px; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center; font-size: 1.625rem;
+  background: color-mix(in srgb, var(--ct-text) 5%, transparent);
+  border: 1px solid var(--ct-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), var(--ct-elev-1); }
+
+/* ── U10: ACCOUNT KIT (Login · Onboarding · Profile · Settings) ── */
+/* Toggle switch — track + knob spring (state terlihat jelas tanpa hover) */
+.ct-switch { width: 36px; height: 20px; border-radius: 9999px; display: inline-flex;
+  align-items: center; padding: 2px; background: var(--ct-bg3);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: background var(--ct-t) var(--ct-ease); }
+.ct-switch > span { width: 16px; height: 16px; border-radius: 9999px; background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: transform var(--ct-t) var(--ct-ease-spring); }
+.ct-switch-on { background: linear-gradient(180deg, #34d399, #059669); }
+.ct-switch-on > span { transform: translateX(16px); }
+
+/* ── U9: STUDIO KIT (Notes · Learning · Music · Calendar · Reminders) ── */
+@keyframes ct-spin { to { transform: rotate(360deg); } }
+/* Album disc — berputar HANYA saat playing (transform=compositor; pause=berhenti;
+   reduced-motion dimatikan guard global) */
+.ct-art-disc { position: relative; border-radius: 9999px;
+  background: radial-gradient(circle at 32% 28%, #2c3640 0%, #161b22 55%, #0b0e13 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07), var(--ct-elev-2); }
+.ct-spinning { animation: ct-spin 16s linear infinite; }
+
+/* Equalizer mini — 3 bar, hidup hanya saat playing */
+.ct-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.ct-eq span { width: 3px; height: 100%; border-radius: 2px; transform-origin: bottom;
+  background: #34d399; opacity: 0.55; }
+.ct-eq.is-playing span { animation: ct-eq-b 0.9s ease-in-out infinite; }
+.ct-eq.is-playing span:nth-child(2) { animation-delay: 0.22s; }
+.ct-eq.is-playing span:nth-child(3) { animation-delay: 0.44s; }
+@keyframes ct-eq-b { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+
+/* Lirik aktif */
+.ct-lyric-active { color: #6ee7b7 !important; text-shadow: 0 0 18px rgba(52, 211, 153, 0.4); }
+
+/* Kalender: cincin hari ini (statis, R10) */
+.ct-today { box-shadow: inset 0 0 0 2px rgba(252, 211, 77, 0.85), 0 0 16px -4px rgba(251, 191, 36, 0.55); }
+
+/* Reminder: chip waktu + aksen "segera" */
+.ct-rem-time { display: inline-block; padding: 1px 8px; border-radius: 9999px;
+  background: color-mix(in srgb, var(--ct-text) 6%, transparent); }
+
+/* ── U8: SOCIAL KIT (Friends · Guild · Love · Leaderboard) ── */
+.ct-tab-on.ct-tab-rose {
+  color: #3f0b1e;
+  background: linear-gradient(180deg, #fda4af 0%, #f43f5e 45%, #be123c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28), 0 2px 6px rgba(244, 63, 94, 0.35);
+}
+/* Varian rose (Love Space) — struktur stem sama dengan primary */
+.ct-btn-rose {
+  color: #fff;
+  background: linear-gradient(180deg, #fb7185 0%, #f43f5e 45%, #be123c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -3px 0 rgba(0, 0, 0, 0.3),
+    0 2px 6px rgba(244, 63, 94, 0.35);
+}
+.ct-btn-rose:not(:disabled):hover { filter: brightness(1.08); }
+
+/* Boss war-room — panel gelap ber-tepi merah (glow statis, R10) */
+.ct-war-panel {
+  background: linear-gradient(160deg, rgba(127, 29, 29, 0.16), var(--ct-bg2) 58%);
+  border-color: rgba(244, 63, 94, 0.32);
+  box-shadow: var(--ct-elev-1), inset 0 2px 0 rgba(244, 63, 94, 0.22);
+}
+
+/* Chat bubbles — entrance HANYA saat node baru mount (key=id: refresh 3s
+   tidak re-mount pesan lama → no flicker) */
+.ct-bubble { max-width: 86%; border-radius: 14px; padding: 0.375rem 0.625rem; font-size: 12px; }
+.ct-bubble-self  { background: color-mix(in srgb, var(--ct-accent) 15%, var(--ct-bg2));
+  border: 1px solid color-mix(in srgb, var(--ct-accent) 32%, var(--ct-border));
+  border-bottom-right-radius: 5px; }
+.ct-bubble-other { background: color-mix(in srgb, var(--ct-text) 6%, var(--ct-bg2));
+  border: 1px solid var(--ct-border); border-bottom-left-radius: 5px; }
+@keyframes ct-bub-in-r { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+@keyframes ct-bub-in-l { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+.ct-bubble-self  { animation: ct-bub-in-r 0.24s var(--ct-ease) backwards; }
+.ct-bubble-other { animation: ct-bub-in-l 0.24s var(--ct-ease) backwards; }
+
+/* Polaroid kenangan — tilt hanya saat hover (R5/R10) */
+.ct-polaroid {
+  background: linear-gradient(180deg, var(--ct-bg2), color-mix(in srgb, var(--ct-bg2) 94%, black));
+  border: 1px solid var(--ct-border); border-radius: 10px;
+  padding: 0.375rem 0.375rem 1.5rem;
+  box-shadow: var(--ct-elev-2);
+  transition: transform var(--ct-t) var(--ct-ease), box-shadow var(--ct-t) var(--ct-ease);
+}
+.ct-polaroid:hover { transform: rotate(-1.6deg) translateY(-3px) scale(1.02); box-shadow: var(--ct-elev-3); }
+
+/* Rank podium chips */
+.ct-rank-gold   { color: #fde68a; background: rgba(245, 158, 11, 0.14); border-color: rgba(245, 158, 11, 0.45); box-shadow: 0 0 16px -6px rgba(245, 158, 11, 0.55); }
+.ct-rank-silver { color: #e2e8f0; background: rgba(203, 213, 225, 0.12); border-color: rgba(203, 213, 225, 0.4); }
+.ct-rank-bronze { color: #fdba74; background: rgba(234, 88, 12, 0.14); border-color: rgba(234, 88, 12, 0.4); }
+
+/* Dot online */
+.ct-online { display: inline-block; width: 8px; height: 8px; border-radius: 9999px;
+  background: #34d399; box-shadow: 0 0 8px rgba(52, 211, 153, 0.6); }
+
+/* ── U7: RPG KIT (Shop · Craft · Pets · Achievements) ── */
+/* Varian gold untuk tab aktif (Shop — tema emas) */
+.ct-tab-on.ct-tab-gold {
+  color: #3b2508;
+  background: linear-gradient(180deg, #fde68a 0%, #f59e0b 45%, #b45309 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3), 0 2px 6px rgba(245, 158, 11, 0.35);
+}
+/* Achievement: bingkai emas glow statis (R10) / locked grayscale */
+.ct-ach-gold   { box-shadow: 0 0 26px -8px rgba(245, 158, 11, 0.5), var(--ct-elev-1); }
+.ct-ach-locked { filter: grayscale(0.9); opacity: 0.6; }
+
+/* ── U6: ECONOMY KIT (Economy · Supplies) ── */
+/* Hero tiles keuangan — aksen per jenis via --acc */
+.ct-fin-tile {
+  position: relative; overflow: hidden;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--acc) 14%, var(--ct-bg2)) 0%,
+    color-mix(in srgb, var(--ct-bg2) 92%, var(--ct-bg)) 58%);
+  border: 1px solid color-mix(in srgb, var(--acc) 38%, var(--ct-border));
+  box-shadow: var(--ct-elev-1);
+}
+.ct-fin-tile::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent 4%, var(--acc) 50%, transparent 96%);
+  opacity: 0.85;
+}
+.ct-fin-em  { --acc: #34d399; }
+.ct-fin-ex  { --acc: #fb7185; }
+.ct-fin-net { --acc: #60a5fa; }
+.ct-fin-num {
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 22px color-mix(in srgb, currentColor 42%, transparent);
+}
+
+/* Tab pill segmen (transactions/debts/savings/… & trend toggle) */
+.ct-tab {
+  padding: 0.375rem 0.875rem; border-radius: 0.625rem;
+  font-weight: 700; font-size: 0.75rem; line-height: 1.4;
+  color: var(--ct-t2); background: transparent;
+  border: 1px solid transparent; cursor: pointer;
+  transition: color var(--ct-t) var(--ct-ease), background var(--ct-t) var(--ct-ease),
+    box-shadow var(--ct-t) var(--ct-ease), transform var(--ct-t) var(--ct-ease);
+}
+.ct-tab:hover { color: var(--ct-t1); background: color-mix(in srgb, var(--ct-text) 7%, transparent); }
+.ct-tab:active { transform: translateY(1px); }
+.ct-tab-on {
+  color: #052e21;
+  background: linear-gradient(180deg, #6ee7b7 0%, #34d399 45%, #059669 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.28), 0 2px 6px rgba(16, 185, 129, 0.35);
+}
+
+/* ── U5: BODY KIT (Sport · Nutrition · Health · Pomodoro) ── */
+/* Pomodoro: kartu timer ber-fase — warna & glow mengikuti mode */
+.ct-pomo-focus, .ct-pomo-break { transition: box-shadow var(--ct-t-slow) var(--ct-ease); }
+.ct-pomo-focus { box-shadow: var(--ct-elev-2), 0 0 44px -14px rgba(139, 92, 246, 0.55); }
+.ct-pomo-break { box-shadow: var(--ct-elev-2), 0 0 44px -14px rgba(122, 199, 76, 0.5); }
+.ct-pomo-time { text-shadow: 0 0 26px rgba(167, 139, 250, 0.45); }
+.ct-pomo-break .ct-pomo-time { text-shadow: 0 0 26px rgba(122, 199, 76, 0.45); }
+
+/* Water — bar hidup bernuansa air (gradient + berkilau) */
+.ct-water-track { position: relative; overflow: hidden;
+  background: color-mix(in srgb, var(--ct-bg) 75%, transparent);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5); }
+.ct-water-fill { position: relative; overflow: hidden;
+  background: linear-gradient(180deg, #67e8f9 0%, #22d3ee 45%, #0891b2 100%); }
+.ct-water-fill::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  opacity: 0; transition: opacity var(--ct-t) var(--ct-ease); }
+.ct-water-fill:hover::after { opacity: 1; animation: ct-bar-shine 2.4s var(--ct-ease) infinite; }
+
+/* Tile statistik tubuh (kalori/air/langkah/…) */
+.ct-body-tile {
+  border-radius: var(--ct-r-md);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.03), transparent 45%),
+    color-mix(in srgb, var(--ct-bg2) 90%, var(--ct-bg));
+  border: 1px solid var(--ct-border);
+  box-shadow: var(--ct-elev-1);
+}
+
+/* ── U4: TASK CORE KIT (Habits · Dailies · Quests + folder bar + quick add) ── */
+.ct-task-card {
+  border-radius: var(--ct-r-lg);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.03), transparent 45%),
+    color-mix(in srgb, var(--ct-bg2) 90%, var(--ct-bg));
+  border: 1px solid var(--ct-border);
+  box-shadow: var(--ct-elev-1);
+  transition: transform var(--ct-t-med) var(--ct-ease), box-shadow var(--ct-t-med) var(--ct-ease),
+    border-color var(--ct-t-med) var(--ct-ease), opacity var(--ct-t-med) var(--ct-ease);
+}
+.ct-task-card:hover { transform: translateY(-2px); box-shadow: var(--ct-elev-2); }
+.ct-done { background: rgba(6, 32, 20, 0.55); border-color: rgba(16, 185, 129, 0.35); }
+.ct-done:hover { box-shadow: var(--ct-elev-1), 0 0 20px -8px rgba(16, 185, 129, 0.4); }
+
+/* Badge difficulty — chip terstandar */
+.ct-diff { display: inline-flex; align-items: center; padding: 0.125rem 0.55rem;
+  border-radius: 9999px; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; border: 1px solid transparent; }
+.ct-diff-trivial { background: rgba(100, 116, 139, 0.18); color: #cbd5e1; border-color: rgba(148, 163, 184, 0.3); }
+.ct-diff-easy   { background: rgba(16, 185, 129, 0.14); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.32); }
+.ct-diff-medium { background: rgba(59, 130, 246, 0.14); color: #93c5fd; border-color: rgba(59, 130, 246, 0.32); }
+.ct-diff-hard   { background: rgba(245, 158, 11, 0.14); color: #fcd34d; border-color: rgba(245, 158, 11, 0.32); }
+.ct-diff-epic   { background: rgba(168, 85, 247, 0.16); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.38);
+  box-shadow: 0 0 14px -6px rgba(168, 85, 247, 0.55); }
+
+/* Aksi ikon kecil pada kartu (duplikat/edit/hapus/freeze/…) — socket lembut */
+.ct-act { display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.375rem; border-radius: 0.5rem; border: 1px solid transparent;
+  transition: background-color var(--ct-t-fast) var(--ct-ease), color var(--ct-t-fast) var(--ct-ease),
+    border-color var(--ct-t-fast) var(--ct-ease), transform var(--ct-t-fast) var(--ct-ease); }
+.ct-act:hover { background: rgba(255, 255, 255, 0.07); border-color: rgba(255, 255, 255, 0.09); }
+.ct-act:active { transform: scale(0.9); }
+
+/* Input terstandar (search/select/form) */
+.ct-input { background: color-mix(in srgb, var(--ct-bg) 80%, var(--ct-bg2));
+  border: 1px solid var(--ct-border); color: var(--ct-text); }
+.ct-input::placeholder { color: var(--ct-muted); }
+.ct-input:hover { border-color: color-mix(in srgb, var(--ct-accent) 30%, var(--ct-border)); }
+select.ct-input option { background: var(--ct-bg2); color: var(--ct-text); }
+
+/* Varian sukses (aksi positif game) */
+.ct-btn-success {
+  --ct-stem: #14532d;
+  background: linear-gradient(180deg, #34d399 0%, #10b981 55%, #059669 100%);
+  color: #022c22;
+  border-color: #047857;
+}
+.ct-btn-success:not(:disabled):hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 3px 0 var(--ct-stem),
+    0 8px 22px -6px rgba(16, 185, 129, 0.55);
+}
+
+/* FAB Quick Add — gold signature (stem = box-shadow, aman untuk fixed) */
+.ct-fab {
+  background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 55%, #c2740a 100%);
+  color: #241300;
+  border: 1px solid #9a620f;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 0 #8a5a10,
+    0 10px 24px -8px rgba(245, 158, 11, 0.6);
+  transition: transform var(--ct-t-fast) var(--ct-ease), box-shadow var(--ct-t-fast) var(--ct-ease), filter var(--ct-t-fast) var(--ct-ease);
+}
+.ct-fab:hover { transform: translateY(-2px); filter: brightness(1.06); }
+.ct-fab:active { transform: translateY(2px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 1px 0 #8a5a10, 0 4px 10px -6px rgba(245, 158, 11, 0.5); }
+
+/* ── U3.4: link & row interaktif ── */
+.ct-link { display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 700;
+  transition: color var(--ct-t-fast) var(--ct-ease), opacity var(--ct-t-fast) var(--ct-ease); }
+.ct-link svg { transition: transform var(--ct-t-med) var(--ct-ease); }
+.ct-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ct-link:hover svg { transform: translateX(3px); }
+.ct-row-press { transition: transform var(--ct-t-fast) var(--ct-ease), background-color var(--ct-t-fast) var(--ct-ease),
+  border-color var(--ct-t-fast) var(--ct-ease), box-shadow var(--ct-t-fast) var(--ct-ease); }
+.ct-row-press:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ct-accent) 22%, transparent); }
+.ct-row-press:active { transform: scale(0.985); }
+
+/* ── U3: DASHBOARD & DATA STORYTELLING ─────────────────────────────────── */
+/* Hero banner — border tema + garis cahaya atas + elevasi (tanpa animasi
+   kontinu; sheen hanya on-hover via .ct-sheen) */
+.ct-hero {
+  border: 1px solid color-mix(in srgb, var(--ct-accent) 28%, var(--ct-border));
+  box-shadow: var(--ct-elev-2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.ct-hero::after {
+  content: "";
+  position: absolute; top: 0; left: 10%; right: 10%; height: 1px;
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--ct-accent) 70%, transparent), transparent);
+  pointer-events: none;
+}
+/* Panel section (rings / chart / insights / heatmap) — permukaan bertema */
+.ct-panel {
+  border-radius: var(--ct-r-lg);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.03), transparent 40%),
+    color-mix(in srgb, var(--ct-bg2) 92%, var(--ct-bg));
+  border: 1px solid var(--ct-border);
+  box-shadow: var(--ct-elev-1);
+}
+/* Stat card kecil (4×2) — bevel + hover lift; warna identitas tetap via
+   borderLeft inline dari data */
+.ct-stat {
+  border-radius: var(--ct-r-md);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.035), transparent 45%),
+    color-mix(in srgb, var(--ct-bg2) 92%, var(--ct-bg));
+  border: 1px solid var(--ct-border);
+  box-shadow: var(--ct-elev-1);
+  transition: transform var(--ct-t-med) var(--ct-ease),
+    box-shadow var(--ct-t-med) var(--ct-ease);
+}
+.ct-stat:hover { transform: translateY(-2px); box-shadow: var(--ct-elev-2); }
+/* Ring progres — entrance spring (backwards, anti-containing-block) */
+.ct-ring { animation: ct-pop var(--ct-t-med) var(--ct-ease-spring) backwards; }
+.ct-ring svg { filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.10)); }
+/* Sel heatmap — hover membesar + terang (nilai tetap via title tooltip) */
+.ct-heat-cell {
+  border-radius: 3px;
+  transition: transform var(--ct-t-fast) var(--ct-ease), filter var(--ct-t-fast) var(--ct-ease);
+}
+.ct-heat-cell:hover { transform: scale(1.3); filter: brightness(1.35); position: relative; z-index: 1; }
+
+/* ── U2: NAVIGATION & OVERLAYS ─────────────────────────────────────────── */
+/* Nav item (sidebar rail) — hover lift + ikon micro-motion; aktif = tema */
+.ct-nav-item {
+  transition: transform var(--ct-t-med) var(--ct-ease),
+    background-color var(--ct-t-med) var(--ct-ease),
+    color var(--ct-t-med) var(--ct-ease),
+    border-color var(--ct-t-med) var(--ct-ease),
+    box-shadow var(--ct-t-med) var(--ct-ease);
+}
+.ct-nav-item:not(.ct-nav-active):hover { transform: translateY(-2px); }
+.ct-nav-icon { transition: transform var(--ct-t-med) var(--ct-ease-spring); }
+.ct-nav-item:hover .ct-nav-icon,
+.ct-nav-item:focus-visible .ct-nav-icon { transform: scale(1.14) translateY(-1px); }
+.ct-nav-active {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ct-accent) 20%, transparent),
+    color-mix(in srgb, var(--ct-bg2) 88%, transparent));
+  border-color: color-mix(in srgb, var(--ct-accent) 42%, transparent);
+  color: color-mix(in srgb, var(--ct-text) 90%, var(--ct-accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 20px -12px color-mix(in srgb, var(--ct-accent) 70%, transparent);
+}
+/* Pill indikator aktif — glow mengikuti tema */
+.ct-nav-pill {
+  background: var(--ct-accent);
+  box-shadow: 0 0 12px -2px color-mix(in srgb, var(--ct-accent) 80%, transparent);
+  transition: height var(--ct-t-med) var(--ct-ease-spring),
+    opacity var(--ct-t-fast) var(--ct-ease), background-color var(--ct-t-fast);
+}
+
+/* Command palette item — geser halus saat hover/focus */
+.ct-palette-item {
+  transition: transform var(--ct-t-fast) var(--ct-ease),
+    background-color var(--ct-t-fast) var(--ct-ease), color var(--ct-t-fast) var(--ct-ease);
+}
+.ct-palette-item:hover, .ct-palette-item:focus-visible { transform: translateX(4px); }
+
+/* ── 8. GUARDS — aksesibilitas & performa ──────────────────────────────── */
+/* Transparency-sensitive users / device lemah: scene dimatikan total */
+@media (prefers-reduced-transparency: reduce) {
+  .ct-scene, .ct-app::before { display: none; }
+  .ct-surface, .ct-surface-solid { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .ct-scene-aurora, .ct-scene-orbs, .ct-scene-orbs::before { animation: none !important; }
+  .ct-float, .ct-pulse-glow, .ct-breathe, .ct-bar-fill::after,
+  .ct-gradient-text, .ct-sheen::before, .ct-card::before { animation: none !important; }
+}

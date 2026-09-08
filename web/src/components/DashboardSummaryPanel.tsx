@@ -24,26 +24,30 @@ export const DashboardRankCard: React.FC<{ summary: any }> = ({ summary }) => {
   const rank = toRankInfo(summary);
   if (!rank) return null;
   return (
-    <div className="flex items-center gap-4 rounded-2xl p-4 bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 border border-amber-500/50 shadow-lg">
-      <div className="text-5xl">{rank.icon}</div>
-      <div className="flex-1 min-w-0">
-        <div className="text-amber-400 text-lg font-black">{t(rank.nameKey, rank.nameKey)}</div>
-        <div className="text-xs text-slate-400">{t(rank.descKey, rank.descKey)}</div>
-        <div className="text-[11px] text-slate-500 mt-1">
-          {t('rank_score_label', 'Score: {score} / {max}')
-            .replace('{score}', String(rank.score))
-            .replace('{max}', String(rank.maxScore))}
+    <>
+      <div className="ct-hover-glow flex items-center gap-4 rounded-2xl p-4 bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-900 border border-amber-500/50 shadow-lg transition-shadow">
+        <div className="text-5xl">{rank.icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-amber-400 text-lg font-black">{t(rank.nameKey, rank.nameKey)}</div>
+          <div className="text-xs text-slate-400">{t(rank.descKey, rank.descKey)}</div>
+          <div className="text-[11px] text-slate-500 mt-1">
+            {t('rank_score_label', 'Score: {score} / {max}')
+              .replace('{score}', String(rank.score))
+              .replace('{max}', String(rank.maxScore))}
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setRankOpen(true)}
+          className="ct-btn ct-btn-gold ct-btn-sm shrink-0"
+        >
+          <Medal className="w-4 h-4" /> {t('rank_dialog_title', '🏆 Daftar Rank').replace(/^🏆\s*/, '')}
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => setRankOpen(true)}
-        className="px-3 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold hover:bg-amber-500/30 flex items-center gap-1.5 shrink-0"
-      >
-        <Medal className="w-4 h-4" /> {t('rank_dialog_title', '🏆 Daftar Rank').replace(/^🏆\s*/, '')}
-      </button>
+      {/* Dialog dirender sebagai SIBLING card (bukan anak) — kartu tidak boleh
+          punya transform/overflow yang memotong atau menampung fixed child. */}
       {rankOpen && <RankDialog rank={rank} onClose={() => setRankOpen(false)} />}
-    </div>
+    </>
   );
 };
 
@@ -65,15 +69,16 @@ export const DashboardStatCards: React.FC<{ summary: any }> = ({ summary }) => {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
       {cards.map((c) => (
-        <div
-          key={c.title}
-          className="flex items-center gap-2.5 rounded-lg bg-slate-900 border border-slate-800 px-2.5 py-2"
-          style={{ borderLeft: `4px solid ${c.color}` }}
-        >
-          <div className="text-xl shrink-0">{c.icon}</div>
-          <div className="min-w-0">
-            <div className="text-[10px] text-slate-400">{c.title}</div>
-            <div className="text-base font-bold text-slate-100 truncate">{c.value}</div>
+        <div key={c.title} className="ct-stat ct-hover-glow flex items-center gap-3 px-3 py-2.5">
+          <div
+            className="ct-socket w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0"
+            style={{ backgroundColor: `${c.color}1f`, borderColor: `${c.color}59` }}
+          >
+            {c.icon}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{c.title}</div>
+            <div className="text-base font-extrabold truncate ct-num" style={{ color: c.color }}>{c.value}</div>
             {!!c.sub && <div className="text-[10px] text-slate-500 truncate">{c.sub}</div>}
           </div>
         </div>
@@ -96,14 +101,14 @@ export const DashboardRings: React.FC<{ summary: any }> = ({ summary }) => {
     { value: calToday, max: calGoal, label: t('dashboard_calories', 'Calories'), color: '#4da6ff' },
   ];
   return (
-    <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <div className="ct-panel p-4">
       <h4 className="text-sm font-bold text-slate-200 mb-4">{t('dashboard_progress', '📈 Progress')}</h4>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 justify-items-center">
         {rings.map((r) => {
           const pct = Math.min(100, Math.round((r.value / Math.max(1, r.max)) * 100));
           return (
             <div key={r.label} className="flex flex-col items-center gap-1">
-              <ProgressRing size={75} strokeWidth={8} progress={pct / 100} color={r.color}>
+              <ProgressRing className="ct-ring" size={75} strokeWidth={8} progress={pct / 100} color={r.color}>
                 <span className="text-sm font-black" style={{ color: r.color }}>{pct}%</span>
               </ProgressRing>
               <div className="text-[10px] font-bold text-slate-200 text-center max-w-[95px] leading-tight">{r.label}</div>
@@ -122,7 +127,7 @@ export const DashboardWeeklyChart: React.FC<{ summary: any }> = ({ summary }) =>
   const b = weekly.map((w: any) => ({ label: String(w.day || '').slice(5), value: Number(w.gold) || 0 }));
   if (!a.length) return null;
   return (
-    <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <div className="ct-panel p-4">
       <h4 className="text-sm font-bold text-slate-200 mb-3">{t('dashboard_weekly_chart', '📊 7 Hari Terakhir')}</h4>
       <div className="overflow-x-auto">
         <div className="min-w-[420px]">
@@ -146,7 +151,7 @@ export const DashboardInsightsCard: React.FC<{ summary: any; compact?: boolean }
   }
   const shown = compact ? lines.slice(0, 2) : lines; // parity: compact = 2 baris
   return (
-    <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <div className="ct-panel p-4">
       <h4 className="text-sm font-bold text-slate-200">💡 {summary ? t('insights_title', '💡 Insight Otomatis').replace(/^💡\s*/, '') : t('insights_title', '💡 Insight Otomatis')}</h4>
       {shown.length === 0 ? (
         <p className="text-xs text-slate-500 py-2">{t('insights_no_data', 'Selesaikan beberapa task dulu untuk melihat insight!')}</p>
@@ -173,7 +178,7 @@ export const DashboardHealthChart: React.FC<{ summary: any; compact?: boolean }>
   const sleep = view.map((d) => ({ label: String(d.date || '').slice(5), value: Number(d.sleep) || 0 }));
   const tasks = view.map((d) => ({ label: String(d.date || '').slice(5), value: Number(d.tasks) || 0 }));
   return (
-    <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <div className="ct-panel p-4">
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-bold text-slate-200">{t('widget_health_chart', '😴 Grafik Tidur↔Produktivitas')}</h4>
         <span className="text-[10px] text-slate-500">r = {corr.toFixed(2)}</span>

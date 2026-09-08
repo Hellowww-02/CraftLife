@@ -164,32 +164,32 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
     <div className="space-y-6">
       {/* Top Banner: Financial Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4.5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/30">
+        <div className="ct-fin-tile ct-fin-em p-4.5 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
             <span>{t('economy_total_income_label', 'Total Income')}</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-xl font-black text-emerald-400 mt-2">
+          <div className="ct-fin-num text-xl font-black text-emerald-400 mt-2">
             {fmtMoney(totalIncome, currency)}
           </div>
         </div>
 
-        <div className="p-4.5 rounded-2xl bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 border border-rose-500/30">
+        <div className="ct-fin-tile ct-fin-ex p-4.5 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
             <span>{t('economy_total_expense_label', 'Total Expenses')}</span>
             <TrendingDown className="w-4 h-4 text-rose-400" />
           </div>
-          <div className="text-xl font-black text-rose-400 mt-2">
+          <div className="ct-fin-num text-xl font-black text-rose-400 mt-2">
             {fmtMoney(totalExpense, currency)}
           </div>
         </div>
 
-        <div className="p-4.5 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900 to-slate-900 border border-blue-500/30">
+        <div className="ct-fin-tile ct-fin-net p-4.5 rounded-2xl">
           <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase">
             <span>{t('economy_net_balance_label', 'Net Balance')}</span>
             <Wallet className="w-4 h-4 text-blue-400" />
           </div>
-          <div className={`text-xl font-black mt-2 ${netBalance >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>
+          <div className={`ct-fin-num text-xl font-black mt-2 ${netBalance >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>
             {fmtMoney(netBalance, currency)}
           </div>
         </div>
@@ -239,7 +239,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
         return (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Trend chart */}
-            <div className="lg:col-span-2 p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+            <div className="ct-reveal lg:col-span-2 ct-panel p-5">
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-2">
                   <Activity className="w-5 h-5 text-emerald-400" />
@@ -250,7 +250,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                     <button
                       key={d}
                       onClick={() => setTrendDays(d)}
-                      className={`px-2.5 py-1 rounded-md transition-all ${trendDays === d ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+                      className={`ct-tab ${trendDays === d ? 'ct-tab-on' : ''}`}
                     >
                       {t(`economy_period_${d}d`, d === 7 ? '7 days' : d === 30 ? '30 days' : '90 days')}
                     </button>
@@ -288,7 +288,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
               )}
             </div>
             {/* Expense breakdown donut */}
-            <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+            <div className="ct-reveal ct-panel p-5">
               <div className="flex items-center gap-2 mb-3">
                 <PieChart className="w-5 h-5 text-rose-400" />
                 <h2 className="font-bold text-slate-100">{t('economy_expense_split', 'Expense Breakdown')}</h2>
@@ -319,7 +319,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
           <button
             onClick={() => setActiveTab('transactions')}
             className={`px-3.5 py-1.5 rounded-lg font-bold transition-all ${
-              activeTab === 'transactions' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+              activeTab === 'transactions' ? 'ct-tab-on' : ''
             }`}
           >
             {t('economy_tab_transactions', 'Transactions')} ({transactions.length})
@@ -327,22 +327,22 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
           <button
             onClick={() => setActiveTab('debts')}
             className={`px-3.5 py-1.5 rounded-lg font-bold transition-all ${
-              activeTab === 'debts' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+              activeTab === 'debts' ? 'ct-tab-on' : ''
             }`}
           >
             {t('economy_tab_debts', 'Debts')} ({debts.length})
           </button>
-          <button onClick={() => setActiveTab('savings')} className={`px-3.5 py-1.5 rounded-lg font-bold ${activeTab === 'savings' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{t('economy_tab_savings', 'Savings')}</button>
-          <button onClick={() => setActiveTab('invest')} className={`px-3.5 py-1.5 rounded-lg font-bold ${activeTab === 'invest' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{t('economy_tab_investments', 'Invest')}</button>
-          <button onClick={() => setActiveTab('subs')} className={`px-3.5 py-1.5 rounded-lg font-bold ${activeTab === 'subs' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{t('economy_tab_subs', 'Subs')}</button>
-          <button onClick={() => setActiveTab('notes')} className={`px-3.5 py-1.5 rounded-lg font-bold ${activeTab === 'notes' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>{t('economy_tab_iou', 'IOU notes')}</button>
+          <button onClick={() => setActiveTab('savings')} className={`ct-tab ${activeTab === 'savings' ? 'ct-tab-on' : ''}`}>{t('economy_tab_savings', 'Savings')}</button>
+          <button onClick={() => setActiveTab('invest')} className={`ct-tab ${activeTab === 'invest' ? 'ct-tab-on' : ''}`}>{t('economy_tab_investments', 'Invest')}</button>
+          <button onClick={() => setActiveTab('subs')} className={`ct-tab ${activeTab === 'subs' ? 'ct-tab-on' : ''}`}>{t('economy_tab_subs', 'Subs')}</button>
+          <button onClick={() => setActiveTab('notes')} className={`ct-tab ${activeTab === 'notes' ? 'ct-tab-on' : ''}`}>{t('economy_tab_iou', 'IOU notes')}</button>
         </div>
 
         {activeTab === 'transactions' ? (
           <button
             id="btn-add-tx"
             onClick={() => setIsTxModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all shrink-0"
+            className="ct-btn ct-btn-success ct-btn-sm shrink-0"
           >
             <Plus className="w-4 h-4" /> {t('economy_new_transaction', 'New Transaction')}
           </button>
@@ -350,7 +350,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
           <button
             id="btn-add-debt"
             onClick={() => setIsDebtModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all shrink-0"
+            className="ct-btn ct-btn-success ct-btn-sm shrink-0"
           >
             <Plus className="w-4 h-4" /> {t('economy_new_debt', 'New Debt')}
           </button>
@@ -368,20 +368,20 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('economy_search', 'Search transactions…')}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs"
+                className="ct-input w-full pl-9 pr-3 py-2.5 rounded-xl text-xs"
               />
             </div>
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="ct-input px-3 py-2.5 rounded-xl text-xs">
               <option value="all">{t('economy_filter_all', 'All')}</option>
               <option value="income">{t('economy_filter_income', 'Income')}</option>
               <option value="expense">{t('economy_filter_expense', 'Expense')}</option>
             </select>
             {/* Kategori filter (parity PyQt economy category_combo) */}
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="ct-input px-3 py-2.5 rounded-xl text-xs">
               <option value="all">{t('economy_all_categories', 'All Categories')}</option>
               {uniqueCategories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <button onClick={() => onNavigate?.('supplies')} className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5">
+            <button onClick={() => onNavigate?.('supplies')} className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5">
               <Package className="w-3.5 h-3.5" /> {t('economy_open_supplies', 'Open Supplies')}
             </button>
           </div>
@@ -393,7 +393,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
             {filteredTx.map((tx) => (
               <div
                 key={tx.id}
-                className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-3 hover:border-slate-700 transition-all"
+                className="ct-task-card ct-row-press p-4 rounded-2xl flex items-center justify-between gap-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div
@@ -423,14 +423,14 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   {/* [P25-fix] folder pill per-item dihapus (tidak ada di PyQt EconomyPage list) */}
                   <button
                     onClick={() => openEditTx(tx)}
-                    className="p-1 rounded text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
+                    className="ct-act text-emerald-300"
                     title={t('economy_edit_transaction_tooltip', 'Edit transaction')}
                   >
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => deleteTransaction(tx.id)}
-                    className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    className="ct-act text-rose-400"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -452,11 +452,11 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
       {activeTab === 'debts' && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+            <div className="ct-body-tile p-4 rounded-xl text-xs">
               <span className="text-slate-400 font-bold uppercase">{t('economy_debt_total_payable', 'Total Payable (I Owe)')}</span>
               <div className="text-base font-black text-rose-400 mt-1">{fmtMoney(totalPayableRemaining, currency)}</div>
             </div>
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+            <div className="ct-body-tile p-4 rounded-xl text-xs">
               <span className="text-slate-400 font-bold uppercase">{t('economy_debt_total_receivable', 'Total Receivable (Owed to Me)')}</span>
               <div className="text-base font-black text-emerald-400 mt-1">{fmtMoney(totalReceivableRemaining, currency)}</div>
             </div>
@@ -520,7 +520,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                         />
                         <button
                           onClick={() => payDebtInstallment(debt.id, currentInput)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
+                          className="ct-btn ct-btn-success ct-btn-sm"
                         >
                           {t('economy_pay_installment', 'Pay')}
                         </button>
@@ -529,14 +529,14 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
                     <button
                       onClick={() => openEditDebt(debt)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                      className="ct-act text-emerald-300"
                       title={t('economy_edit_debt_tooltip', 'Edit debt')}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => deleteDebt(debt.id)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10"
+                      className="ct-act text-rose-400"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -553,12 +553,12 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
           <div className="flex gap-2">
             <input value={svName} onChange={(e) => setSvName(e.target.value)} placeholder={t('economy_saving_name_ph', 'Saving name')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1" />
             <MoneyInput value={svTarget} onValueChange={(n) => setSvTarget(n)} currency={currency} className="w-36" inputClassName="py-2 text-xs rounded-xl" />
-            <button onClick={() => { if (svName.trim()) { addSaving(svName.trim(), svTarget); setSvName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
+            <button onClick={() => { if (svName.trim()) { addSaving(svName.trim(), svTarget); setSvName(''); } }} className="ct-btn ct-btn-success ct-btn-sm">+</button>
           </div>
           {savings.map((s) => {
             const amt = savingInput[s.id] ?? 10000;
             return (
-              <div key={s.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div key={s.id} className="ct-task-card p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-bold text-sm">{s.icon} {s.name}</div>
                   <div className="text-xs text-slate-400">{fmtMoney(s.currentAmount, currency)} / {fmtMoney(s.targetAmount, currency)}</div>
@@ -568,7 +568,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   <button
                     onClick={() => { if (amt > 0) addToSaving(s.id, amt); }}
                     title={t('economy_saving_add_funds', 'Add Funds to Savings')}
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold hover:bg-emerald-500/30"
+                    className="ct-btn ct-btn-sm bg-emerald-500/20 text-emerald-300"
                   >
                     ＋
                   </button>
@@ -598,7 +598,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
             </button>
           </div>
           {investments.map((i) => (
-            <div key={i.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <div key={i.id} className="ct-task-card p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="font-bold text-sm text-slate-100">{i.icon} {i.name}</div>
                 <div className="text-sm font-extrabold text-amber-400 mt-0.5">{fmtMoney(i.amount, currency)}</div>
@@ -627,7 +627,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
             <button
               id="btn-add-sub"
               onClick={() => { setEditingSub(null); setSubName(''); setSubAmt(10000); setSubIcon('📅'); setSubDue(today); setSubPeriod('monthly'); setSubNotes(''); setSubRecurring(true); setIsSubModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all shrink-0"
+              className="ct-btn ct-btn-success ct-btn-sm shrink-0"
             >
               <Plus className="w-4 h-4" /> {t('economy_sub_add', 'Add Subscription')}
             </button>
@@ -655,7 +655,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   {overdue && (
                     <button onClick={() => renewSubscription(s.id)} className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 text-xs font-bold hover:bg-sky-500/30">{t('economy_sub_renew', 'Renew')}</button>
                   )}
-                  <button onClick={() => { setEditingSub(s); setSubName(s.name); setSubAmt(Math.round(s.amount)); setSubIcon(s.icon || '📅'); setSubDue(s.dueDate || today); setSubPeriod((['monthly', 'yearly', 'one-time'].includes(s.period) ? s.period : 'monthly') as any); setSubNotes(s.notes || ''); setSubRecurring(s.isRecurring !== false); setIsSubModalOpen(true); }} className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold" title={t('economy_edit_tooltip', 'Edit')}><Pencil className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => { setEditingSub(s); setSubName(s.name); setSubAmt(Math.round(s.amount)); setSubIcon(s.icon || '📅'); setSubDue(s.dueDate || today); setSubPeriod((['monthly', 'yearly', 'one-time'].includes(s.period) ? s.period : 'monthly') as any); setSubNotes(s.notes || ''); setSubRecurring(s.isRecurring !== false); setIsSubModalOpen(true); }} className="ct-btn ct-btn-secondary ct-btn-sm" title={t('economy_edit_tooltip', 'Edit')}><Pencil className="w-3.5 h-3.5" /></button>
                   <button onClick={() => deleteSubscription(s.id)} className="text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
                 </div>
               </div>
@@ -673,13 +673,13 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
           <div className="flex gap-2">
             <input value={dnName} onChange={(e) => setDnName(e.target.value)} placeholder={t('economy_iou_person_ph', 'Person')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1" />
             <MoneyInput value={dnAmt} onValueChange={(n) => setDnAmt(n)} currency={currency} className="w-36" inputClassName="py-2 text-xs rounded-xl" />
-            <button onClick={() => { if (dnName.trim()) { addDebtNote(dnName.trim(), dnAmt); setDnName(''); } }} className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">+</button>
+            <button onClick={() => { if (dnName.trim()) { addDebtNote(dnName.trim(), dnAmt); setDnName(''); } }} className="ct-btn ct-btn-success ct-btn-sm">+</button>
           </div>
           {debtNotes.map((n) => (
-            <div key={n.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div key={n.id} className="ct-task-card p-4 rounded-2xl flex items-center justify-between">
               <div className="text-sm font-bold">{n.personName} · {fmtMoney(n.amount, currency)} · {n.status === 'paid' ? t('economy_status_paid', 'Paid') : t('economy_status_unpaid', 'Unpaid')}</div>
               <div className="flex gap-2">
-                {n.status !== 'paid' && <button onClick={() => settleDebtNote(n.id)} className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-bold">{t('economy_settle_btn', 'Settle')}</button>}
+                {n.status !== 'paid' && <button onClick={() => settleDebtNote(n.id)} className="ct-btn ct-btn-sm bg-emerald-500/20 text-emerald-300">{t('economy_settle_btn', 'Settle')}</button>}
                 <button onClick={() => deleteDebtNote(n.id)} className="text-rose-400"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
@@ -689,8 +689,8 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
       {/* Transaction Modal */}
       {isTxModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-black text-slate-100">{editingTx ? t('economy_transaction_title_edit', 'Edit Transaction') : t('economy_transaction_title_add', 'Log Transaction')}</h3>
 
             <form onSubmit={handleCreateTx} className="space-y-3 text-xs">
@@ -701,7 +701,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={txName}
                   onChange={(e) => setTxName(e.target.value)}
                   placeholder={t('economy_tx_name_ph', 'e.g. Lunch')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
               <div>
@@ -710,7 +710,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   type="date"
                   value={txDate}
                   onChange={(e) => setTxDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -746,7 +746,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   onChange={(e) => setTxCategory(e.target.value)}
                   list="economy-cat-suggest"
                   placeholder={t('economy_category_ph', 'Example: Food, Salary, Transport, Entertainment...')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
                 <datalist id="economy-cat-suggest">
                   {[...new Set(transactions.map((t) => t.category).filter(Boolean))].map((c) => (
@@ -776,7 +776,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={txNotes}
                   onChange={(e) => setTxNotes(e.target.value)}
                   placeholder={t('economy_tx_notes_ph', 'e.g. Lunch with the team')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
 
@@ -784,13 +784,13 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                 <button
                   type="button"
                   onClick={() => { setIsTxModalOpen(false); setEditingTx(null); }}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
+                  className="ct-btn ct-btn-secondary ct-btn-sm"
                 >
                   {t('dialog_cancel', 'Cancel')}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
+                  className="ct-btn ct-btn-success ct-btn-sm"
                 >
                   {t('economy_save_btn', 'Save')}
                 </button>
@@ -802,8 +802,8 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
       {/* Debt Modal */}
       {isDebtModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-black text-slate-100">{t('economy_debt_add_title', 'Add Debt')}</h3>
 
             <form onSubmit={handleCreateDebt} className="space-y-3 text-xs">
@@ -815,7 +815,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={debtTitle}
                   onChange={(e) => setDebtTitle(e.target.value)}
                   placeholder={t('economy_debt_title_ph', 'e.g. Laptop loan / Receivable from Budi')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
 
@@ -840,7 +840,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                     type="date"
                     value={debtDueDate}
                     onChange={(e) => setDebtDueDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                    className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -849,13 +849,13 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                 <button
                   type="button"
                   onClick={() => setIsDebtModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
+                  className="ct-btn ct-btn-secondary ct-btn-sm"
                 >
                   {t('dialog_cancel', 'Cancel')}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
+                  className="ct-btn ct-btn-success ct-btn-sm"
                 >
                   {t('economy_save_btn', 'Save')}
                 </button>
@@ -867,8 +867,8 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
       {/* Add Investment Modal (parity AddInvestmentDialog PyQt: name + icon + amount + notes) */}
       {isInvestModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4">
             <h3 className="text-lg font-black text-slate-100">{t('investment_add_title', 'Add Investment')}</h3>
             <div className="space-y-3 text-xs">
               <div>
@@ -878,7 +878,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={invName}
                   onChange={(e) => setInvName(e.target.value)}
                   placeholder={t('economy_invest_name_ph', 'Example: Mutual Fund, Stocks, Deposit')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   autoFocus
                 />
               </div>
@@ -896,7 +896,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                       key={o.icon}
                       type="button"
                       onClick={() => setInvIcon(o.icon)}
-                      className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${invIcon === o.icon ? 'bg-amber-500/20 border-amber-500/50 text-amber-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}
+                      className={`ct-socket text-xs font-bold ${invIcon === o.icon ? 'ct-glow text-amber-300' : 'text-slate-400'}`}
                     >
                       {o.label}
                     </button>
@@ -914,11 +914,11 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={invNotes}
                   onChange={(e) => setInvNotes(e.target.value)}
                   placeholder={t('dialog_notes_placeholder', 'Notes…')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button onClick={() => setIsInvestModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold">{t('dialog_cancel', 'Cancel')}</button>
+                <button onClick={() => setIsInvestModalOpen(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('dialog_cancel', 'Cancel')}</button>
                 <button
                   onClick={() => {
                     if (!invName.trim()) { showToast('info', t('invest_name_empty', 'Investment name is required'), ''); return; }
@@ -938,13 +938,13 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
       {/* Collect Return Modal (parity _collect_return PyQt: input jumlah return manual) */}
       {returnModal.open && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-black text-slate-100">{t('economy_invest_return_title', 'Add Investment Return')}</h3>
             <div className="text-xs text-slate-400">{t('economy_invest_return_label', 'Amount to add (in {symbol}): ').replace('{symbol}', currencySymbol(currency))}</div>
             <MoneyInput value={returnAmt} onValueChange={(n) => setReturnAmt(n)} currency={currency} className="w-full" />
             <div className="flex items-center justify-end gap-2">
-              <button onClick={() => setReturnModal({ open: false, id: '' })} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{t('dialog_cancel', 'Cancel')}</button>
+              <button onClick={() => setReturnModal({ open: false, id: '' })} className="ct-btn ct-btn-secondary ct-btn-sm">{t('dialog_cancel', 'Cancel')}</button>
               <button
                 onClick={() => {
                   if (returnAmt <= 0) return;
@@ -962,8 +962,8 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
       {/* Add / Edit Subscription Modal (parity AddSubscriptionDialog PyQt) */}
       {isSubModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-black text-slate-100">{editingSub ? t('subscription_edit_title', 'Edit Subscription') : t('subscription_add_title', 'Add Subscription')}</h3>
             <div className="space-y-3 text-xs">
               <div>
@@ -973,7 +973,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={subName}
                   onChange={(e) => setSubName(e.target.value)}
                   placeholder={t('sub_name_placeholder', 'Example: Netflix, Spotify, Claude AI')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   autoFocus
                 />
               </div>
@@ -992,7 +992,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                       key={o.icon}
                       type="button"
                       onClick={() => setSubIcon(o.icon)}
-                      className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${subIcon === o.icon ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}
+                      className={`ct-socket text-xs font-bold ${subIcon === o.icon ? 'ct-glow text-emerald-300' : 'text-slate-400'}`}
                     >
                       {o.label}
                     </button>
@@ -1005,14 +1005,14 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
               </div>
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">{t('economy_sub_due_label', 'Due Date')}</label>
-                <input type="date" value={subDue} onChange={(e) => setSubDue(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500" />
+                <input type="date" value={subDue} onChange={(e) => setSubDue(e.target.value)} className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent" />
               </div>
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">{t('economy_sub_period_label', 'Period')}</label>
                 <select
                   value={subPeriod}
                   onChange={(e) => setSubPeriod(e.target.value as any)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 >
                   <option value="monthly">{t('sub_period_monthly', 'Monthly')}</option>
                   <option value="yearly">{t('sub_period_yearly', 'Yearly')}</option>
@@ -1036,11 +1036,11 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                   value={subNotes}
                   onChange={(e) => setSubNotes(e.target.value)}
                   placeholder={t('dialog_notes_placeholder', 'Notes…')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
               <div className="flex items-center justify-end gap-2 pt-1">
-                <button onClick={() => setIsSubModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold">{t('dialog_cancel', 'Cancel')}</button>
+                <button onClick={() => setIsSubModalOpen(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('dialog_cancel', 'Cancel')}</button>
                 <button
                   onClick={() => {
                     if (!subName.trim()) { showToast('info', t('msg_name_empty', 'Name cannot be empty!'), ''); return; }
@@ -1056,7 +1056,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
                     setEditingSub(null);
                     setIsSubModalOpen(false);
                   }}
-                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
+                  className="ct-btn ct-btn-success ct-btn-sm"
                 >
                   {t('dialog_save', 'Save')}
                 </button>
@@ -1080,7 +1080,7 @@ const TxFolderSelect: React.FC<{ folderId: string | null; setFolderId: (v: strin
       <select
         value={folderId || ''}
         onChange={(e) => setFolderId(e.target.value || null)}
-        className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-emerald-500 text-xs"
+        className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 text-xs focus:border-transparent"
       >
         <option value="">{t('economy_folder_root', '📂 Root')}</option>
         {folders.map((f: any) => (<option key={f.id} value={f.id}>{f.icon || '📁'} {f.name}</option>))}

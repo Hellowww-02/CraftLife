@@ -220,7 +220,7 @@ export const SportView: React.FC = () => {
         </div>
 
         {/* Sport Level Card */}
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col justify-between">
+        <div className="ct-panel p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t('sport_mastery', 'Sport Mastery')}</span>
@@ -241,7 +241,7 @@ export const SportView: React.FC = () => {
             </div>
             <button
               onClick={openAdd}
-              className="w-full py-2 px-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5"
+              className="ct-btn ct-btn-primary ct-btn-sm w-full justify-center"
             >
               <Plus className="w-4 h-4" /> {t('sport_log_workout', 'Log Workout')}
             </button>
@@ -250,7 +250,7 @@ export const SportView: React.FC = () => {
       </div>
 
       {/* Reps Chart (parity SportRepsChartWidget — bar harian 7 hari) */}
-      <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
+      <div className="ct-panel p-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-sky-400" />
@@ -291,7 +291,7 @@ export const SportView: React.FC = () => {
           <button
             type="button"
             onClick={() => applyTaskTemplate('sport', 'running_starter_s')}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 text-[11px] font-bold text-slate-200"
+            className="ct-btn ct-btn-secondary ct-btn-sm"
           >
             {t('sport_pyqt_templates', 'Template PyQt')}
           </button>
@@ -314,7 +314,7 @@ export const SportView: React.FC = () => {
                 onDragEnter={() => drag.onDragEnter(idx)}
                 onDrop={(e) => drag.onDrop(e, idx)}
                 onDragEnd={drag.onDragEnd}
-                className={`p-4 rounded-2xl bg-slate-900/80 border flex flex-col gap-2 transition-all cursor-grab ${
+                className={`p-4 rounded-2xl ct-task-card flex flex-col gap-2 cursor-grab ${
                   drag.isDragging(idx)
                     ? 'opacity-40 border-amber-500'
                     : drag.isOver(idx)
@@ -324,7 +324,7 @@ export const SportView: React.FC = () => {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl shrink-0">
+                    <div className="ct-socket w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0">
                       {log.icon}
                     </div>
                     <div className="min-w-0">
@@ -379,7 +379,7 @@ export const SportView: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => openEdit(log)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
+                        className="ct-act text-amber-300"
                         title={t('task_edit_title', 'Edit')}
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -389,14 +389,14 @@ export const SportView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => duplicateSportLog(log.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-sky-300 text-[10px] font-bold"
+                    className="ct-act text-sky-300 text-[10px] font-bold"
                     title={t('task_duplicate_title', 'Duplicate')}
                   >
                     Dup
                   </button>
                   <button
                     onClick={() => deleteSportLog(log.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-auto"
+                    className="ct-act text-rose-400 ml-auto"
                     title={t('task_delete_title', 'Delete')}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -437,8 +437,8 @@ export const SportView: React.FC = () => {
 
       {/* Modal Tambah/Edit (parity AddSportActivityDialog) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-black text-slate-100">
               {form.id ? t('sport_edit_title', 'Edit Aktivitas Olahraga') : t('sport_log_session_title', 'Catat Aktivitas Olahraga')}
             </h3>
@@ -451,7 +451,7 @@ export const SportView: React.FC = () => {
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder={t('sport_activity_ph', 'Contoh: Lari pagi 5 km…')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   autoFocus
                 />
               </div>
@@ -482,7 +482,7 @@ export const SportView: React.FC = () => {
                 <select
                   value={form.folderId ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, folderId: e.target.value === '' ? null : e.target.value }))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 >
                   <option value="">{t('dialog_no_folder', 'Tanpa Folder')}</option>
                   {sportFolders.map((f) => (
@@ -497,7 +497,7 @@ export const SportView: React.FC = () => {
                   <select
                     value={form.difficulty}
                     onChange={(e) => setForm((f) => ({ ...f, difficulty: e.target.value as TaskDifficulty }))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                    className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   >
                     {DIFFICULTIES.map((d) => (
                       <option key={d} value={d}>{t('task_difficulty_' + d, d)}</option>
@@ -514,7 +514,7 @@ export const SportView: React.FC = () => {
                     step={0.5}
                     value={form.weight}
                     onChange={(e) => setForm((f) => ({ ...f, weight: Number(e.target.value) || 65 }))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                    className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -527,7 +527,7 @@ export const SportView: React.FC = () => {
                   max={600}
                   value={form.duration}
                   onChange={(e) => setForm((f) => ({ ...f, duration: Math.max(1, Number(e.target.value) || 1) }))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
 
@@ -575,7 +575,7 @@ export const SportView: React.FC = () => {
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                   placeholder={t('sport_notes_ph', 'e.g. 5km morning loop, 4 sets pullups')}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-rose-500"
+                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
 
@@ -585,13 +585,13 @@ export const SportView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
+                  className="ct-btn ct-btn-secondary ct-btn-sm"
                 >
                   {t('sport_cancel', 'Batal')}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold"
+                  className="ct-btn ct-btn-primary ct-btn-sm"
                 >
                   {form.id ? t('dialog_save', '💾 Simpan') : t('dialog_add', '➕  Tambah')}
                 </button>
@@ -603,13 +603,13 @@ export const SportView: React.FC = () => {
 
       {/* LogSportReps Dialog (parity LogSportRepsDialog PyQt) */}
       {repsModal.open && repsModal.activity && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="ct-dialog max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black text-slate-100">
                 {t('sport_reps_session_title', 'Catat Sesi Reps')} — {repsModal.activity.sportName || repsModal.activity.name}
               </h3>
-              <button onClick={() => setRepsModal({ open: false, activity: null })} className="text-slate-400 hover:text-slate-200">
+              <button onClick={() => setRepsModal({ open: false, activity: null })} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -632,17 +632,17 @@ export const SportView: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="block text-slate-400 text-[10px] font-bold">{t('sport_log_reps_sets', 'Set')}</label>
-                <input type="number" min={1} max={50} value={repSets} onChange={(e) => setRepSets(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+                <input type="number" min={1} max={50} value={repSets} onChange={(e) => setRepSets(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} className="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
               </div>
               <span className="text-slate-500 text-lg font-bold">×</span>
               <div className="flex-1">
                 <label className="block text-slate-400 text-[10px] font-bold">{t('sport_log_reps_reps', 'Reps')}</label>
-                <input type="number" min={1} max={1000} value={repReps} onChange={(e) => setRepReps(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+                <input type="number" min={1} max={1000} value={repReps} onChange={(e) => setRepReps(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))} className="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
               </div>
               <div className="text-sky-300 font-black text-xl">{repSets * repReps}</div>
             </div>
 
-            <input value={repNote} onChange={(e) => setRepNote(e.target.value)} placeholder={t('sport_reps_note_ph', 'Catatan…')} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100" />
+            <input value={repNote} onChange={(e) => setRepNote(e.target.value)} placeholder={t('sport_reps_note_ph', 'Catatan…')} className="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
 
             {repInfo && repInfo.history && repInfo.history.length > 0 && (
               <div className="space-y-1">
@@ -653,8 +653,8 @@ export const SportView: React.FC = () => {
             )}
 
             <div className="flex items-center justify-end gap-2">
-              <button onClick={() => setRepsModal({ open: false, activity: null })} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold text-xs">{t('sport_cancel', 'Batal')}</button>
-              <button onClick={submitReps} disabled={repReps <= 0} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold text-xs">{t('dialog_save', '💾 Simpan')}</button>
+              <button onClick={() => setRepsModal({ open: false, activity: null })} className="ct-btn ct-btn-secondary ct-btn-sm">{t('sport_cancel', 'Batal')}</button>
+              <button onClick={submitReps} disabled={repReps <= 0} className="ct-btn ct-btn-primary ct-btn-sm">{t('dialog_save', '💾 Simpan')}</button>
             </div>
           </div>
         </div>
