@@ -1,4 +1,5 @@
 import React from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { Pause, Play, RotateCcw, Volume2, X } from 'lucide-react';
@@ -124,12 +125,15 @@ export const PomodoroView: React.FC = () => {
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1">{t('pomodoro_focus_label', 'Durasi Fokus')}</label>
                 <div className="flex items-center gap-1.5">
-                  <input
-                    type="number" min={5} max={120}
+                  <NumberInput
                     value={pomo.focusMin}
+                    onValueChange={(n) => pomoSetDurations(n, pomo.breakMin)}
+                    min={5}
+                    max={120}
+                    integer
+                    emptyValue={25}
                     disabled={running}
-                    onChange={(e) => pomoSetDurations(Number(e.target.value), pomo.breakMin)}
-                    className="ct-input w-full rounded-lg px-2.5 py-2 text-sm disabled:opacity-50"
+                    inputClassName="ct-input w-full rounded-lg px-2.5 py-2 text-sm disabled:opacity-50"
                   />
                   <span className="text-[11px] text-slate-500 shrink-0">{t('pomodoro_minutes_unit', 'menit')}</span>
                 </div>
@@ -137,12 +141,15 @@ export const PomodoroView: React.FC = () => {
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1">{t('pomodoro_break_label', 'Durasi Istirahat')}</label>
                 <div className="flex items-center gap-1.5">
-                  <input
-                    type="number" min={1} max={30}
+                  <NumberInput
                     value={pomo.breakMin}
+                    onValueChange={(n) => pomoSetDurations(pomo.focusMin, n)}
+                    min={1}
+                    max={30}
+                    integer
+                    emptyValue={5}
                     disabled={running}
-                    onChange={(e) => pomoSetDurations(pomo.focusMin, Number(e.target.value))}
-                    className="ct-input w-full rounded-lg px-2.5 py-2 text-sm disabled:opacity-50"
+                    inputClassName="ct-input w-full rounded-lg px-2.5 py-2 text-sm disabled:opacity-50"
                   />
                   <span className="text-[11px] text-slate-500 shrink-0">{t('pomodoro_minutes_unit', 'menit')}</span>
                 </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { studio } from '../../api/studio';
@@ -350,6 +351,10 @@ export const LoveSpaceView: React.FC = () => {
   };
 
   const coupleActive = !!loveSpace.coupleActive;
+  // P61: akun pasangan couple + jumlah permintaan pending (badge status).
+  const couplePartner = (loveSpace as any).couplePartner as
+    { displayName: string; username: string; avatarEmoji: string; avatarColor: string; level: number } | null | undefined;
+  const couplePending = Number((loveSpace as any).couplePending) || 0;
 
   const daysTogether = useMemo(() => {
     try {
@@ -482,6 +487,25 @@ export const LoveSpaceView: React.FC = () => {
               {trv('love_couple_format', { partner: loveSpace.partnerName || t('love_partner_not_set', 'Partner'), days: daysTogether }, '')}
             </div>
             <p className="text-[11px] text-slate-500 mt-1">{coupleStatusText}</p>
+            {/* P61: badge status couple (aktif / menunggu / tidak terhubung) + kartu akun pasangan */}
+            <div className="flex items-center gap-2 mt-1.5 justify-center md:justify-start flex-wrap">
+              {coupleActive ? (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-400/40">⚡ {t('love_couple_status_active', 'Couple aktif')}</span>
+              ) : couplePending > 0 ? (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-amber-500/15 text-amber-300 border border-amber-400/40">⏳ {t('love_couple_status_pending', 'Menunggu konfirmasi couple')}</span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-slate-700/40 text-slate-400 border border-slate-600/40">🔒 {t('love_couple_status_none', 'Belum terhubung couple')}</span>
+              )}
+              {coupleActive && couplePartner && (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-950/70 border border-slate-700/60" title={t('love_couple_partner_card', 'Akun pasangan')}>
+                  <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0"
+                    style={{ backgroundColor: `${couplePartner.avatarColor || '#5a8a2e'}30`, border: `1px solid ${couplePartner.avatarColor || '#5a8a2e'}` }}>
+                    {couplePartner.avatarEmoji || '♥'}</span>
+                  <span className="text-slate-200">{couplePartner.displayName}</span>
+                  <span className="text-amber-400">Lv.{couplePartner.level}</span>
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-slate-500 mt-0.5">{healthSyncText}</p>
           </div>
         </div>
@@ -569,7 +593,7 @@ export const LoveSpaceView: React.FC = () => {
               </label>
               <label className="space-y-1">
                 <span className="block text-slate-400">{t('love_connection_score', 'Skor Koneksi')}</span>
-                <input type="number" min={1} max={5} value={connScore} onChange={(e) => setConnScore(Math.max(1, Math.min(5, Number(e.target.value) || 1)))} className={`${inputCls} w-20`} />
+                <NumberInput value={connScore} onValueChange={setConnScore} min={1} max={5} integer emptyValue={1} inputClassName={`${inputCls} w-20`} />
               </label>
             </div>
             <input value={checkNote} onChange={(e) => setCheckNote(e.target.value)} className={inputCls} placeholder={t('love_checkin_note_ph', 'Catatan singkat hari ini…')} />
@@ -764,11 +788,11 @@ export const LoveSpaceView: React.FC = () => {
               </label>
               <label className="space-y-1 text-xs">
                 <span className="block text-slate-400">{t('love_cycle_length', 'Panjang siklus')}</span>
-                <input type="number" min={20} max={45} value={cycLen} onChange={(e) => setCycLen(Math.max(20, Math.min(45, Number(e.target.value) || 28)))} className={inputCls} />
+                <NumberInput value={cycLen} onValueChange={setCycLen} min={20} max={45} integer emptyValue={28} inputClassName={inputCls} />
               </label>
               <label className="space-y-1 text-xs">
                 <span className="block text-slate-400">{t('love_period_length', 'Lama periode')}</span>
-                <input type="number" min={2} max={10} value={perLen} onChange={(e) => setPerLen(Math.max(2, Math.min(10, Number(e.target.value) || 5)))} className={inputCls} />
+                <NumberInput value={perLen} onValueChange={setPerLen} min={2} max={10} integer emptyValue={5} inputClassName={inputCls} />
               </label>
             </div>
             <div className="flex gap-2">
@@ -1220,7 +1244,7 @@ export const LoveSpaceView: React.FC = () => {
               </label>
               <label className="block text-slate-400">
                 {t('love_my_age', 'Umurmu')}
-                <input type="number" min={15} max={100} value={profMyAge} onChange={(e) => setProfMyAge(Math.max(15, Math.min(100, Number(e.target.value) || 25)))} className={inputCls} />
+                <NumberInput value={profMyAge} onValueChange={setProfMyAge} min={15} max={100} integer emptyValue={25} inputClassName={inputCls} />
               </label>
               <label className="block text-slate-400 col-span-2">
                 {t('love_my_birthdate', 'Tanggal lahirmu')}
@@ -1245,7 +1269,7 @@ export const LoveSpaceView: React.FC = () => {
               </label>
               <label className="block text-slate-400">
                 {t('love_partner_age', 'Umur pasangan')}
-                <input type="number" min={15} max={100} value={profPartnerAge} onChange={(e) => setProfPartnerAge(Math.max(15, Math.min(100, Number(e.target.value) || 25)))} className={inputCls} />
+                <NumberInput value={profPartnerAge} onValueChange={setProfPartnerAge} min={15} max={100} integer emptyValue={25} inputClassName={inputCls} />
               </label>
               <label className="block text-slate-400 col-span-2">
                 {t('love_partner_birthdate', 'Tanggal lahir pasangan')}

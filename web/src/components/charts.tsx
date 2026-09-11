@@ -176,11 +176,13 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
   const values = (data || []).map((d) => d.value);
   const min = values.length ? Math.min(...values) : 0;
   const max = values.length ? Math.max(...values) : 0;
+  // P52: seri konstan (range 0) digambar di TENGAH chart — dulu menempel dasar.
+  const flat = values.length > 0 && max === min;
   const range = max - min || 1;
   const stepX = data && data.length > 1 ? innerW / (data.length - 1) : innerW;
   const pts = (data || []).map((d, i) => {
     const x = pad + i * stepX;
-    const y = pad + (1 - (d.value - min) / range) * innerH;
+    const y = flat ? pad + innerH / 2 : pad + (1 - (d.value - min) / range) * innerH;
     return { x, y, point: d };
   });
   const line = pts.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { apiBase } from '../../api/client';
@@ -321,8 +322,8 @@ export const HealthFoodView: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           <label className="text-[11px] text-slate-400">{t('food_water_custom_label', 'Custom:')}</label>
-          <input type="number" min={1} max={5000} value={waterCustom} onChange={(e) => setWaterCustom(Math.max(1, Math.min(5000, Number(e.target.value) || 1000)))}
-            className="w-24 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs" />
+          <NumberInput value={waterCustom} onValueChange={setWaterCustom} min={1} max={5000} integer emptyValue={1000}
+            inputClassName="w-24 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs" />
           <span className="text-[11px] text-slate-500">{t('unit_ml', ' ml')}</span>
           <button type="button" onClick={() => addWater(waterCustom)} className="ct-btn ct-btn-primary ct-btn-sm">{t('dialog_add', '➕  Tambah')}</button>
         </div>
@@ -352,15 +353,15 @@ export const HealthFoodView: React.FC = () => {
         <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
           <label className="space-y-1">
             <span className="text-slate-400">{t('food_bmi_height', 'Tinggi (cm)')}</span>
-            <input type="number" min={100} max={250} step={0.5} value={bmiForm.heightCm} onChange={(e) => setBmiForm((f) => ({ ...f, heightCm: Number(e.target.value) || 170 }))} className="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
+            <NumberInput value={bmiForm.heightCm} onValueChange={(n) => setBmiForm((f) => ({ ...f, heightCm: n }))} min={100} max={250} emptyValue={170} inputClassName="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
           </label>
           <label className="space-y-1">
             <span className="text-slate-400">{t('food_bmi_weight', 'Berat (kg)')}</span>
-            <input type="number" min={30} max={300} step={0.5} value={bmiForm.weightKg} onChange={(e) => setBmiForm((f) => ({ ...f, weightKg: Number(e.target.value) || 70 }))} className="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
+            <NumberInput value={bmiForm.weightKg} onValueChange={(n) => setBmiForm((f) => ({ ...f, weightKg: n }))} min={30} max={300} emptyValue={70} inputClassName="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
           </label>
           <label className="space-y-1">
             <span className="text-slate-400">{t('food_bmi_age', 'Usia (tahun)')}</span>
-            <input type="number" min={15} max={100} value={bmiForm.age} onChange={(e) => setBmiForm((f) => ({ ...f, age: Math.max(15, Math.min(100, Number(e.target.value) || 25)) }))} className="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
+            <NumberInput value={bmiForm.age} onValueChange={(n) => setBmiForm((f) => ({ ...f, age: n }))} min={15} max={100} integer emptyValue={25} inputClassName="w-full px-2 py-2 rounded-lg bg-slate-800 border border-slate-700" />
           </label>
           <label className="space-y-1">
             <span className="text-slate-400">{t('food_bmi_gender', 'Jenis Kelamin')}</span>
@@ -415,7 +416,7 @@ export const HealthFoodView: React.FC = () => {
             </div>
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1.5 rounded-xl text-xs">
               <span className="text-slate-400 font-semibold">{t('health_portion', 'Portion:')}</span>
-              <input type="number" step="0.5" min="0.5" max="10" value={portionInput} onChange={(e) => setPortionInput(Math.max(0.5, Number(e.target.value)))} className="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold" />
+              <NumberInput value={portionInput} onValueChange={setPortionInput} min={0.5} max={10} emptyValue={1} inputClassName="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold" />
             </div>
           </div>
           {/* Parity AddFoodDialog log-mode: kolom catatan diterapkan ke semua log berikutnya */}
@@ -502,18 +503,18 @@ export const HealthFoodView: React.FC = () => {
           <div className="space-y-2 rounded-xl bg-slate-950/50 border border-slate-800 p-3">
             <div className="font-bold text-slate-300">{t('health_activity_group', '🏃 Aktivitas Fisik')}</div>
             <label className="block"><span className="text-slate-400">{t('health_steps_label', 'Langkah')}</span>
-              <input type="number" min={0} max={50000} value={hForm.steps} onChange={(e) => setHForm((f) => ({ ...f, steps: Math.max(0, Math.min(50000, Number(e.target.value) || 0)) }))} className="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
+              <NumberInput value={hForm.steps} onValueChange={(n) => setHForm((f) => ({ ...f, steps: n }))} min={0} max={50000} integer inputClassName="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
             <label className="block"><span className="text-slate-400">{t('health_hr_label', 'HR Istirahat')}</span>
-              <input type="number" min={0} max={220} value={hForm.hr} onChange={(e) => setHForm((f) => ({ ...f, hr: Math.max(0, Math.min(220, Number(e.target.value) || 0)) }))} className="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
+              <NumberInput value={hForm.hr} onValueChange={(n) => setHForm((f) => ({ ...f, hr: n }))} min={0} max={220} integer inputClassName="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
             <label className="block"><span className="text-slate-400">{t('health_weight', 'Berat (kg)')}</span>
-              <input type="number" min={30} max={300} step={0.5} value={hForm.weightKg} onChange={(e) => setHForm((f) => ({ ...f, weightKg: Math.max(30, Math.min(300, Number(e.target.value) || 70)) }))} className="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
+              <NumberInput value={hForm.weightKg} onValueChange={(n) => setHForm((f) => ({ ...f, weightKg: n }))} min={30} max={300} emptyValue={70} inputClassName="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
             <label className="block"><span className="text-slate-400">{t('health_height', 'Tinggi (cm)')}</span>
-              <input type="number" min={100} max={250} step={0.5} value={hForm.heightCm} onChange={(e) => setHForm((f) => ({ ...f, heightCm: Math.max(100, Math.min(250, Number(e.target.value) || 170)) }))} className="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
+              <NumberInput value={hForm.heightCm} onValueChange={(n) => setHForm((f) => ({ ...f, heightCm: n }))} min={100} max={250} emptyValue={170} inputClassName="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
           </div>
           <div className="space-y-2 rounded-xl bg-slate-950/50 border border-slate-800 p-3">
             <div className="font-bold text-slate-300">{t('health_sleep_group', '😴 Tidur & Suasana')}</div>
             <label className="block"><span className="text-slate-400">{t('health_sleep_label', 'Durasi Tidur (jam)')}</span>
-              <input type="number" min={0} max={24} step={0.5} value={hForm.sleep} onChange={(e) => setHForm((f) => ({ ...f, sleep: Math.max(0, Math.min(24, Number(e.target.value) || 0)) }))} className="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
+              <NumberInput value={hForm.sleep} onValueChange={(n) => setHForm((f) => ({ ...f, sleep: n }))} min={0} max={24} inputClassName="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700" /></label>
             <label className="block"><span className="text-slate-400">{t('health_stress_label', 'Stres')}</span>
               <select value={hForm.stress} onChange={(e) => setHForm((f) => ({ ...f, stress: e.target.value }))} className="w-full mt-0.5 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700">
                 <option value="low">{t('health_stress_low', 'Rendah')}</option>
@@ -563,7 +564,18 @@ export const HealthFoodView: React.FC = () => {
               <LineChart data={hist.weightSeries || []} color="#80c000" width={460} height={140} />
             </div>
             <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4">
-              <h4 className="text-xs font-bold text-slate-300 mb-2">{t('health_height_trend', '📏 Tren Tinggi Badan')}</h4>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <h4 className="text-xs font-bold text-slate-300">{t('health_height_trend', '📏 Tren Tinggi Badan')}</h4>
+                {/* P52: delta vs awal jendela 7 hari — hanya bila ada log tinggi asli. */}
+                {hist.heightHasData && (() => {
+                  const s = (hist.heightSeries || []).map((p: any) => Number(p.value) || 0);
+                  if (s.length < 2) return null;
+                  const delta = s[s.length - 1] - s[0];
+                  const cls = delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-rose-400' : 'text-slate-500';
+                  const sign = delta > 0 ? '+' : '';
+                  return <span className={`text-[10px] font-bold ${cls}`}>{t('health_height_week_delta', 'Minggu ini: {delta}').replace('{delta}', `${sign}${delta.toFixed(1)} cm`)}</span>;
+                })()}
+              </div>
               <LineChart data={hist.heightSeries || []} color="#4da6ff" width={460} height={140} />
             </div>
           </div>
@@ -621,7 +633,7 @@ export const HealthFoodView: React.FC = () => {
                 {(([['calories', 'food_calories_label'], ['protein', 'food_protein_label'], ['carbs', 'food_carbs_label'], ['fat', 'food_fat_label']] as const)).map(([k, l]) => (
                   <label key={k} className="block text-slate-300 font-semibold">
                     {t(l, l)}
-                    <input type="number" value={custom[k]} onChange={(e) => setCustom((c) => ({ ...c, [k]: Number(e.target.value) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
+                    <NumberInput value={custom[k]} onValueChange={(n) => setCustom((c) => ({ ...c, [k]: n }))} min={0} integer inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
                   </label>
                 ))}
               </div>
@@ -640,13 +652,13 @@ export const HealthFoodView: React.FC = () => {
           <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
             <h3 className="text-lg font-black text-slate-100">{t('health_daily_targets', '🎯 Target Nutrisi Harian')}</h3>
             <label className="block text-xs text-slate-300">{t('food_calories_label', 'Kalori (kcal)')}
-              <input type="number" min={500} max={10000} value={goalForm.calories} onChange={(e) => setGoalForm((g) => ({ ...g, calories: Math.max(500, Math.min(10000, Number(e.target.value) || 2000)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
+              <NumberInput value={goalForm.calories} onValueChange={(n) => setGoalForm((g) => ({ ...g, calories: n }))} min={500} max={10000} integer emptyValue={2000} inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_protein_label', 'Protein (g)')}
-              <input type="number" min={0} max={500} value={goalForm.protein} onChange={(e) => setGoalForm((g) => ({ ...g, protein: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
+              <NumberInput value={goalForm.protein} onValueChange={(n) => setGoalForm((g) => ({ ...g, protein: n }))} min={0} max={500} integer inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_carbs_label', 'Karbohidrat (g)')}
-              <input type="number" min={0} max={500} value={goalForm.carbs} onChange={(e) => setGoalForm((g) => ({ ...g, carbs: Math.max(0, Math.min(500, Number(e.target.value) || 0)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
+              <NumberInput value={goalForm.carbs} onValueChange={(n) => setGoalForm((g) => ({ ...g, carbs: n }))} min={0} max={500} integer inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_fat_label', 'Lemak (g)')}
-              <input type="number" min={0} max={200} value={goalForm.fat} onChange={(e) => setGoalForm((g) => ({ ...g, fat: Math.max(0, Math.min(200, Number(e.target.value) || 0)) }))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
+              <NumberInput value={goalForm.fat} onValueChange={(n) => setGoalForm((g) => ({ ...g, fat: n }))} min={0} max={200} integer inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setEditGoals(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
               <button type="button" onClick={async () => { await life.saveNutritionGoals(goalForm).catch(() => undefined); setEditGoals(false); showToast('success', t('food_save_goals', 'Target nutrisi tersimpan'), ''); loadDay(); }} className="ct-btn ct-btn-gold ct-btn-sm">{t('food_save_goals', '💾 Simpan Target')}</button>
@@ -661,7 +673,7 @@ export const HealthFoodView: React.FC = () => {
           <div className="max-w-xs w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
             <h3 className="text-base font-black text-slate-100">{t('food_water_goal_dialog_title', 'Atur Target Air')}</h3>
             <label className="block text-xs text-slate-300">{t('food_water_goal_dialog_label', 'Target harian (ml):')}
-              <input type="number" min={500} max={10000} step={100} value={waterGoalInput} onChange={(e) => setWaterGoalInput(Math.max(500, Math.min(10000, Number(e.target.value) || 2500)))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
+              <NumberInput value={waterGoalInput} onValueChange={setWaterGoalInput} min={500} max={10000} integer emptyValue={2500} inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setWaterGoalOpen(false)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
               <button type="button" onClick={saveWaterGoal} className="ct-btn ct-btn-gold ct-btn-sm">💾 {t('btn_save', 'Simpan')}</button>
@@ -751,7 +763,7 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
             <input value={icon} onChange={(e) => setIcon(e.target.value)} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
           </label>
           <label className="block text-slate-300 font-semibold">{t('food_recipe_servings', 'Jumlah Porsi')}
-            <input type="number" step="0.5" min="0.5" value={servingSize} onChange={(e) => setServingSize(Math.max(0.5, Number(e.target.value) || 1))} className="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
+            <NumberInput value={servingSize} onValueChange={setServingSize} min={0.5} emptyValue={1} inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" />
           </label>
         </div>
         <div className="rounded-xl bg-slate-950/60 border border-slate-800 p-3 space-y-2 text-xs">
@@ -760,7 +772,7 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
             <select value={sel} onChange={(e) => setSel(e.target.value)} className="flex-1 px-2 py-2 rounded-lg bg-slate-800 border border-slate-700">
               {catalog.map((f) => (<option key={f.id} value={f.id}>{f.icon} {lang === 'en' ? (f.nameEn || f.nameId || f.name) : (f.nameId || f.name || f.nameEn)}</option>))}
             </select>
-            <input type="number" step="0.5" min="0.5" value={qty} onChange={(e) => setQty(Math.max(0.5, Number(e.target.value) || 1))} className="w-16 px-2 py-2 rounded-lg bg-slate-800 border border-slate-700 text-center" />
+            <NumberInput value={qty} onValueChange={setQty} min={0.5} emptyValue={1} inputClassName="w-16 px-2 py-2 rounded-lg bg-slate-800 border border-slate-700 text-center" />
             <button type="button" onClick={addItem} className="px-3 py-2 rounded-lg bg-amber-600 text-white font-bold">+</button>
           </div>
           {items.length > 0 && (

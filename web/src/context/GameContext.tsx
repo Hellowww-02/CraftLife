@@ -37,6 +37,7 @@ import {
   GuildData,
   PvPChallenge,
   ReminderItem,
+  NoteAttachment,
 } from '../types';
 import {
   SHOP_ITEMS,
@@ -99,7 +100,7 @@ interface GameContextType {
   // Folders
   taskFolders: TaskFolder[];
   addTaskFolder: (name: string, icon: string, color?: string, mode?: string) => void;
-  renameTaskFolder: (id: string, name: string, mode?: string) => void;
+  renameTaskFolder: (id: string, name: string, mode?: string, icon?: string) => void;
   duplicateTaskFolder: (id: string, mode?: string) => void;
   deleteTaskFolder: (id: string, mode?: string) => void;
 
@@ -210,6 +211,8 @@ interface GameContextType {
 
   // Notes
   noteFolders: NoteFolder[];
+  /** P54: metadata lampiran catatan (semua note milik user). */
+  noteAttachments: NoteAttachment[];
   addNoteFolder: (name: string, icon: string, parentId?: string | null) => void;
   deleteNoteFolder: (id: string) => void;
   updateNoteFolder: (id: string, updates: { name?: string; icon?: string }) => void;
@@ -445,6 +448,11 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [themePalettes, setThemePalettes] = useState<Record<string, ThemePalette>>({});
   const [activeTheme, setActiveThemeState] = useState<string>(saved?.activeTheme || 'modern_dark');
   const activePalette = themePalettes[activeTheme] || null;
+  // P50: tema user dari server (users.theme) — sumber kebenaran utama karena
+  // localStorage QWebEngineView bisa ter-reset antar sesi.
+  const [userThemeFromServer, setUserThemeFromServer] = useState<string | null>(null);
+  // true setelah user memilih tema manual — cegah bootstrap/refresh menimpa pilihan itu.
+  const themeTouchedRef = useRef(false);
 
   // Load katalog tema (palet penuh) dari server — parity SettingsPage theme radios.
   useEffect(() => {
@@ -466,7 +474,19 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (pal) applyTheme(pal);
   }, [activeTheme, themePalettes, activePalette]);
 
+  // P50: terapkan tema user dari server BEGITU katalog palet termuat — tidak
+  // lagi bergantung urutan race bootstrap vs /api/catalog/themes (dulu cek
+  // `themePalettes[uTheme]` di closure bootstrap selalu melihat objek kosong
+  // → tema user tidak pernah diterapkan → jatuh ke modern_dark).
+  // Prioritas: server (users.theme) > localStorage > default modern_dark.
+  useEffect(() => {
+    if (!userThemeFromServer || themeTouchedRef.current) return;
+    if (!themePalettes[userThemeFromServer]) return; // tunggu katalog termuat
+    setActiveThemeState(userThemeFromServer);
+  }, [userThemeFromServer, themePalettes]);
+
   const setActiveTheme = useCallback((theme: string) => {
+    themeTouchedRef.current = true;
     setActiveThemeState(theme);
     const pal = themePalettes[theme];
     if (pal) applyTheme(pal);
@@ -497,6 +517,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
   const [debtNotes, setDebtNotes] = useState<DebtNote[]>([]);
   const [noteFolders, setNoteFolders] = useState<NoteFolder[]>([]);
+  const [noteAttachments, setNoteAttachments] = useState<NoteAttachment[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [healthLogs, setHealthLogs] = useState<HealthMetricLog[]>([]);
   const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>([]);
@@ -538,11 +559,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           ...data.user,
           xpToNextLevel: data.user.xpToNextLevel || (data.user.level || 1) * 150,
         }));
-        // ── Tema terkait user (parity SettingsPage): terapkan palet dari DB. ──
+        // ── Tema user dari server (P50): simpan dulu ke state, diterapkan oleh
+        //    effect khusus begitu katalog palet termuat (fix race). ──
         const uTheme = (data.user as any).theme;
-        if (uTheme && themePalettes[uTheme] && uTheme !== activeTheme) {
-          setActiveThemeState(uTheme);
-        }
+        if (typeof uTheme === 'string' && uTheme) setUserThemeFromServer(uTheme);
       }
       if (Array.isArray(data.taskFolders)) setTaskFolders(data.taskFolders);
       if (Array.isArray(data.habits)) setHabits(data.habits);
@@ -565,6 +585,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (Array.isArray(data.debtNotes)) setDebtNotes(data.debtNotes);
       if (Array.isArray(data.notes)) setNotes(data.notes);
       if (Array.isArray(data.noteFolders)) setNoteFolders(data.noteFolders);
+      if (Array.isArray(data.noteAttachments)) setNoteAttachments(data.noteAttachments);
       if (Array.isArray(data.reminders)) setReminders(data.reminders);
       if (Array.isArray(data.calendarNotes)) setCalendarNotes(data.calendarNotes);
       if (data.dailyTaskCounts && typeof data.dailyTaskCounts === 'object') setDailyTaskCounts(data.dailyTaskCounts);
@@ -694,6 +715,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (Array.isArray(res.debtNotes)) setDebtNotes(res.debtNotes);
     if (Array.isArray(res.notes)) setNotes(res.notes);
     if (Array.isArray(res.noteFolders)) setNoteFolders(res.noteFolders);
+    if (Array.isArray(res.noteAttachments)) setNoteAttachments(res.noteAttachments);
     if (Array.isArray(res.reminders)) setReminders(res.reminders);
     if (Array.isArray(res.calendarNotes)) setCalendarNotes(res.calendarNotes);
     if (res.dailyTaskCounts && typeof res.dailyTaskCounts === 'object') setDailyTaskCounts(res.dailyTaskCounts);
@@ -848,8 +870,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }).catch(() => undefined);
   }, []);
 
-  const renameTaskFolder = useCallback((id: string, name: string, mode?: string) => {
-    life.updateTaskFolder(id, { name, mode }).then((res) => {
+  const renameTaskFolder = useCallback((id: string, name: string, mode?: string, icon?: string) => {
+    // P56: ikon folder ikut tersimpan (endpoint update sudah menerima `icon`).
+    life.updateTaskFolder(id, { name, mode, ...(icon ? { icon } : {}) }).then((res) => {
       applyLive(res);
       refreshFolders();
     }).catch(() => undefined);
@@ -1451,10 +1474,23 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [applyLive]);
 
+  // P48 FIX (chat AI terkirim dobel): dulu fungsi ini memanggil studio.chat()
+  // sendiri — padahal LearningView.handleSendChat JUGA memanggil studio.chat()
+  // untuk pesan yang sama → 2 POST /api/learning/notebooks/<id>/chat per pesan
+  // → backend menyimpan pasangan (user + jawaban) DUPLIKAT dan biaya Gemini 2x.
+  // Sekarang fungsi ini murni append LOKAL (optimistic, bentuk sama dengan
+  // _nb_map: {sender, text, timestamp}) untuk sender 'user' MAUPUN 'ai';
+  // pemanggilan API tinggal SATU dan dimiliki LearningView.handleSendChat.
   const addNotebookChat = useCallback((notebookId: string, text: string, sender: 'user' | 'ai') => {
-    if (sender !== 'user') return;
-    studio.chat(notebookId, text).then((res) => applyLive(res)).catch(notifyApiErr);
-  }, [applyLive])
+    setNotebooks((prev) => prev.map((nb) => {
+      if (nb.id !== notebookId) return nb;
+      const history = Array.isArray(nb.chatHistory) ? nb.chatHistory : [];
+      return {
+        ...nb,
+        chatHistory: [...history, { sender, text, timestamp: new Date().toISOString() }],
+      };
+    }));
+  }, [])
 
   // Love Space Actions
   const updateLoveSpace = useCallback((updates: Partial<LoveSpaceData>) => {
@@ -1862,6 +1898,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         deleteDebtNote,
         applyTaskTemplate,
         noteFolders,
+        noteAttachments,
         addNoteFolder,
         deleteNoteFolder,
         updateNoteFolder,

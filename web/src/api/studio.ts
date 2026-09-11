@@ -26,6 +26,9 @@ export const studio = {
     apiPost<any>(`/api/learning/notebooks/${notebookId}/sources/${sourceId}/delete`, {}),
   chat: (notebookId: string, text: string) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/chat`, { text }),
+  // P48: bersihkan history chat notebook di server (db.clear_learning_chats).
+  clearChat: (notebookId: string) =>
+    apiPost<any>(`/api/learning/notebooks/${notebookId}/chat/clear`, {}),
   logMusic: (path: string, title?: string, artist?: string) =>
     apiPost<any>('/api/music/play', { path, title, artist }),
   createPlaylist: (name: string) => apiPost<any>('/api/music/playlists', { name }),
@@ -166,8 +169,28 @@ export const studio = {
   addPlaylistTrack: (playlistId: string | number, path: string) =>
     apiPost<any>('/api/music/playlist-track', { playlistId, path }),
   // Lyrics (LRCLIB get/search multi-varian + lyrics.ovh + embedded) — parity _LyricsFetcher PyQt
-  musicLyrics: (artist: string, title: string, path = '') =>
-    apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&path=${encodeURIComponent(path)}`),
+  musicLyrics: (artist: string, title: string, path = '', opts?: { key?: string; duration?: number; refresh?: boolean }) =>
+    apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&path=${encodeURIComponent(path)}` +
+      `${opts?.key ? `&key=${encodeURIComponent(opts.key)}` : ''}${opts?.duration ? `&duration=${opts.duration}` : ''}${opts?.refresh ? '&refresh=1' : ''}`),
+  // P58: lirik tersimpan per track — simpan / hapus / import manual / offset.
+  musicLyricsSave: (payload: { key: string; title?: string; artist?: string; source?: string; plain?: string; synced?: string; offsetMs?: number }) =>
+    apiPost<any>('/api/music/lyrics-save', payload),
+  musicLyricsDelete: (key: string) => apiPost<any>('/api/music/lyrics-delete', { key }),
+  musicLyricsImport: (payload: { key: string; title?: string; artist?: string; content: string }) =>
+    apiPost<any>('/api/music/lyrics-import', payload),
+  musicLyricsOffset: (key: string, offsetMs: number) => apiPost<any>('/api/music/lyrics-offset', { key, offsetMs }),
+  // P59: icon playlist khusus — emoji via JSON, foto via upload target playlist_icon.
+  musicPlaylistIcon: (playlistId: string | number, icon: string) =>
+    apiPost<any>('/api/music/playlist-icon', { playlistId, icon }),
+  uploadPlaylistIcon: async (playlistId: string | number, file: File) => {
+    const up = await apiUploadFile<any>('playlist_icon', file, { playlistId });
+    return up && typeof up.result === 'object' && up.result ? up.result : up;
+  },
+  // P62: pembersihan DB bulanan (history tracker).
+  cleanupStatus: () => apiGet<any>('/api/settings/cleanup'),
+  cleanupSet: (payload: { retentionDays?: number; auto?: boolean }) =>
+    apiPost<any>('/api/settings/cleanup', { action: 'set', ...payload }),
+  cleanupRun: () => apiPost<any>('/api/settings/cleanup', { action: 'run' }),
   uploadMusicFile: async (file: File) => {
     // Parity MusicPage._add_files/_select_folder: file masuk folder library
     // musik server lalu direferensikan playlist berdasar path absolut.

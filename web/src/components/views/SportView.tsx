@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { SPORT_TYPES, SPORT_INTENSITY_FACTOR } from '../../data/gameData';
@@ -507,27 +508,27 @@ export const SportView: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">{t('sport_weight_label', 'Berat Badan (kg)')}</label>
-                  <input
-                    type="number"
+                  <NumberInput
+                    value={form.weight}
+                    onValueChange={(n) => setForm((f) => ({ ...f, weight: n }))}
                     min={30}
                     max={200}
-                    step={0.5}
-                    value={form.weight}
-                    onChange={(e) => setForm((f) => ({ ...f, weight: Number(e.target.value) || 65 }))}
-                    className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
+                    emptyValue={65}
+                    inputClassName="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">{t('sport_duration', 'Durasi (menit)')}</label>
-                <input
-                  type="number"
+                <NumberInput
+                  value={form.duration}
+                  onValueChange={(n) => setForm((f) => ({ ...f, duration: n }))}
                   min={1}
                   max={600}
-                  value={form.duration}
-                  onChange={(e) => setForm((f) => ({ ...f, duration: Math.max(1, Number(e.target.value) || 1) }))}
-                  className="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
+                  integer
+                  emptyValue={1}
+                  inputClassName="ct-input w-full px-3 py-2 rounded-xl text-slate-100 focus:border-transparent"
                 />
               </div>
 
@@ -553,14 +554,13 @@ export const SportView: React.FC = () => {
 
               <div className="flex items-center justify-between gap-2">
                 <label className="text-slate-300 font-semibold">{t('sport_calories_label', 'Perkiraan Kalori Terbakar (kcal)')}</label>
-                <input
-                  type="number"
+                <NumberInput
+                  value={calories}
+                  onValueChange={(n) => setForm((f) => ({ ...f, calories: n }))}
                   min={0}
                   max={5000}
-                  value={calories}
                   disabled={form.autoCalc}
-                  onChange={(e) => setForm((f) => ({ ...f, calories: Math.max(0, Number(e.target.value) || 0) }))}
-                  className={`w-28 px-3 py-2 rounded-xl border text-center font-bold focus:outline-none ${
+                  inputClassName={`w-28 px-3 py-2 rounded-xl border text-center font-bold focus:outline-none ${
                     form.autoCalc
                       ? 'bg-slate-900 border-slate-800 text-amber-300'
                       : 'bg-slate-800 border-slate-700 text-slate-100 focus:border-rose-500'
@@ -632,12 +632,12 @@ export const SportView: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="block text-slate-400 text-[10px] font-bold">{t('sport_log_reps_sets', 'Set')}</label>
-                <input type="number" min={1} max={50} value={repSets} onChange={(e) => setRepSets(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} className="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
+                <NumberInput value={repSets} onValueChange={setRepSets} min={1} max={50} integer emptyValue={1} inputClassName="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
               </div>
               <span className="text-slate-500 text-lg font-bold">×</span>
               <div className="flex-1">
                 <label className="block text-slate-400 text-[10px] font-bold">{t('sport_log_reps_reps', 'Reps')}</label>
-                <input type="number" min={1} max={1000} value={repReps} onChange={(e) => setRepReps(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))} className="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
+                <NumberInput value={repReps} onValueChange={setRepReps} min={1} max={1000} integer emptyValue={1} inputClassName="ct-input w-full px-3 py-2 rounded-xl text-slate-100" />
               </div>
               <div className="text-sky-300 font-black text-xl">{repSets * repReps}</div>
             </div>

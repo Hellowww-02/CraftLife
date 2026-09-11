@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { liveShopItems, livePets } from '../../data/liveCatalog';
 import { t } from '../../i18n';
@@ -403,9 +404,8 @@ function SellDialog({ inv, it, onClose, onSell }: {
           {tr('shop_sell_confirm', { name: it.name, qty: 1, gold: pricePer })}
         </p>
         <div className="flex items-center gap-3">
-          <input type="number" min={1} max={maxQty} value={qty}
-            onChange={(e) => setQty(Math.min(Math.max(1, Number(e.target.value) || 1), maxQty))}
-            className="ct-input w-24 px-3 py-2 rounded-xl text-sm text-slate-100" />
+          <NumberInput value={qty} onValueChange={setQty} min={1} max={maxQty} integer emptyValue={1}
+            inputClassName="ct-input w-24 px-3 py-2 rounded-xl text-sm text-slate-100" />
           <span className="text-xs text-slate-500">(max {maxQty})</span>
           <span className="text-xs font-bold text-amber-400">= 💰 {pricePer * qty} G</span>
         </div>

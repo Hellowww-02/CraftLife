@@ -67,7 +67,7 @@ export async function apiGetBlob(path: string, fallbackName = 'attachment'): Pro
 }
 
 /** Target upload yang didukung server (parity QFileDialog PyQt). */
-export type UploadTarget = 'love_photo' | 'profile_photo' | 'reminder_sound' | 'music' | 'learning_source';
+export type UploadTarget = 'love_photo' | 'profile_photo' | 'reminder_sound' | 'music' | 'learning_source' | 'note_attachment' | 'playlist_icon';
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

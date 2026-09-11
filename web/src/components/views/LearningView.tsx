@@ -32,6 +32,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { studio } from '../../api/studio';
 import { t as tr } from '../../i18n';
+import { NumberInput } from '../NumberInput';
 
 // Parity LearningPage._STUDIO_TYPES — 8 generator dalam urutan PyQt.
 type StudioType = 'summary' | 'study-guide' | 'flashcards' | 'faq' | 'mindmap' | 'timeline' | 'quiz' | 'podcast';
@@ -267,6 +268,8 @@ export const LearningView: React.FC = () => {
   // Quiz state
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  // P56: jawaban soal essay (teks bebas) + reset saat quiz baru.
+  const [essayAnswers, setEssayAnswers] = useState<Record<number, string>>({});
 
   // Podcast / Audio playback state
   const [isPodcastPlaying, setIsPodcastPlaying] = useState(false);
@@ -279,14 +282,118 @@ export const LearningView: React.FC = () => {
   const [showSources, setShowSources] = useState(true);
   const [showStudio, setShowStudio] = useState(true);
   const [compactPanel, setCompactPanel] = useState<'sources' | 'chat' | 'studio'>('sources');
-  // Arah slide compact-nav (parity LearningPage._set_compact_panel): panel
-  // bergeser masuk dari kanan/kiri sesuai arah tab yang dipilih.
-  const [slideDir, setSlideDir] = useState<'r' | 'l'>('r');
+  // P56: slider antar 3 slide (sources/chat/studio) di layout compact.
+  const PANELS = ['sources', 'chat', 'studio'] as const;
   const PANEL_ORDER: Record<'sources' | 'chat' | 'studio', number> = { sources: 0, chat: 1, studio: 2 };
-  const switchPanel = (k: 'sources' | 'chat' | 'studio') => {
-    setSlideDir(PANEL_ORDER[k] >= PANEL_ORDER[compactPanel] ? 'r' : 'l');
-    setCompactPanel(k);
+  const switchPanel = (k: 'sources' | 'chat' | 'studio') => setCompactPanel(k);
+  const panelIdx = PANEL_ORDER[compactPanel];
+  const gotoPanel = (i: number) => {
+    if (i >= 0 && i <= 2) setCompactPanel(PANELS[i]);
   };
+  // Swipe antar slide (touch).
+  const touchX = useRef<number | null>(null);
+  // P56 rev: resize manual — seret pembatas antar panel dengan kursor (desktop lg),
+  // seperti resize kolom. Lebar tersimpan di localStorage.
+  const MIN_SRC_W = 240, MAX_SRC_W = 640, MIN_STU_W = 280, MAX_STU_W = 800, MIN_CHAT_W = 320, DIVIDER_W = 40;
+  const DEF_SRC_W = 280, DEF_STU_W = 330;
+  const [panelSizes, setPanelSizes] = useState<{ src: number; stu: number }>(() => {
+    try {
+      const raw = localStorage.getItem('cl_learning_panel_widths');
+      if (raw) {
+        const v = JSON.parse(raw) as { src?: unknown; stu?: unknown };
+        const src = Number(v.src), stu = Number(v.stu);
+        if (Number.isFinite(src) && Number.isFinite(stu)) {
+          return {
+            src: Math.min(MAX_SRC_W, Math.max(MIN_SRC_W, src)),
+            stu: Math.min(MAX_STU_W, Math.max(MIN_STU_W, stu)),
+          };
+        }
+      }
+    } catch { /* abaikan */ }
+    return { src: DEF_SRC_W, stu: DEF_STU_W };
+  });
+  const [resizing, setResizing] = useState<'src' | 'stu' | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const dragInfo = useRef<{ side: 'src' | 'stu'; startX: number; startW: number; maxW: number; w: number } | null>(null);
+  const savePanelSizes = (sizes: { src: number; stu: number }) => {
+    try { localStorage.setItem('cl_learning_panel_widths', JSON.stringify(sizes)); } catch { /* abaikan */ }
+  };
+  const beginPanelResize = (e: React.PointerEvent<HTMLDivElement>, side: 'src' | 'stu') => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const containerW = rowRef.current?.getBoundingClientRect().width ?? 0;
+    const minW = side === 'src' ? MIN_SRC_W : MIN_STU_W;
+    const other = side === 'src' ? panelSizes.stu : panelSizes.src;
+    dragInfo.current = {
+      side,
+      startX: e.clientX,
+      startW: side === 'src' ? panelSizes.src : panelSizes.stu,
+      maxW: Math.max(minW, Math.min(side === 'src' ? MAX_SRC_W : MAX_STU_W, containerW - other - MIN_CHAT_W - DIVIDER_W)),
+      w: side === 'src' ? panelSizes.src : panelSizes.stu,
+    };
+    setResizing(side);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const movePanelResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragInfo.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const minW = d.side === 'src' ? MIN_SRC_W : MIN_STU_W;
+    d.w = Math.max(minW, Math.min(d.maxW, d.side === 'src' ? d.startW + dx : d.startW - dx));
+    const w = d.w;
+    setPanelSizes((p) => (d.side === 'src' ? { ...p, src: w } : { ...p, stu: w }));
+  };
+  const endPanelResize = () => {
+    const d = dragInfo.current;
+    if (!d) return;
+    dragInfo.current = null;
+    setResizing(null);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    savePanelSizes(d.side === 'src' ? { src: d.w, stu: panelSizes.stu } : { src: panelSizes.src, stu: d.w });
+  };
+  const resetPanelWidth = (side: 'src' | 'stu') => {
+    const next = side === 'src'
+      ? { src: DEF_SRC_W, stu: panelSizes.stu }
+      : { src: panelSizes.src, stu: DEF_STU_W };
+    setPanelSizes(next);
+    savePanelSizes(next);
+  };
+  // Jendela di-resize → pastikan kedua panel samping tetap muat (layout 3 kolom = lg).
+  useEffect(() => {
+    const clampSizes = () => {
+      if (window.innerWidth < 1024) return;
+      const containerW = rowRef.current?.getBoundingClientRect().width ?? 0;
+      if (!containerW) return;
+      setPanelSizes((p) => ({
+        src: Math.max(MIN_SRC_W, Math.min(MAX_SRC_W, Math.min(p.src, containerW - p.stu - MIN_CHAT_W - DIVIDER_W))),
+        stu: Math.max(MIN_STU_W, Math.min(MAX_STU_W, Math.min(p.stu, containerW - p.src - MIN_CHAT_W - DIVIDER_W))),
+      }));
+    };
+    clampSizes();
+    window.addEventListener('resize', clampSizes);
+    return () => window.removeEventListener('resize', clampSizes);
+  }, []);
+  // Pembatas (drag handle) antar panel — hanya tampil di desktop (lg).
+  const renderPanelDivider = (side: 'src' | 'stu') => (
+    <div
+      key={`panel-divider-${side}`}
+      role="separator"
+      aria-orientation="vertical"
+      title={tr('panel_resize_hint', 'Seret untuk mengubah lebar panel (klik dua kali: reset)')}
+      onPointerDown={(e) => beginPanelResize(e, side)}
+      onPointerMove={movePanelResize}
+      onPointerUp={endPanelResize}
+      onPointerCancel={endPanelResize}
+      onLostPointerCapture={endPanelResize}
+      onDoubleClick={() => resetPanelWidth(side)}
+      className={`hidden lg:flex w-5 shrink-0 cursor-col-resize items-center justify-center touch-none select-none group/div ${resizing === side ? 'bg-sky-500/15' : 'hover:bg-slate-500/10'}`}
+    >
+      <div className={`w-1 h-10 rounded-full ${resizing === side ? 'bg-sky-400' : 'bg-slate-700 group-hover/div:bg-sky-500'}`} />
+    </div>
+  );
   // Math Problem state
   const [mathProblem, setMathProblem] = useState('x^2 - 5x + 6 = 0');
   const [mathSolution, setMathSolution] = useState('');
@@ -330,12 +437,40 @@ export const LearningView: React.FC = () => {
     }
     return (
       <div className="space-y-4">
+        {quizSubmitted && (() => {
+          // P56: skor dihitung dari soal pilihan ganda saja (essay dinilai mandiri).
+          const mc = quizzes.filter((q) => (q.type || 'mc') !== 'essay');
+          const correct = mc.filter((q) => selectedAnswers[quizzes.indexOf(q)] === q.correctAnswerIndex).length;
+          return (
+            <div className="p-3 bg-violet-950/40 border border-violet-500/40 rounded-xl text-sm font-bold text-violet-200">
+              {tr('quiz_score', 'Skor')}: {correct}/{mc.length}
+            </div>
+          );
+        })()}
         {quizzes.map((q, qIndex) => {
           const userChoice = selectedAnswers[qIndex];
           const isCorrect = userChoice === q.correctAnswerIndex;
+          // P56: soal essay (generator menghasilkan mc + essay sesuai count).
+          const isEssay = (q.type || 'mc') === 'essay';
           return (
             <div key={q.id || qIndex} className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
-              <h4 className="font-bold text-sm text-slate-200">{qIndex + 1}. {q.question}</h4>
+              <h4 className="font-bold text-sm text-slate-200">{qIndex + 1}. {q.question}{isEssay && <span className="ml-2 text-[10px] uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 align-middle">Essay</span>}</h4>
+              {isEssay ? (
+                <>
+                  <textarea
+                    value={essayAnswers[qIndex] ?? ''}
+                    disabled={quizSubmitted}
+                    onChange={(e) => setEssayAnswers((prev) => ({ ...prev, [qIndex]: e.target.value }))}
+                    placeholder={tr('essay_answer_ph', 'Tulis jawabanmu di sini…')}
+                    rows={3}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 resize-none focus:outline-none focus:border-violet-500 disabled:opacity-70"
+                  />
+                  {quizSubmitted && q.modelAnswer && (
+                    <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{tr('quiz_model_answer', '💡 Jawaban contoh')}:</span> {q.modelAnswer}</p>
+                  )}
+                </>
+              ) : (
+                <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {q.options.map((opt, optIndex) => {
                   const isSelected = userChoice === optIndex;
@@ -354,6 +489,8 @@ export const LearningView: React.FC = () => {
                 })}
               </div>
               {quizSubmitted && <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{tr('explanation', 'Explanation:')}</span> {q.explanation}</p>}
+                </>
+              )}
             </div>
           );
         })}
@@ -406,14 +543,18 @@ export const LearningView: React.FC = () => {
   };
 
   // AI Chat Handler
+  // P48 FIX (chat AI terkirim dobel): addNotebookChat kini murni append lokal,
+  // sehingga studio.chat() di bawah adalah SATU-SATUNYA request per pesan.
+  // (Dulu: addNotebookChat('user') ikut memanggil API + await studio.chat()
+  // lagi di sini = 2 request → 2 blok user + 2 jawaban tersimpan di server.)
   const handleSendChat = async () => {
-    if (!chatInput.trim() || !activeNotebook) return;
+    if (!chatInput.trim() || !activeNotebook || isAiLoading) return;
     const userMsg = chatInput.trim();
     setChatInput('');
+    // Tampil optimistic lokal; server menyimpan pasangan user+jawaban pada
+    // request di bawah (source of truth tetap tabel learning_chats).
     addNotebookChat(activeNotebook.id, userMsg, 'user');
     setIsAiLoading(true);
-
-    const combinedSources = activeNotebook.sources.map((s) => `[Source: ${s.title}]\n${s.content}`).join('\n\n');
 
     try {
       const data = await studio.chat(activeNotebook.id, userMsg);
@@ -486,6 +627,7 @@ export const LearningView: React.FC = () => {
         });
         setSelectedAnswers({});
         setQuizSubmitted(false);
+        setEssayAnswers({});
         showToast('success', 'Quiz Generated', `Ready for test (${quiz.length} questions).`);
         refreshNotebooks();
       } else {
@@ -638,13 +780,43 @@ export const LearningView: React.FC = () => {
             ))}
           </div>
 
+          {/* P56: slider antar 3 slide — geser slider / panah / swipe di layar sempit */}
+          <div className="lg:hidden flex items-center gap-2 pb-1">
+            <button type="button" onClick={() => gotoPanel(panelIdx - 1)} disabled={panelIdx === 0} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm font-bold disabled:opacity-30">‹</button>
+            <input
+              type="range" min={1} max={3} step={1} value={panelIdx + 1}
+              onChange={(e) => gotoPanel(Number(e.target.value) - 1)}
+              className="flex-1 accent-violet-500 h-1.5 bg-slate-800 rounded-lg"
+              aria-label={tr('panel_slider_aria', 'Pemilih panel')}
+            />
+            <button type="button" onClick={() => gotoPanel(panelIdx + 1)} disabled={panelIdx === 2} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm font-bold disabled:opacity-30">›</button>
+          </div>
+
           {/* 3-panel split (parity _splitter: sources | chat | studio).
               P38: flex + lebar animasi → menutup panel membuat panel tersisa
-              stretch penuh (chat flex-1), dengan transisi slide halus. */}
-          <div className="flex flex-col space-y-4 lg:flex-row lg:space-y-0 items-stretch">
+              stretch penuh (chat flex-1), dengan transisi slide halus.
+              P56: di layar sempit ketiga panel menjadi SLIDE — track bergeser
+              horizontal (slider/panah/swipe); di lg, `lg:contents` membuat
+              wrapper transparan sehingga layout 3 kolom tidak berubah. */}
+          <div
+            ref={rowRef}
+            className="flex flex-col space-y-4 lg:flex-row lg:space-y-0 items-stretch max-lg:overflow-hidden"
+            style={{ '--src-w': `${panelSizes.src}px`, '--stu-w': `${panelSizes.stu}px` } as React.CSSProperties}
+            onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+            onTouchEnd={(e) => {
+              if (touchX.current == null) return;
+              const dx = e.changedTouches[0].clientX - touchX.current;
+              if (Math.abs(dx) > 48) gotoPanel(panelIdx + (dx < 0 ? 1 : -1));
+              touchX.current = null;
+            }}
+          >
+            <div
+              className="flex max-lg:transition-transform max-lg:duration-300 max-lg:ease-out lg:contents"
+              style={{ transform: `translateX(-${panelIdx * 100}%)` }}
+            >
             {/* ── SOURCES PANEL ── */}
             <div
-              className={`${compactPanel !== 'sources' ? 'hidden lg:flex' : `flex ${slideDir === 'r' ? 'ct-slide-in-r' : 'ct-slide-in-l'}`} w-full flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 transition-all duration-300 lg:shrink-0 ${!showSources ? 'lg:w-0 lg:mr-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[280px] lg:mr-4'}`}
+              className={`flex w-full max-lg:shrink-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 ${resizing ? 'transition-none' : 'transition-all duration-300'} lg:shrink-0 ${!showSources ? 'lg:w-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[var(--src-w)]'}`}
             >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_sources_panel', 'Sumber')} <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{activeNotebook.sources?.length || 0}</span></span>
@@ -682,15 +854,24 @@ export const LearningView: React.FC = () => {
                 <p className="text-[10px] text-slate-500">{activeNotebook.sources?.length || 0} {tr('sources_grounding_the_ai_answers', 'sources · grounding the AI answers')}</p>
               </div>
 
+            {/* P56 rev: pembatas seret sources↔chat (khusus desktop) */}
+            {showSources && renderPanelDivider('src')}
+
             {/* ── CHAT PANEL ── */}
-            <div className={`${compactPanel !== 'chat' ? 'hidden lg:flex' : `flex ${slideDir === 'r' ? 'ct-slide-in-r' : 'ct-slide-in-l'}`} w-full lg:flex-1 lg:min-w-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
+            <div className={`flex w-full max-lg:shrink-0 lg:flex-1 lg:min-w-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_chat_panel', 'Chat AI')}</span>
                 <div className="flex items-center gap-1 text-xs text-slate-400">
                   <button onClick={() => setChatFontSize((v) => clampFont(v - 1))} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_decrease', 'A−')}</button>
                   <span className="px-1 font-bold text-slate-200">{chatFontSize}px</span>
                   <button onClick={() => setChatFontSize((v) => clampFont(v + 1))} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_increase', 'A+')}</button>
-                  <button onClick={() => { updateNotebook(activeNotebook.id, { chatHistory: [] }); }} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_clear_chat', 'Bersihkan chat')}><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => {
+                    // P48: bersihkan JUGA history di server — dulu hanya set state
+                    // lokal sehingga chat muncul lagi setelah reload/restart.
+                    studio.clearChat(activeNotebook.id)
+                      .catch(() => undefined)
+                      .finally(() => updateNotebook(activeNotebook.id, { chatHistory: [] }));
+                  }} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_clear_chat', 'Bersihkan chat')}><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
 
@@ -732,9 +913,12 @@ export const LearningView: React.FC = () => {
               <p className="text-[10px] text-slate-500">{tr('learning_composer_hint', 'Enter untuk kirim · Shift+Enter baris baru')}</p>
             </div>
 
+            {/* P56 rev: pembatas seret chat↔studio (khusus desktop) */}
+            {showStudio && renderPanelDivider('stu')}
+
             {/* ── STUDIO PANEL ── */}
             <div
-              className={`${compactPanel !== 'studio' ? 'hidden lg:flex' : `flex ${slideDir === 'r' ? 'ct-slide-in-r' : 'ct-slide-in-l'}`} w-full flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 transition-all duration-300 lg:shrink-0 ${!showStudio ? 'lg:w-0 lg:ml-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[330px] lg:ml-4'}`}
+              className={`flex w-full max-lg:shrink-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 ${resizing ? 'transition-none' : 'transition-all duration-300'} lg:shrink-0 ${!showStudio ? 'lg:w-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[var(--stu-w)]'}`}
             >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_studio_panel', 'Studio')}</span>
@@ -776,7 +960,7 @@ export const LearningView: React.FC = () => {
                 {/* Count (quiz/flashcards 10–30, parity studio_count_spin) */}
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <span>{tr('learning_count_label', 'Jumlah (Kuis/Kartu)')}</span>
-                  <input type="number" min={10} max={30} value={studioCount} onChange={(e) => setStudioCount(Math.max(10, Math.min(30, parseInt(e.target.value || '15', 10) || 15)))} className="w-16 ml-auto bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-center text-slate-100" />
+                  <NumberInput value={studioCount} onValueChange={setStudioCount} min={10} max={30} integer emptyValue={15} inputClassName="w-16 ml-auto bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-center text-slate-100" />
                 </div>
                 <p className="text-[9px] text-slate-500">{tr('learning_count_hint', 'Dipakai saat membuat Kuis / Flashcard AI (10–30).')}</p>
 
@@ -804,6 +988,8 @@ export const LearningView: React.FC = () => {
                       )}
                   </div>
                 </div>
+            </div>
+            {/* P56: penutup track slider */}
             </div>
           </div>
         </>

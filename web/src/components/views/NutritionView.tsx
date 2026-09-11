@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { DEFAULT_FOODS } from '../../data/gameData';
@@ -176,11 +177,12 @@ export const NutritionView: React.FC = () => {
               {(['calories', 'protein', 'carbs', 'fat'] as const).map((k) => (
                 <div key={k}>
                   <label className="text-[9px] text-slate-400 font-bold uppercase">{k}</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={goals[k]}
-                    onChange={(e) => setGoals((g) => ({ ...g, [k]: Number(e.target.value) }))}
-                    className="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-100"
+                    onValueChange={(n) => setGoals((g) => ({ ...g, [k]: n }))}
+                    min={0}
+                    integer
+                    inputClassName="w-full px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-100"
                   />
                 </div>
               ))}
@@ -248,11 +250,12 @@ export const NutritionView: React.FC = () => {
               </button>
             </div>
             <div className="flex items-center gap-1 pt-1">
-              <input
-                type="number"
+              <NumberInput
                 value={waterGoal}
-                onChange={(e) => setWaterGoal(Number(e.target.value))}
-                className="w-20 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[11px]"
+                onValueChange={setWaterGoal}
+                min={0}
+                integer
+                inputClassName="w-20 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[11px]"
               />
               <button
                 type="button"
@@ -303,14 +306,13 @@ export const NutritionView: React.FC = () => {
 
             <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1.5 rounded-xl text-xs">
               <span className="text-slate-400 font-semibold">{lang === 'id' ? 'Porsi:' : 'Portion:'}</span>
-              <input
-                type="number"
-                step="0.5"
-                min="0.5"
-                max="10"
+              <NumberInput
                 value={portionInput}
-                onChange={(e) => setPortionInput(Math.max(0.5, Number(e.target.value)))}
-                className="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold"
+                onValueChange={setPortionInput}
+                min={0.5}
+                max={10}
+                emptyValue={1}
+                inputClassName="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold"
               />
             </div>
 
@@ -538,38 +540,42 @@ export const NutritionView: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Calories (kcal)</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={customCal}
-                    onChange={(e) => setCustomCal(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
+                    onValueChange={setCustomCal}
+                    min={0}
+                    integer
+                    inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Protein (g)</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={customPro}
-                    onChange={(e) => setCustomPro(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
+                    onValueChange={setCustomPro}
+                    min={0}
+                    integer
+                    inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Carbs (g)</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={customCarb}
-                    onChange={(e) => setCustomCarb(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
+                    onValueChange={setCustomCarb}
+                    min={0}
+                    integer
+                    inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Fat (g)</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={customFat}
-                    onChange={(e) => setCustomFat(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
+                    onValueChange={setCustomFat}
+                    min={0}
+                    integer
+                    inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:border-teal-500"
                   />
                 </div>
               </div>
@@ -609,7 +615,7 @@ export const NutritionView: React.FC = () => {
             </div>
             <div className="grid grid-cols-[auto,1fr] gap-2 items-center">
               <label className="text-slate-400 text-xs">{lang === 'id' ? 'Porsi' : 'Serving'}</label>
-              <input type="number" min={1} value={rcServing} onChange={(e) => setRcServing(Math.max(1, Number(e.target.value) || 1))} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm w-24" />
+              <NumberInput value={rcServing} onValueChange={setRcServing} min={1} integer emptyValue={1} inputClassName="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm w-24" />
             </div>
             <textarea value={rcNotes} onChange={(e) => setRcNotes(e.target.value)} placeholder={lang === 'id' ? 'Instruksi…' : 'Instructions…'} rows={2} className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm resize-none" />
             <div>
@@ -621,7 +627,7 @@ export const NutritionView: React.FC = () => {
                       <option value="">— {lang === 'id' ? 'pilih bahan' : 'choose food'} —</option>
                       {dbFoods.map((f) => <option key={f.id} value={f.id}>{f.icon} {f.name}</option>)}
                     </select>
-                    <input type="number" min={0.1} step={0.5} value={ing.quantity} onChange={(e) => { const next = [...rcIngredients]; next[idx] = { ...ing, quantity: Number(e.target.value) }; setRcIngredients(next); }} className="w-16 px-2 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
+                    <NumberInput value={ing.quantity} onValueChange={(n) => { const next = [...rcIngredients]; next[idx] = { ...ing, quantity: n }; setRcIngredients(next); }} min={0.1} emptyValue={1} inputClassName="w-16 px-2 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
                     <button onClick={() => setRcIngredients(rcIngredients.filter((_, i) => i !== idx))} className="px-2 text-rose-400"><X className="w-4 h-4" /></button>
                   </div>
                 ))}

@@ -68,6 +68,7 @@ export const life = {
   updateNoteFolder: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/note-folders/${id}/update`, body),
   duplicateNoteFolder: (id: string) => apiPost<any>(`/api/note-folders/${id}/duplicate`, {}),
+  noteAttachmentDelete: (id: string) => apiPost<any>('/api/notes/attachment/delete', { id }),
   previewMath: (content: string) => apiPost<any>('/api/notes/preview-math', { content }),
   mathChunks: (content: string) => apiPost<any>('/api/notes/math-chunks', { content }),
   archiveNote: (id: string, archived: boolean) => apiPost<any>(`/api/notes/${id}/archive`, { archived }),

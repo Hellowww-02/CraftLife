@@ -64,7 +64,7 @@ const ProfilePhotoCard: React.FC<{ lang: string; showToast: (k: any, a: string, 
     <div className="ct-panel p-4 space-y-3">
         <div className="text-xs font-bold text-slate-300">{t('profile_photo', lang === 'id' ? 'Foto profil' : 'Profile photo')}</div>
       <div className="flex items-center gap-4">
-        <div className="ct-socket w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center text-4xl shrink-0">
+        <div className="ct-socket w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center text-4xl shrink-0" style={{ backgroundColor: user.avatarColor ? `${user.avatarColor}33` : undefined }}>
           {user.hasProfilePhoto ? (
             <img
               src={`${apiBase()}/api/profile/photo?v=${photoVersion}`}
@@ -304,7 +304,7 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
 
 /** Mirror ProfilePage: identitas, class, rebirth, redeem — bukan Settings. */
 export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenSettings }) => {
-  const { user, lang, inventory, userPets, habits, dailies, quests, updateUserProfile, showToast, today } = useGame();
+  const { user, lang, inventory, userPets, habits, dailies, quests, updateUserProfile, showToast, today, applyLive } = useGame();
   const [name, setName] = useState(user.displayName || user.name || '');
   const [bio, setBio] = useState(user.bio || '');
   const [emoji, setEmoji] = useState(user.avatarEmoji || user.avatar || '⚔️');
@@ -378,6 +378,13 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
 
   return (
     <div className="space-y-6 w-full mx-auto max-w-2xl">
+      {/* ===== P51: badge ADMIN (parity ProfilePage.admin_badge / admin_mode_active) ===== */}
+      {Boolean((user as any).isAdmin) && (
+        <div className="rounded-xl bg-[#2a0808] border border-[#e05050]/40 text-[#e05050] text-[11px] font-black text-center px-3 py-2.5 whitespace-pre-line">
+          {t('admin_mode_active', '🔒 MODE ADMIN AKTIF 🔒\nAkun ini berdiri sendiri: tidak muncul di leaderboard, tidak bisa berteman, tidak bisa join guild, tidak bisa chat.')}
+        </div>
+      )}
+
       {/* ===== P31: Hero Customization & Class (dipindah dari Settings — parity ProfilePage) ===== */}
       <div className="rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-5">
         <div className="flex items-center gap-2 pb-1 border-b border-slate-800">
@@ -387,7 +394,7 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
 
         {/* Identitas ringkas */}
         <div className="flex items-center gap-3">
-          <div className="ct-socket w-12 h-12 rounded-2xl text-3xl flex items-center justify-center">{emoji}</div>
+          <div className="ct-socket w-12 h-12 rounded-2xl text-3xl flex items-center justify-center" style={{ backgroundColor: user.avatarColor ? `${user.avatarColor}33` : undefined }}>{emoji}</div>
           <div className="min-w-0">
             <div className="text-base font-black truncate">{user.displayName || user.name || user.username}</div>
             <div className="text-[11px] text-slate-400">@{user.username} · Lv {user.level}</div>
@@ -658,23 +665,37 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
           <button
             type="button"
             onClick={() => {
+              // P47: alur password kode admin digerakkan SERVER. Coba tanpa password
+              // dulu — bila kode bertipe admin, server membalas error
+              // 'admin_redeem_password_required' → prompt password → ulangi.
+              // (Sebelumnya frontend meng-hardcode /^ADMINADMINADMIN$/ sehingga kode
+              // admin kustom tidak pernah diminta passwordnya.)
               const doRedeem = (password?: string) => {
                 apiPost<any>('/api/profile/redeem', { code, ...(password !== undefined ? { password } : {}) }).then((r) => {
-                  if (r?.error === 'admin_redeem_password_wrong') {
+                  // P47: status sukses/gagal dibaca dari result DALAMAN — envelope
+                  // luar selalu ok:true (200) walau redeem gagal, jadi dulu toast
+                  // gagal tampil sebagai "success".
+                  const res = r?.result || {};
+                  showToast(res.ok ? 'success' : 'info', res.msg || r?.error || 'redeem', '');
+                  // P51: merge snapshot (termasuk user.isAdmin) SEGERA — akun admin
+                  // aktif tanpa reload (parity PyQt _check_admin_panel).
+                  if (res.ok) { setCode(''); applyLive(r); }
+                }).catch((e: any) => {
+                  const err = String(e?.message || e);
+                  if (err === 'admin_redeem_password_required') {
+                    showToast('info', t('redeem_admin_password_required', 'Kode admin terdeteksi — masukkan password akun kamu untuk menyelesaikan penukaran.'), '');
+                    const pwd = window.prompt(t('redeem_admin_password_prompt', 'Masukkan password akun untuk menukar kode admin:'), '');
+                    if (pwd === null || pwd === '') return;
+                    doRedeem(pwd);
+                    return;
+                  }
+                  if (err === 'admin_redeem_password_wrong') {
                     showToast('info', t('redeem_admin_password_wrong', 'Password salah.'), '');
                     return;
                   }
-                  showToast(r.ok ? 'success' : 'info', r.result?.msg || r.error || 'redeem', '');
-                  if (r?.ok) setCode('');
-                }).catch((e) => showToast('info', String(e?.message || e), ''));
+                  showToast('info', err, '');
+                });
               };
-              // P24: kalau kode admin, minta password akun (parity PyQt). Server tetap gating.
-              if (/^ADMINADMINADMIN$/i.test(code.trim())) {
-                const pwd = window.prompt(t('redeem_admin_password_prompt', 'Masukkan password akun untuk menukar kode admin:'), '');
-                if (pwd === null) return;
-                doRedeem(pwd);
-                return;
-              }
               doRedeem();
             }}
             className="px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-black"

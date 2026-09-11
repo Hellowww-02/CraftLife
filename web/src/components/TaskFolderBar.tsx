@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { TaskFolder } from '../types';
 import { t } from '../i18n';
+import { FolderIconPicker } from './FolderIconPicker';
 
 type Mode = 'habit' | 'daily' | 'todo' | 'sport' | 'economy';
 
@@ -30,13 +31,24 @@ export const TaskFolderBar: React.FC<{
   const folders = useModeFolders(mode);
   const [name, setName] = useState('');
   const [dragOver, setDragOver] = useState<string | null>(null);
+  // P56: dialog edit folder — nama + ikon (grid FolderIconPicker).
+  const [editing, setEditing] = useState<TaskFolder | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editIcon, setEditIcon] = useState('📁');
+  const [showIconGrid, setShowIconGrid] = useState(false);
 
-  const rename = (f: TaskFolder) => {
-    const next = window.prompt(t('folder_rename_prompt', 'Folder name:'), f.name);
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (!trimmed || trimmed === f.name) return;
-    renameTaskFolder(f.id, trimmed, mode);
+  const openEdit = (f: TaskFolder) => {
+    setEditing(f);
+    setEditName(f.name);
+    setEditIcon(f.icon || '📁');
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    const trimmed = editName.trim();
+    if (!trimmed) return;
+    renameTaskFolder(editing.id, trimmed, mode, editIcon || '📁');
+    setEditing(null);
   };
 
   const duplicate = (f: TaskFolder) => {
@@ -44,7 +56,8 @@ export const TaskFolderBar: React.FC<{
   };
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+    <>
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
       <button
         type="button"
         onClick={() => onSelect('all')}
@@ -105,7 +118,7 @@ export const TaskFolderBar: React.FC<{
           </button>
           <button
             type="button"
-            onClick={() => rename(f)}
+            onClick={() => openEdit(f)}
             className="ct-act text-sky-400 rounded-none"
             title={t('folder_tooltip_edit', 'Edit folder')}
           >
@@ -129,7 +142,51 @@ export const TaskFolderBar: React.FC<{
           </button>
         </div>
       ))}
-    </div>
+      </div>
+
+      {/* P56: dialog edit folder — nama + ikon */}
+      {editing && (
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditing(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl space-y-3" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-bold text-slate-200">{t('folder_edit_title', '✏️ Edit Folder')}</p>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">{t('folder_rename_prompt', 'Folder name:')}</label>
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); }}
+                className="ct-input w-full px-3 py-2 rounded-xl text-sm text-slate-100"
+                autoFocus
+              />
+            </div>
+            <div>
+              <span className="block text-[11px] font-bold text-slate-400 mb-1">{t('folder_edit_icon', 'Ikon')}</span>
+              <button
+                type="button"
+                onClick={() => setShowIconGrid(true)}
+                className="text-2xl p-2 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50"
+                title={t('folder_icon_picker_title', 'Pilih ikon folder')}
+              >
+                {editIcon}
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditing(null)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
+              <button type="button" onClick={saveEdit} className="ct-btn ct-btn-primary ct-btn-sm">{t('btn_save', '💾 Simpan')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P56: grid pemilih ikon (terbuka dari dialog edit) */}
+      {editing && showIconGrid && (
+        <FolderIconPicker
+          current={editIcon}
+          onPick={(ic) => { setEditIcon(ic); setShowIconGrid(false); }}
+          onClose={() => setShowIconGrid(false)}
+        />
+      )}
+    </>
   );
 };
 

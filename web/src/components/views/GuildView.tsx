@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
 import { authToken } from '../../api/client';
@@ -657,21 +658,18 @@ export const GuildView: React.FC = () => {
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-xs text-slate-400 font-semibold">{tr('cboss_hp')}</label>
-                <input type="number" min={100} max={10000} step={100} value={cbHp}
-                  onChange={(e) => setCbHp(Math.max(100, Number(e.target.value) || 100))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+                <NumberInput value={cbHp} onValueChange={setCbHp} min={100} max={10000} integer emptyValue={100}
+                  inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
               </div>
               <div>
                 <label className="text-xs text-slate-400 font-semibold">{tr('cboss_atk')}</label>
-                <input type="number" min={1} max={150} value={cbAtk}
-                  onChange={(e) => setCbAtk(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+                <NumberInput value={cbAtk} onValueChange={setCbAtk} min={1} max={150} integer emptyValue={1}
+                  inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
               </div>
               <div>
                 <label className="text-xs text-slate-400 font-semibold">{tr('cboss_minlvl')}</label>
-                <input type="number" min={1} max={99} value={cbMinLvl}
-                  onChange={(e) => setCbMinLvl(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
+                <NumberInput value={cbMinLvl} onValueChange={setCbMinLvl} min={1} max={99} integer emptyValue={1}
+                  inputClassName="w-full px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm" />
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">

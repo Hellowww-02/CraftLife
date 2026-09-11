@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost } from '../../api/client';
 import {
@@ -30,15 +31,15 @@ const AdminDebugPanel: React.FC = () => {
     <div className="ct-panel p-5 space-y-3 border-rose-800/40">
       <h3 className="font-bold text-xs text-rose-300 uppercase tracking-wider">{t('admin_panel', 'Panel Admin')}</h3>
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <input type="number" value={xp} onChange={(e) => setXp(Number(e.target.value))} className="ct-input w-24 px-2 py-1 rounded-lg" />
+        <NumberInput value={xp} onValueChange={setXp} integer inputClassName="ct-input w-24 px-2 py-1 rounded-lg" />
         <button type="button" onClick={() => run('add_xp', xp)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_add_xp', '+ XP')}</button>
-        <input type="number" value={gold} onChange={(e) => setGold(Number(e.target.value))} className="ct-input w-24 px-2 py-1 rounded-lg" />
+        <NumberInput value={gold} onValueChange={setGold} integer inputClassName="ct-input w-24 px-2 py-1 rounded-lg" />
         <button type="button" onClick={() => run('add_gold', gold)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_add_gold', '+ Gold')}</button>
         <button type="button" onClick={() => run('fill_hp_mp')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_fill_hp_mp', 'Isi HP/MP')}</button>
         <button type="button" onClick={() => run('max_level')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_max_level', 'Max Level (50)')}</button>
         <button type="button" onClick={() => run('complete_tasks')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_complete_tasks', 'Tuntaskan Semua Tugas')}</button>
         <button type="button" onClick={() => run('pet_level_up')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_level_up', 'Pet +1 Level')}</button>
-        <input type="number" value={petExp} onChange={(e) => setPetExp(Number(e.target.value))} className="ct-input w-24 px-2 py-1 rounded-lg" />
+        <NumberInput value={petExp} onValueChange={setPetExp} integer inputClassName="ct-input w-24 px-2 py-1 rounded-lg" />
         <button type="button" onClick={() => run('pet_add_exp', petExp)} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_add_exp', 'Pet + EXP')}</button>
         <button type="button" onClick={() => run('pet_feed')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_feed', 'Beri Makan Semua Pet')}</button>
       </div>
@@ -48,6 +49,136 @@ const AdminDebugPanel: React.FC = () => {
 };
 
 interface ThemeRow { key: string; label: string; primary: string; glow: string; }
+
+const fmtBytes = (n: number): string => {
+  if (!n || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+};
+
+/** P62 — Pemeliharaan Data: ukuran DB, retensi history tracker, purge manual + auto bulanan. */
+const MaintenanceSection: React.FC = () => {
+  const { showToast } = useGame();
+  const [state, setState] = useState<{
+    retentionDays: number; auto: boolean; lastPurgeAt: string;
+    totalRows: number; dbSizeBytes: number; cutoff: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => apiGet<any>('/api/settings/cleanup')
+    .then((d) => { if (d?.cleanup) setState(d.cleanup); })
+    .catch(() => undefined);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const setRetention = (rd: number) => {
+    setBusy(true);
+    apiPost<any>('/api/settings/cleanup', { action: 'set', retentionDays: rd })
+      .then(() => { load(); })
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
+  const toggleAuto = () => {
+    if (!state) return;
+    setBusy(true);
+    apiPost<any>('/api/settings/cleanup', { action: 'set', auto: !state.auto })
+      .then(() => { load(); })
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
+  const runCleanup = () => {
+    if (!window.confirm(t('settings_cleanup_confirm', 'Bersihkan riwayat tracker lama sekarang? Backup otomatis dibuat dulu.'))) return;
+    setBusy(true);
+    apiPost<any>('/api/settings/cleanup', { action: 'run' })
+      .then((d) => {
+        const rep = d?.result?.report;
+        if (d?.result?.ok && rep) {
+          showToast('success',
+            t('settings_cleanup_done', 'Selesai: {rows} baris dihapus, hemat {size} ✓')
+              .replace('{rows}', String(rep.totalDeleted || 0))
+              .replace('{size}', fmtBytes(rep.freedBytes || 0)), '');
+        } else {
+          showToast('info', d?.result?.msg || 'cleanup', '');
+        }
+        load();
+      })
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
+
+  if (!state) return null;
+  const ret = state.retentionDays;
+  const retOpts: { v: number; key: string }[] = [
+    { v: 1, key: 'settings_cleanup_retention_1d' },
+    { v: 7, key: 'settings_cleanup_retention_7d' },
+    { v: 30, key: 'settings_cleanup_retention_30d' },
+    { v: 90, key: 'settings_cleanup_retention_90d' },
+    { v: 0, key: 'settings_cleanup_retention_off' },
+  ];
+
+  return (
+    <div className="ct-panel rounded-3xl p-6 space-y-4">
+      <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+        <Database className="w-4 h-4 text-emerald-400" />
+        <span>{t('settings_maintenance_title', 'Pemeliharaan Data')}</span>
+      </h3>
+
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-slate-300 font-bold">
+          {t('settings_db_size', 'Ukuran DB')}: <span className="ct-num text-emerald-300">{fmtBytes(state.dbSizeBytes)}</span>
+        </span>
+        {ret > 0 && (
+          <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-slate-300 font-bold">
+            {t('settings_cleanup_estimate', 'Bisa dibersihkan')}: <span className="ct-num text-amber-300">~{state.totalRows}</span>
+          </span>
+        )}
+        {state.lastPurgeAt && (
+          <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-slate-400 font-bold">
+            {t('settings_cleanup_last', 'Terakhir dibersihkan')}: {String(state.lastPurgeAt).slice(0, 16)}
+          </span>
+        )}
+      </div>
+
+      <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5">
+        ⚠️ {t('settings_cleanup_warning', 'Hanya riwayat tracker (riwayat tugas, aktivitas, pomodoro, olahraga, musik, notifikasi lama, cache chat) yang dihapus. Data master (tugas, kesehatan, keuangan, catatan) TIDAK disentuh. Heatmap/pencapaian lama bisa kehilangan hitungan; streak tetap aman. Backup DB dibuat otomatis sebelum membersihkan.')}
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-bold text-slate-300">{t('settings_cleanup_retention', 'Simpan riwayat')}</span>
+        {retOpts.map((o) => (
+          <button
+            key={o.v}
+            type="button"
+            disabled={busy}
+            onClick={() => setRetention(o.v)}
+            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors disabled:opacity-40 ${
+              ret === o.v ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+            }`}
+          >
+            {t(o.key, o.key)}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer">
+          <input type="checkbox" checked={state.auto} onChange={toggleAuto} disabled={busy} className="accent-emerald-500 w-4 h-4" />
+          {t('settings_cleanup_auto', 'Bersihkan otomatis tiap bulan')}
+        </label>
+        <button
+          type="button"
+          onClick={runCleanup}
+          disabled={busy || ret <= 0}
+          className="px-3 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-black disabled:opacity-40 inline-flex items-center gap-1.5"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> {t('settings_cleanup_now', 'Bersihkan Sekarang')}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export const SettingsView: React.FC = () => {
   const { user, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast, today, activeTheme, setActiveTheme } = useGame();
@@ -191,6 +322,8 @@ export const SettingsView: React.FC = () => {
 
   const switchLocalAccount = () => {
     try {
+      // P57: hentikan musik global sebelum kembali ke layar login.
+      (window as any).craftlifeStopAllAudio?.();
       sessionStorage.setItem('craftlife_show_login', '1');
     } catch {
       /* ignore */
@@ -374,6 +507,9 @@ export const SettingsView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ===== P62: Pemeliharaan Data (cleanup history tracker) ===== */}
+      <MaintenanceSection />
 
       {/* ===== Parity SettingsPage: THEME group — radio semua db.THEMES + glow preview dot ===== */}
       <div className="ct-panel p-5 space-y-3">

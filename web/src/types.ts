@@ -344,6 +344,17 @@ export interface Note {
   updatedAt: string;
 }
 
+/** P54: metadata lampiran catatan (file fisik di server). */
+export interface NoteAttachment {
+  id: string;
+  noteId: string;
+  fileName: string;
+  mime: string;
+  size: number;
+  kind: 'image' | 'file';
+  createdAt?: string;
+}
+
 export interface Achievement {
   id: string;
   title: string;
@@ -401,6 +412,10 @@ export interface QuizQuestion {
   options: string[];
   correctAnswerIndex: number;
   explanation: string;
+  /** P56: 'mc' (default) | 'essay' — generator quiz menghasilkan campuran. */
+  type?: 'mc' | 'essay';
+  /** P56: jawaban contoh untuk soal essay. */
+  modelAnswer?: string;
 }
 
 export interface PodcastDialogue {

@@ -318,7 +318,12 @@ export const FriendsView: React.FC = () => {
             const online = f.presence === 'online';
             return (
               <div key={f.id} className="ct-task-card ct-row-press flex items-center gap-2.5 rounded-2xl px-3 py-2.5">
-                <span className={`text-3xl relative ${online ? 'ct-online:absolute right-0 bottom-0' : ''}`}>{f.avatarEmoji || '⚔️'}{online && <span className="ct-online absolute right-0 bottom-0"></span>}</span>
+                <span
+                  className={`relative inline-flex items-center justify-center w-12 h-12 rounded-xl text-2xl border border-slate-700 ${online ? 'ct-online:absolute right-0 bottom-0' : ''}`}
+                  style={{ backgroundColor: f.avatarColor ? `${f.avatarColor}33` : undefined }}
+                >
+                  {f.avatarEmoji || '⚔️'}{online && <span className="ct-online absolute right-0 bottom-0"></span>}
+                </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-bold text-slate-100 truncate">{f.displayName || f.name}</div>
                   <div className="text-[10px] text-slate-500">
@@ -565,7 +570,7 @@ export const FriendsView: React.FC = () => {
 
             {/* Header: avatar + identitas */}
             <div className="flex flex-col items-center gap-1">
-              <div className="ct-socket w-24 h-24 rounded-full border-2 border-slate-600 flex items-center justify-center text-5xl overflow-hidden">
+              <div className="ct-socket w-24 h-24 rounded-full border-2 border-slate-600 flex items-center justify-center text-5xl overflow-hidden" style={{ backgroundColor: profile.avatarColor ? `${profile.avatarColor}33` : undefined }}>
                 {profile.avatarEmoji ? <span className="text-5xl">{profile.avatarEmoji}</span> :
                   <span className="text-4xl text-slate-400">⚔️</span>}
               </div>

@@ -4,6 +4,7 @@ import { studio } from '../api/studio';
 import { AVATAR_CLASSES } from '../data/gameData';
 import { t as i18nT } from '../i18n';
 import { Heart, Sparkles, Coins, Menu, Settings, Trophy, Globe, Bell, Clock } from 'lucide-react';
+import { MiniPlayer } from './MiniPlayer';
 
 /** Interpolasi kecil (parity pola `tr` di view lain): {var} → nilai. */
 const tr = (key: string, vars?: Record<string, string | number>, fallback?: string) => {
@@ -20,6 +21,7 @@ interface NavbarProps {
   onOpenSettings?: () => void;
   onOpenAchievements?: () => void;
   onOpenPalette?: () => void;
+  onOpenMusic?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -27,6 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSettings,
   onOpenAchievements,
   onOpenPalette,
+  onOpenMusic,
 }) => {
   const { user, lang, setLang, achievements, clockNow, today, activeBuffs, activeBuffsDetail } = useGame();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -93,8 +96,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center text-xl font-bold border-2 shadow-inner transition-transform hover:scale-105"
               style={{
-                backgroundColor: `${currentClass.color}20`,
-                borderColor: currentClass.color,
+                // P51: warna avatar user (users.avatar_color) dipakai sebagai bg chip;
+                // fallback ke warna class bila belum dipilih.
+                backgroundColor: `${user.avatarColor || currentClass.color}20`,
+                borderColor: user.avatarColor || currentClass.color,
               }}
             >
               {user.avatarEmoji || user.avatar || currentClass.icon}
@@ -106,8 +111,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <div className="flex flex-col gap-0.5 min-w-[140px] sm:min-w-[200px]">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-200 truncate max-w-[100px] sm:max-w-[130px]">
+              <span className="font-bold text-slate-200 truncate max-w-[100px] sm:max-w-[130px] flex items-center gap-1.5">
                 {user.displayName || user.name || user.username}
+                {/* P51: chip admin (parity admin badge) */}
+                {Boolean((user as any).isAdmin) && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-[#2a0808] text-[#e05050] text-[8px] font-black tracking-wider border border-[#e05050]/40 shrink-0">
+                    ADMIN
+                  </span>
+                )}
               </span>
               <span className="text-[10px] text-amber-400 font-semibold">{currentClass.name}</span>
             </div>
@@ -165,6 +176,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right: Currencies & Quick Links */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* P57: mini-player global — kontrol musik dari halaman mana pun. */}
+          <MiniPlayer onOpenMusic={onOpenMusic} />
           {/* Gold — nilai LOKAL (offline-first source of truth). Sinkronisasi cloud
               best-effort; status sync lihat Settings → Cloud & Sync. */}
           <div className="ct-sheen flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-extrabold text-xs sm:text-sm ct-num overflow-hidden">

@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useGame } from '../../context/GameContext';
+import { useMusicPlayer, type LibraryEntry } from '../../music/MusicPlayerContext';
+import { LyricsDrawer } from '../../components/music/LyricsDrawer';
+import { PlaylistIconDialog } from '../../components/music/PlaylistIconDialog';
 import { studio } from '../../api/studio';
 import { t } from '../../i18n';
 import {
@@ -21,22 +24,15 @@ import {
   FolderOutput,
   Download,
   ChevronDown,
+  Palette,
 } from 'lucide-react';
 
 // ── Tipe (parity MusicPage PyQt) ─────────────────────────────────────────────
-interface LibraryEntry {
-  name: string;
-  path: string;
-  size: number;
-  title?: string;
-  artist?: string;
-  album?: string;
-  duration?: number;
-}
 interface PlaylistEntry {
   id: string | number;
   name: string;
   isFavorite?: number | boolean;
+  icon?: string;
   tracks?: string[];
 }
 interface HistoryEntry {
@@ -66,6 +62,13 @@ const fmtTime = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
+// P57: nama file basis (untuk entri antrean tanpa metadata).
+const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+
+// P58: kunci lirik per track — path file bila ada, selain itu slug artis::judul.
+const trackKeyFor = (e: { path?: string; artist?: string; title?: string; name?: string } | null) =>
+  !e ? '' : e.path ? `path:${e.path}` : `meta:${(e.artist || '').toLowerCase()}::${(e.title || e.name || '').toLowerCase()}`;
+
 // Parity MusicPage._parse_lrc: [mm:ss.xx] baris → daftar {ms,text} terurut.
 const parseLrc = (text: string): { ms: number; text: string }[] => {
   if (!text) return [];
@@ -91,17 +94,16 @@ export const MusicView: React.FC = () => {
     return s;
   };
 
-  // Player (parity QMediaPlayer)
-  const [playingFile, setPlayingFile] = useState<LibraryEntry | null>(null);
-  const [isLibraryPlaying, setIsLibraryPlaying] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState(false);
-  const [volume, setVolume] = useState<number>(72); // parity audio_output.setVolume(.72)
-  const [isMuted, setIsMuted] = useState(false);
-  const [progressMs, setProgressMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
+  // P57: player GLOBAL — semua state & elemen <audio> hidup di
+  // MusicPlayerContext (App root, di luar switch view) sehingga musik TIDAK
+  // berhenti saat pindah halaman. MusicView kini "remote control"
+  // (parity MusicPage PyQt yang hidup di MainWindow, bukan per-page).
+  const music = useMusicPlayer();
+  const { playingFile, isPlaying, shuffle, repeat, volume, isMuted, progressMs, durationMs } = music;
+  const isLibraryPlaying = music.isPlayingLibrary;
+  // Override lokal saat slider progress diseret (timeupdate global tak menimpa).
   const [dragging, setDragging] = useState(false);
+  const [dragMs, setDragMs] = useState(0);
 
   // Playlists / library (parity _reload_playlists + _metadata)
   const [playlists, setPlaylists] = useState<PlaylistEntry[]>([]);
@@ -118,13 +120,13 @@ export const MusicView: React.FC = () => {
   const importFolderRef = useRef<HTMLInputElement | null>(null);
 
   // Lyrics drawer (parity _toggle_lyrics + _load_lyrics + _update_synced_lyric)
+  // P58: + source/saved/offsetMs per track (tersimpan di server, table song_lyrics).
   const [lyricsOpen, setLyricsOpen] = useState(false);
-  const [lyrics, setLyrics] = useState<{ plain: string; synced: string }>({ plain: '', synced: '' });
+  const [lyrics, setLyrics] = useState<{ plain: string; synced: string; source: string; saved: boolean; offsetMs: number }>({ plain: '', synced: '', source: '', saved: false, offsetMs: 0 });
   const [lyricsLoading, setLyricsLoading] = useState(false);
-  const [lyricsSource, setLyricsSource] = useState('');
   const [activeLyricLine, setActiveLyricLine] = useState(-1);
-  const syncedLinesRef = useRef<{ ms: number; text: string }[]>([]);
   const syncedLines = useMemo(() => parseLrc(lyrics.synced), [lyrics.synced]);
+  const importLyricsRef = useRef<HTMLInputElement | null>(null);
 
   // yt-dlp downloader modal (parity _open_downloader)
   const [dlOpen, setDlOpen] = useState(false);
@@ -137,42 +139,24 @@ export const MusicView: React.FC = () => {
 
   // Track context menu (parity _track_menu)
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
+  // P59: dialog ganti icon playlist (emoji / foto dari komputer).
+  const [iconDlgFor, setIconDlgFor] = useState<PlaylistEntry | null>(null);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    syncedLinesRef.current = syncedLines;
     setActiveLyricLine(-1);
   }, [syncedLines]);
-
-  // Auto-scroll garis aktif ke tengah panel (parity _update_synced_lyric → ensureCursorVisible)
-  const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
-  const lyricLineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
-  useEffect(() => {
-    if (activeLyricLine < 0) return;
-    const el = lyricLineRefs.current[activeLyricLine];
-    const box = lyricsScrollRef.current;
-    if (el && box) {
-      const elTop = el.getBoundingClientRect().top;
-      const boxTop = box.getBoundingClientRect().top;
-      box.scrollTo({
-        top: box.scrollTop + (elTop - boxTop) - box.clientHeight / 2 + el.clientHeight / 2,
-        behavior: 'smooth',
-      });
-    }
-  }, [activeLyricLine]);
 
   const activePlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
   const activeTracks = activePlaylist?.tracks || [];
 
-  // Sumber audio yang dikontrol PENUH React (parity QMediaPlayer). Satu playSrc
-  // agar tidak ada race re-render yang menimpa src + membatalkan play.
-  const playSrc = isLibraryPlaying && playingFile
-    ? `/music/stream?path=${encodeURIComponent(playingFile.path)}`
-    : '';
+  // P57: playSrc dihitung provider (satu-satunya <audio> ada di App root).
 
   // Metadata join: path → LibraryEntry (parity _metadata / _render_tracks).
   const metaFor = useCallback((path: string) => library.find((f) => f.path === path), [library]);
+  // P57: snapshot antrean (LibraryEntry) untuk player global — dipakai next/prev.
+  const queueFor = (paths: string[]): LibraryEntry[] =>
+    paths.map((p) => metaFor(p) || { path: p, name: baseName(p), title: baseName(p), size: 0 });
   const trackRows: TrackRow[] = activeTracks.map((path) => {
     const m = metaFor(path);
     const base = path.split(/[\\\\/]/).pop() || path;
@@ -192,7 +176,8 @@ export const MusicView: React.FC = () => {
   });
 
   // Track index (parity current_index) → selectRow setelact.
-  const currentIndex = playingFile ? activeTracks.indexOf(playingFile.path) : -1;
+  // P57: index dihitung dari antrean global (snapshot playlist saat main).
+  const currentIndex = playingFile ? music.queue.findIndex((e) => e.path === playingFile.path) : -1;
 
   // ── Data loading ───────────────────────────────────────────────────────────
   const refreshMusic = useCallback((selectId?: string | number | null) => {
@@ -202,6 +187,7 @@ export const MusicView: React.FC = () => {
         name: p.name,
         // parity: DB mengembalikan is_favorite (snake_case) → normalisasi.
         isFavorite: p.isFavorite ?? p.is_favorite,
+        icon: typeof p.icon === 'string' ? p.icon : '',
         tracks: Array.isArray(p.tracks) ? p.tracks : [],
       }));
       setPlaylists(pls);
@@ -227,13 +213,11 @@ export const MusicView: React.FC = () => {
 
   // ── Playback (parity _play_path / _play_pause / _next / _previous) ─────────
   const handlePlayLibraryFile = (entry: LibraryEntry) => {
-    setPlayingFile(entry);
-    setIsLibraryPlaying(true);
-    setIsPlaying(true);
-    setProgressMs(0);
-    setDurationMs(0);
-    studio.logMusic(entry.path, entry.title || entry.name, entry.artist || '').then(() => refreshMusic()).catch(() => {});
-    loadLyrics(entry.artist || '', entry.title || entry.name, entry.path || '');
+    // P57: antrean = snapshot daftar putar aktif saat mulai main, sehingga
+    // next/prev tetap benar walau user pindah halaman / ganti playlist.
+    music.playFile(entry, queueFor(activeTracks));
+    refreshMusic();
+    loadLyrics(entry);
     showToast('info', tr('music_now_playing'), entry.title || entry.name);
   };
 
@@ -243,33 +227,10 @@ export const MusicView: React.FC = () => {
     handlePlayLibraryFile(entry || { path, name: base, title: base, size: 0 });
   };
 
-  const localSequence = (): string[] => activeTracks;
-
-  const handleNextTrack = () => {
-    const list = localSequence();
-    if (!list.length) return;
-    let idx = activeTracks.indexOf(playingFile?.path || '');
-    if (idx < 0) idx = 0;
-    if (shuffle && list.length > 1) {
-      const choices = list.filter((_, i2) => i2 !== idx);
-      idx = list.indexOf(choices[Math.floor(Math.random() * choices.length)]);
-    } else {
-      idx = (idx + 1) % list.length;
-    }
-    playLibraryPath(list[idx]);
-  };
-  const handlePrevTrack = () => {
-    const a = audioRef.current;
-    if (a && a.currentTime > 3) { a.currentTime = 0; return; } // parity _previous pos>3dtk restart
-    const list = localSequence();
-    if (!list.length) return;
-    let idx = activeTracks.indexOf(playingFile?.path || '');
-    if (idx < 0) idx = 0;
-    idx = (idx - 1 + list.length) % list.length;
-    playLibraryPath(list[idx]);
-  };
-
-  const toggleTrackPlay = () => setIsPlaying((p) => !p);
+  // P57: next/prev/toggle didelegasikan ke player global (antrean di provider).
+  const handleNextTrack = () => music.next();
+  const handlePrevTrack = () => music.prev();
+  const toggleTrackPlay = () => music.togglePlay();
 
   // ── Playlist actions (parity _create/_rename/_delete + _add_paths) ─────────
   const createPlaylist = () => {
@@ -339,18 +300,24 @@ export const MusicView: React.FC = () => {
     fn(selectedPlaylistId, targetId, index).then(() => refreshMusic(selectedPlaylistId)).catch(() => {});
   };
 
-  // ── Lyrics (parity _load_lyrics) ──────────────────────────────────────────
-  const loadLyrics = useCallback((artist: string, title: string, path: string) => {
+  // ── Lyrics (P58: tersimpan dulu → web; kunci per track; durasi utk akurasi) ──
+  const loadLyrics = useCallback((entry: { path?: string; artist?: string; title?: string; name?: string; duration?: number } | null, refresh = false) => {
+    if (!entry) return;
+    const title = entry.title || entry.name || '';
     if (!title) return;
     setLyricsLoading(true);
-    setLyrics({ plain: '', synced: '' });
-    setLyricsSource('');
-    studio.musicLyrics(artist || '', title, path || '').then((res) => {
+    setLyrics({ plain: '', synced: '', source: '', saved: false, offsetMs: 0 });
+    studio.musicLyrics(entry.artist || '', title, entry.path || '', {
+      key: trackKeyFor(entry), duration: entry.duration || undefined, refresh,
+    }).then((res) => {
       const d = res?.lyrics || res?.result || res || {};
-      const plain = typeof d.plain === 'string' ? d.plain : (typeof d.lyrics === 'string' ? d.lyrics : '');
-      const synced = typeof d.synced === 'string' ? d.synced : '';
-      setLyrics({ plain, synced });
-      setLyricsSource(typeof d.source === 'string' ? d.source : '');
+      setLyrics({
+        plain: typeof d.plain === 'string' ? d.plain : '',
+        synced: typeof d.synced === 'string' ? d.synced : '',
+        source: typeof d.source === 'string' ? d.source : '',
+        saved: !!d.saved,
+        offsetMs: Number(d.offsetMs) || 0,
+      });
       setLyricsLoading(false);
     }).catch(() => setLyricsLoading(false));
   }, []);
@@ -358,49 +325,72 @@ export const MusicView: React.FC = () => {
   const toggleLyrics = () => {
     setLyricsOpen((o) => {
       const next = !o;
-      if (next && playingFile) loadLyrics(playingFile.artist || '', playingFile.title || playingFile.name, playingFile.path || '');
+      if (next && playingFile) loadLyrics(playingFile);
       return next;
     });
   };
 
-  // ── Audio element events (parity _connect_player) ─────────────────────────
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const onTime = () => {
-      if (!dragging) setProgressMs((audio.currentTime || 0) * 1000);
-      const ms = (audio.currentTime || 0) * 1000;
-      const lines = syncedLinesRef.current;
-      let idx = -1;
-      for (let i = 0; i < lines.length; i++) { if (lines[i].ms <= ms) idx = i; else break; }
-      setActiveLyricLine((p) => (p === idx ? p : idx));
-    };
-    const onDur = () => setDurationMs((audio.duration || 0) * 1000);
-    const onEnded = () => {
-      // parity _media_status_changed: repeat → ulangi; else auto-advance _next().
-      if (repeat) { audio.currentTime = 0; audio.play().catch(() => {}); return; }
-      handleNextTrack();
-    };
-    audio.addEventListener('timeupdate', onTime);
-    audio.addEventListener('durationchange', onDur);
-    audio.addEventListener('ended', onEnded);
-    return () => { audio.removeEventListener('timeupdate', onTime); audio.removeEventListener('durationchange', onDur); audio.removeEventListener('ended', onEnded); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repeat, dragging]);
-
-  // P16 fix: play/pause terpusat pada source yang SUDAH dikommit React.
-  useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
-    a.volume = (isMuted ? 0 : volume) / 100;
-    if (isPlaying && playSrc) { a.play().catch(() => {}); }
-    else if (!isPlaying) { a.pause(); }
-  }, [playSrc, isPlaying, volume, isMuted]);
-
-  const seekTo = (pct: number) => {
-    const a = audioRef.current;
-    if (a && a.duration) a.currentTime = (pct / 100) * a.duration;
+  // P58: simpan / hapus / offset — lirik tersimpan per track di server.
+  const saveLyrics = () => {
+    if (!playingFile || (!lyrics.plain && !lyrics.synced)) return;
+    studio.musicLyricsSave({
+      key: trackKeyFor(playingFile),
+      title: playingFile.title || playingFile.name || '',
+      artist: playingFile.artist || '',
+      source: lyrics.source === 'user' ? 'user' : (lyrics.source || 'web'),
+      plain: lyrics.plain, synced: lyrics.synced, offsetMs: lyrics.offsetMs,
+    }).then((res) => {
+      if (res?.result?.ok) { setLyrics((p) => ({ ...p, saved: true })); showToast('success', tr('music_lyrics_saved_ok'), ''); }
+    }).catch(() => {});
   };
+  const deleteSavedLyrics = () => {
+    if (!playingFile) return;
+    studio.musicLyricsDelete(trackKeyFor(playingFile)).then(() => {
+      setLyrics((p) => ({ ...p, saved: false, offsetMs: 0 }));
+    }).catch(() => {});
+  };
+  const shiftLyricsOffset = (deltaMs: number) => {
+    if (!playingFile) return;
+    const next = Math.max(-10000, Math.min(10000, lyrics.offsetMs + deltaMs));
+    setLyrics((p) => ({ ...p, offsetMs: next }));
+    // Offset per track harus TERSIMPAN → upsert lirik beserta offset barunya.
+    studio.musicLyricsSave({
+      key: trackKeyFor(playingFile),
+      title: playingFile.title || playingFile.name || '',
+      artist: playingFile.artist || '',
+      source: lyrics.source === 'user' ? 'user' : (lyrics.source || 'web'),
+      plain: lyrics.plain, synced: lyrics.synced, offsetMs: next,
+    }).then((res) => {
+      if (res?.result?.ok) setLyrics((p) => ({ ...p, saved: true }));
+    }).catch(() => {});
+  };
+  const handleImportLyricsFile = (f: File) => {
+    if (!playingFile) return;
+    const title = playingFile.title || playingFile.name || '';
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || '');
+      studio.musicLyricsImport({ key: trackKeyFor(playingFile), title, artist: playingFile.artist || '', content })
+        .then((res) => {
+          const d = res?.result || {};
+          if (d.ok && d.lyrics) {
+            setLyrics({ plain: d.lyrics.plain || '', synced: d.lyrics.synced || '', source: 'user', saved: true, offsetMs: 0 });
+            showToast('success', tr('music_lyrics_import_ok'), '');
+          } else showToast('info', tr('music_lyrics_import_invalid'), '');
+        }).catch(() => showToast('info', tr('music_lyrics_import_invalid'), ''));
+    };
+    reader.readAsText(f);
+  };
+
+  // P57: event audio kini ditangani MusicPlayerProvider. View hanya menurunkan
+  // garis lirik aktif dari progressMs global; P58: memakai OFFSET per track
+  // (lirik yang geser bisa dikoreksi ±0.5 dtk dari drawer).
+  useEffect(() => {
+    let idx = -1;
+    const matchMs = progressMs - lyrics.offsetMs;
+    for (let i = 0; i < syncedLines.length; i++) { if (syncedLines[i].ms <= matchMs) idx = i; else break; }
+    setActiveLyricLine((p) => (p === idx ? p : idx));
+  }, [progressMs, syncedLines, lyrics.offsetMs]);
 
   // Now playing display (parity _update_now_playing)
   const nowTitle = isLibraryPlaying ? (playingFile?.title || playingFile?.name || '') : tr('music_nothing_playing');
@@ -471,8 +461,7 @@ export const MusicView: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-[#121212] text-slate-100">
-      <audio ref={audioRef} src={playSrc} preload="auto" onEnded={() => {}} loop={false}
-        onError={() => console.error('[MusicView] audio error, src=', playSrc, 'isLibraryPlaying=', isLibraryPlaying, 'playingFile=', playingFile)} />
+      {/* P57: elemen <audio> kini milik MusicPlayerProvider di App root. */}
 
       {/* Header (parity _page_header("music") + actions) */}
       <div className="px-6 py-4 flex flex-wrap items-center gap-3 border-b border-slate-800/70">
@@ -487,6 +476,9 @@ export const MusicView: React.FC = () => {
           className="hidden" onChange={(e) => { if (e.target.files?.length) handleImport(e.target.files, false); e.target.value = ''; }} />
         <input ref={importFolderRef} type="file" multiple {...({ webkitdirectory: '', directory: '' } as any)}
           className="hidden" onChange={(e) => { if (e.target.files?.length) handleImport(e.target.files, true); e.target.value = ''; }} />
+        {/* P58: import lirik manual (.lrc bertimestamp / .txt polos) */}
+        <input ref={importLyricsRef} type="file" accept=".lrc,.txt,text/plain"
+          className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportLyricsFile(f); e.target.value = ''; }} />
         <button onClick={() => importFilesRef.current?.click()} disabled={importing || selectedPlaylistId === null}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold">
           <FolderInput className="w-4 h-4" />{tr('music_add_files')}
@@ -503,18 +495,22 @@ export const MusicView: React.FC = () => {
 
       <div className="flex flex-1 min-h-0">
         {/* ── Sidebar playlist rail (parity musicSidebar) ── */}
-        <div className="w-60 shrink-0 border-r border-slate-800/70 p-4 space-y-3 bg-[#090909]">
+        <div className="w-60 shrink-0 flex flex-col min-h-0 border-r border-slate-800/70 p-4 space-y-3 bg-[#090909]">
           <div className="text-emerald-400 text-xs font-black tracking-widest">CRAFTLIFE&nbsp;MUSIC</div>
           <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">{tr('music_your_library')}</div>
-          <div className="flex-1 space-y-1 overflow-y-auto max-h-64">
+          <div className="flex-1 min-h-0 space-y-1 overflow-y-auto">
             {playlists.length === 0 && <p className="text-[11px] text-slate-600">{tr('music_no_tracks_to_save')}</p>}
             {playlists.map((p) => {
               const count = p.tracks?.length || 0;
-              const icon = p.isFavorite ? '♥' : '♫';
+              const iconEl = p.icon && p.icon.startsWith('photo:') ? (
+                <img src={`/api/music/playlist-icon/image?id=${p.icon.slice(6)}`} alt="" className="w-4 h-4 rounded-full object-cover inline-block align-[-2px] shrink-0" />
+              ) : (
+                <span className="text-emerald-400">{p.isFavorite ? '♥' : (p.icon || '♫')}</span>
+              );
               return (
                 <button key={p.id} onClick={() => refreshMusic(p.id)} onDoubleClick={() => renamePlaylist(p)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs ${selectedPlaylistId === p.id ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:bg-slate-900 hover:text-white'} transition-colors`}>
-                  <span className="text-emerald-400">{icon}</span>{' '}
+                  {iconEl}{' '}
                   <span>{p.name}</span>
                   <span className="block text-[10px] text-slate-500">{tr('music_track_count', { count })}</span>
                 </button>
@@ -523,15 +519,16 @@ export const MusicView: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={createPlaylist} className="px-2 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-[11px] font-bold">{tr('music_new_playlist')}</button>
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-3 gap-1">
               <button onClick={() => activePlaylist && renamePlaylist(activePlaylist)} className="px-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px]">{tr('music_rename_playlist')}</button>
+              <button onClick={() => activePlaylist && setIconDlgFor(activePlaylist)} title={tr('music_playlist_icon_change')} className="px-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px]"><Palette className="w-3 h-3 mx-auto" /></button>
               <button onClick={() => activePlaylist && deletePlaylist(activePlaylist)} className="px-1 py-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-500 text-[11px]"><Trash2 className="w-3 h-3 mx-auto" /></button>
             </div>
           </div>
         </div>
 
         {/* ── Center: hero + search + track table ── */}
-        <div className="flex-1 min-w-0 flex flex-col p-5 space-y-4">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-y-auto p-5 pb-6 space-y-4">
           {/* Hero (parity musicHero) */}
           <div className="ct-reveal rounded-2xl p-5 flex items-center gap-5 bg-gradient-to-br from-emerald-800/50 to-slate-900 border border-emerald-900/30">
             <div className={`ct-art-disc w-24 h-24 sm:w-32 sm:h-32 flex items-center justify-center text-5xl shrink-0 ${isLibraryPlaying ? 'ct-spinning' : ''}`}>
@@ -542,6 +539,12 @@ export const MusicView: React.FC = () => {
               <div className="text-2xl font-black truncate">{nowTitle || tr('music_nothing_playing')}</div>
               <div className="text-sm text-slate-300 truncate">{nowArtist || tr('music_choose_track')}</div>
               {nowAlbum && <div className="text-[11px] text-slate-400 truncate">{nowAlbum}</div>}
+              {(shuffle || repeat) && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  {shuffle && <span title={tr('music_shuffle')} className="px-1.5 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">🔀 SHUFFLE</span>}
+                  {repeat && <span title={tr('music_repeat')} className="px-1.5 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-sky-500/20 text-sky-300 border border-sky-400/40">🔁 REPEAT</span>}
+                </div>
+              )}
             </div>
           </div>
 
@@ -556,7 +559,7 @@ export const MusicView: React.FC = () => {
           </div>
 
           {/* Track table (parity musicTracks) */}
-          <div className="flex-1 rounded-2xl border border-slate-800 bg-[#121212] overflow-y-auto">
+          <div className="rounded-2xl border border-slate-800 bg-[#121212]">
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-[#121212] text-slate-400 text-[10px] uppercase tracking-wider">
                 <tr>
@@ -601,35 +604,24 @@ export const MusicView: React.FC = () => {
           })()}
         </div>
 
-        {/* ── Lyrics drawer (parity musicLyricsPanel) ── */}
+        {/* ── Lyrics drawer (P58: refactor ke komponen + simpan/import/offset) ── */}
         {lyricsOpen && (
-          <div ref={lyricsScrollRef} className="w-80 shrink-0 border-l border-slate-800/70 p-5 bg-[#181818] overflow-y-auto">
-            <div className="text-white text-sm font-black mb-3">{tr('music_lyrics')}</div>
-            <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
-              {lyricsLoading ? (
-                <div className="space-y-2"><div className="ct-skeleton h-2.5 w-2/3 rounded" /><div className="ct-skeleton h-2.5 w-1/2 rounded" /><p className="text-slate-500">{tr('music_lyrics_searching')}</p></div>
-              ) : syncedLines.length ? (
-                <>
-                  <div className="text-[#1ed760] font-bold text-[11px] uppercase tracking-wide mb-2">{tr('music_lyrics_from_web')}</div>
-                  <div className="space-y-1.5">
-                    {syncedLines.map((ln, i) => (
-                      <p key={i} ref={(el) => { lyricLineRefs.current[i] = el; }}
-                        className={`transition-all duration-200 leading-snug ${i === activeLyricLine ? 'ct-lyric-active text-white font-bold text-[13px]' : 'text-slate-500'}`}>
-                        <span className="mr-1.5 font-mono text-[10px] text-slate-600 tabular-nums">{fmtTime(ln.ms)}</span>{ln.text}
-                      </p>
-                    ))}
-                  </div>
-                </>
-              ) : lyrics.plain ? (
-                <>
-                  <div className="text-[#1ed760] font-bold text-[11px] uppercase tracking-wide mb-2">{lyricsSource === 'embedded' ? tr('music_lyrics_from_file') : tr('music_lyrics_from_web')}</div>
-                  <span>{lyrics.plain}</span>
-                </>
-              ) : (
-                <span className="text-slate-500 italic">{tr('music_no_lyrics')}</span>
-              )}
-            </div>
-          </div>
+          <LyricsDrawer
+            loading={lyricsLoading}
+            plain={lyrics.plain}
+            syncedLines={syncedLines}
+            activeLine={activeLyricLine}
+            source={lyrics.source}
+            saved={lyrics.saved}
+            offsetMs={lyrics.offsetMs}
+            tr={tr}
+            onRefresh={() => loadLyrics(playingFile, true)}
+            onImportPick={() => importLyricsRef.current?.click()}
+            onSave={saveLyrics}
+            onDeleteSaved={deleteSavedLyrics}
+            onOffset={(d) => shiftLyricsOffset(d)}
+            onOffsetReset={() => shiftLyricsOffset(-lyrics.offsetMs)}
+          />
         )}
       </div>
 
@@ -637,11 +629,12 @@ export const MusicView: React.FC = () => {
       <div className="border-t border-slate-800/70 bg-[#181818] px-5 py-3">
         {/* Progress row */}
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-slate-400 font-mono shrink-0">{fmtTime(progressMs)}</span>
-          <input type="range" min={0} max={Math.max(1, durationMs)} value={progressMs}
-            onPointerDown={() => setDragging(true)}
-            onChange={(e) => setProgressMs(Number(e.target.value))}
-            onPointerUp={(e) => { setDragging(false); const a = audioRef.current; if (a && a.duration) a.currentTime = (Number((e.target as HTMLInputElement).value) / 1000); }}
+          <span className="text-[10px] text-slate-400 font-mono shrink-0">{fmtTime(dragging ? dragMs : progressMs)}</span>
+          <input type="range" min={0} max={Math.max(1, durationMs)} value={dragging ? dragMs : progressMs}
+            onPointerDown={() => { setDragging(true); setDragMs(progressMs); }}
+            onChange={(e) => setDragMs(Number(e.target.value))}
+            onPointerUp={(e) => { setDragging(false); music.seekMs(Number((e.target as HTMLInputElement).value)); }}
+            onPointerCancel={() => setDragging(false)}
             className="flex-1 accent-emerald-500 h-1.5 bg-slate-700 rounded-lg" />
           <span className="text-[10px] text-slate-400 font-mono shrink-0">{fmtTime(durationMs)}</span>
         </div>
@@ -650,28 +643,41 @@ export const MusicView: React.FC = () => {
           <div className="min-w-0 flex-1 truncate text-sm font-bold flex items-center gap-2">
             {isLibraryPlaying ? (playingFile?.title || playingFile?.name) : tr('music_nothing_playing')}
             <span className={`ct-eq ${isPlaying ? 'is-playing' : ''}`}><span></span><span></span><span></span></span>
+            {shuffle && <span title={tr('music_shuffle')} className="hidden sm:inline-flex shrink-0 items-center px-1.5 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">🔀 SHUFFLE</span>}
+            {repeat && <span title={tr('music_repeat')} className="hidden sm:inline-flex shrink-0 items-center px-1.5 py-0.5 rounded-full text-[9px] font-black tracking-wider bg-sky-500/20 text-sky-300 border border-sky-400/40">🔁 REPEAT</span>}
           </div>
-          <button onClick={() => setShuffle((s) => !s)} title={tr('music_shuffle')}
-            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full ${shuffle ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400'}`}><Shuffle className="w-4 h-4" /></button>
+          <button onClick={music.toggleShuffle} title={tr('music_shuffle')} aria-pressed={shuffle}
+            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full border ${shuffle ? 'text-emerald-300 bg-emerald-500/25 border-emerald-400/50' : 'text-slate-500 border-transparent hover:text-slate-300'}`}><Shuffle className="w-4 h-4" /></button>
           <button onClick={handlePrevTrack} title={tr('music_prev')} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><SkipBack className="w-5 h-5" /></button>
           <button onClick={toggleTrackPlay} className="ct-btn ct-btn-gold w-12 h-12 rounded-full justify-center">
             {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
           </button>
           <button onClick={handleNextTrack} title={tr('music_next')} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><SkipForward className="w-5 h-5" /></button>
-          <button onClick={() => setRepeat((r) => !r)} title={tr('music_repeat')}
-            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full ${repeat ? 'text-emerald-400 bg-emerald-500/15' : 'text-slate-400'}`}><Repeat className="w-4 h-4" /></button>
+          <button onClick={music.toggleRepeat} title={tr('music_repeat')} aria-pressed={repeat}
+            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full border ${repeat ? 'text-sky-300 bg-sky-500/25 border-sky-400/50' : 'text-slate-500 border-transparent hover:text-slate-300'}`}><Repeat className="w-4 h-4" /></button>
           <button onClick={toggleLyrics} className={`ct-tab ${lyricsOpen ? 'ct-tab-on' : ''}`}>
             <Sparkles className="w-3.5 h-3.5 inline mr-1" />{tr('music_lyrics')}
           </button>
           <div className="flex items-center gap-2">
-            <button onClick={() => setIsMuted((m) => !m)} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400">
+            <button onClick={music.toggleMute} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400">
               {isMuted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
-            <input type="range" min={0} max={100} value={isMuted ? 0 : volume} onChange={(e) => { setVolume(Number(e.target.value)); setIsMuted(false); }}
+            <input type="range" min={0} max={100} value={isMuted ? 0 : volume} onChange={(e) => music.setVolume(Number(e.target.value))}
               className="w-24 accent-emerald-500 h-1 bg-slate-700 rounded-lg" />
           </div>
         </div>
       </div>
+
+      {/* P59: dialog ganti icon playlist (emoji / foto) */}
+      {iconDlgFor && (
+        <PlaylistIconDialog
+          playlist={iconDlgFor}
+          tr={tr}
+          showToast={showToast}
+          onClose={() => setIconDlgFor(null)}
+          onSaved={() => { setIconDlgFor(null); refreshMusic(selectedPlaylistId); }}
+        />
+      )}
 
       {/* ── yt-dlp downloader modal (parity _open_downloader) ── */}
       {dlOpen && (

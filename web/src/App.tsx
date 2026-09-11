@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { GameProvider, useGame } from './context/GameContext';
+import { MusicPlayerProvider } from './music/MusicPlayerContext';
 import { OnboardingWizard } from './components/views/OnboardingWizard';
 import { ActiveView } from './types';
 import { Navbar } from './components/Navbar';
@@ -142,6 +143,7 @@ const MainLayout: React.FC = () => {
         onOpenSettings={() => setActiveView('settings')}
         onOpenAchievements={() => setActiveView('achievements')}
         onOpenPalette={() => setPaletteOpen(true)}
+        onOpenMusic={() => setActiveView('music')}
       />
 
       <div className="flex-1 flex min-h-0">
@@ -153,7 +155,7 @@ const MainLayout: React.FC = () => {
         />
 
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
-          <div key={activeView} className="ct-view">{renderActiveView()}</div>
+          <div key={activeView} className={`ct-view${activeView === 'music' ? ' h-full' : ''}`}>{renderActiveView()}</div>
         </main>
       </div>
 
@@ -240,7 +242,11 @@ const Gate: React.FC = () => {
 export default function App() {
   return (
     <GameProvider>
-      <HydrationGate />
+      {/* P57: music engine global — <audio> hidup di luar switch view,
+          sehingga musik tidak berhenti saat pindah halaman. */}
+      <MusicPlayerProvider>
+        <HydrationGate />
+      </MusicPlayerProvider>
     </GameProvider>
   );
 }

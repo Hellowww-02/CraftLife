@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { life } from '../../api/life';
+import { apiUploadFile } from '../../api/client';
+import { MATH_PALETTE } from '../../data/mathSymbols';
+import { NoteAttachments, attachmentUrl } from '../notes/NoteAttachments';
 import {
   Archive, ArchiveRestore, ChevronDown, ChevronRight, Copy, FolderPlus, FolderX,
-  Pencil, Plus, Save, Search, Send, Sigma, Smile, Trash2, Type, X,
+  Paperclip, Pencil, Plus, Save, Search, Send, Sigma, Smile, Trash2, Type, X,
 } from 'lucide-react';
 
 const trv = (key: string, vars: Record<string, string | number>, fb: string) =>
@@ -28,7 +31,7 @@ type FolderNode = { id: string; name: string; icon: string; parentId: string | n
 interface NotesViewProps {}
 export const NotesView: React.FC<NotesViewProps> = () => {
   const {
-    notes, noteFolders, notebooks,
+    notes, noteFolders, notebooks, noteAttachments, applyLive,
     addNote, updateNote, deleteNote, archiveNote, duplicateNoteItem, reorderNotes,
     addNoteFolder, deleteNoteFolder, updateNoteFolder, duplicateNoteFolder,
     addNotebookSource, lang, showToast,
@@ -52,6 +55,7 @@ export const NotesView: React.FC<NotesViewProps> = () => {
 
   // ── Modals / dropdowns ──
   const [showSymbols, setShowSymbols] = useState(false);
+  const [symbolTab, setSymbolTab] = useState<string>('sym');
   const [showLatexMenu, setShowLatexMenu] = useState(false);
   const [mathChunks, setMathChunks] = useState<{ raw: string; converted: string }[] | null>(null);
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
@@ -158,6 +162,63 @@ export const NotesView: React.FC<NotesViewProps> = () => {
   const handleDuplicateNote = () => {
     if (!activeNote) return;
     duplicateNoteItem(activeNote.id);
+  };
+
+  // ── P54: lampiran catatan (import tombol / drag-drop / paste) ──
+  const ATTACH_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.pdf', '.txt', '.md', '.csv'];
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const insertHtmlAtCursor = (html: string) => {
+    try { document.execCommand('insertHTML', false, html); } catch { /* abaikan */ }
+    setDirty(true);
+  };
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    if (!activeNote) {
+      showToast('damage', t('msg_error', 'Error'), t('notes_to_learning_no_note', 'Pilih catatan dulu.'));
+      return;
+    }
+    for (const f of Array.from(files)) {
+      const ext = '.' + String(f.name.split('.').pop() || '').toLowerCase();
+      if (!ATTACH_EXTS.includes(ext)) {
+        showToast('info', f.name, t('notes_attach_type_unsupported', 'Jenis file tidak didukung. Gunakan: png/jpg/webp/gif/pdf/txt/md/csv.'));
+        continue;
+      }
+      if (f.size > 5 * 1024 * 1024) {
+        showToast('info', f.name, t('notes_attach_too_large', 'Ukuran file maksimal 5 MB.'));
+        continue;
+      }
+      try {
+        setUploading(true);
+        const r: any = await apiUploadFile('note_attachment', f, { noteId: activeNote.id });
+        const att = r?.attachment || r?.result?.attachment;
+        if (!att) throw new Error(String(r?.error || 'upload_failed'));
+        const url = attachmentUrl(String(att.id));
+        const safeName = String(att.fileName || 'file').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        if (att.kind === 'image') {
+          insertHtmlAtCursor(`<img src="${url}" alt="${safeName}" style="max-width:100%;border-radius:8px;margin:4px 0" />`);
+        } else {
+          insertHtmlAtCursor(
+            `<a href="${url}" download="${safeName}" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:8px;background:#0f172a;border:1px solid #334155;color:#67e8f9;font-size:11px;font-weight:700;text-decoration:none">📎 ${safeName}</a>&nbsp;`,
+          );
+        }
+        applyLive(r); // refresh panel lampiran + daftar note
+      } catch (e: any) {
+        const m = String(e?.message || e);
+        if (m.includes('too_large')) showToast('info', f.name, t('notes_attach_too_large', 'Ukuran file maksimal 5 MB.'));
+        else if (m.includes('bad_type')) showToast('info', f.name, t('notes_attach_type_unsupported', 'Jenis file tidak didukung. Gunakan: png/jpg/webp/gif/pdf/txt/md/csv.'));
+        else showToast('info', f.name, m);
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  const deleteAttachment = (id: string) => {
+    life.noteAttachmentDelete(id)
+      .then((r) => applyLive(r))
+      .catch((e) => showToast('info', String(e?.message || e), ''));
   };
 
   // ── Folder ops (parity menu konteks tree) ──
@@ -341,6 +402,16 @@ export const NotesView: React.FC<NotesViewProps> = () => {
           <Copy className="w-3.5 h-3.5" /> {t('notes_duplicate_btn', 'Duplikat')}
         </button>
         <button
+          onClick={() => fileInputRef.current?.click()} disabled={!activeNote || uploading} title={t('notes_attach_file', '📎 Lampirkan File')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-40">
+          <Paperclip className="w-3.5 h-3.5" /> {t('notes_attach_file', '📎 Lampirkan File')}
+        </button>
+        <input
+          ref={fileInputRef} type="file" multiple className="hidden"
+          accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.md,.csv"
+          onChange={(e) => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ''; }}
+        />
+        <button
           onClick={() => (activeNote ? setLearnPicker(true) : showToast('damage', t('msg_error', 'Error'), t('notes_to_learning_no_note', 'Pilih catatan dulu.')))}
           title={t('notes_to_learning_title', 'Kirim ke Learning sebagai source')}
           className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1.5">
@@ -458,11 +529,32 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                   <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowSymbols((s) => !s); setShowLatexMenu(false); }}
                     className="ct-btn ct-btn-secondary ct-btn-sm text-sm text-slate-200 " title={t('notes_symbols', 'Simbol')}>Σ</button>
                   {showSymbols && (
-                    <div className="absolute top-full mt-1 left-0 z-30 w-64 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl grid grid-cols-6 gap-1">
-                      {SYMBOLS.map((s, i) => (
-                        <button key={`${s}_${i}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { insertTextFallback(s); setShowSymbols(false); }}
-                          className="text-base py-1 rounded-lg hover:bg-slate-700 text-slate-200">{s}</button>
-                      ))}
+                    <div className="absolute top-full mt-1 left-0 z-30 w-80 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl">
+                      {/* P55: palette kategori — Yunani/Operator/Panah/Relasi/Kalkulus/Huruf/Template */}
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setSymbolTab('sym')}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${symbolTab === 'sym' ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>
+                          {t('notes_symbols', 'Simbol')}
+                        </button>
+                        {MATH_PALETTE.map((c) => (
+                          <button key={c.id} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setSymbolTab(c.id)}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${symbolTab === c.id ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>
+                            {t(c.i18nKey, lang === 'id' ? c.fallbackId : c.fallbackEn)}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-8 gap-1 max-h-56 overflow-y-auto">
+                        {symbolTab === 'sym'
+                          ? SYMBOLS.map((s, i) => (
+                              <button key={`${s}_${i}`} onMouseDown={(e) => e.preventDefault()} onClick={() => { insertTextFallback(s); setShowSymbols(false); }}
+                                className="text-base py-1 rounded-lg hover:bg-slate-700 text-slate-200">{s}</button>
+                            ))
+                          : (MATH_PALETTE.find((c) => c.id === symbolTab)?.items || []).map((it, i) => (
+                              <button key={`${symbolTab}_${i}`} onMouseDown={(e) => e.preventDefault()} title={it.title || it.insert}
+                                onClick={() => { insertTextFallback(it.insert); setShowSymbols(false); }}
+                                className="text-sm py-1 px-1 rounded-lg hover:bg-slate-700 text-slate-200 truncate">{it.label}</button>
+                            ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -513,9 +605,24 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                 contentEditable
                 suppressContentEditableWarning
                 onInput={() => setDirty(true)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files); }}
+                onPaste={(e) => {
+                  // P54: clipboard berisi FILE/gambar → upload sebagai lampiran;
+                  // teks biasa tetap tempel teks (perilaku default).
+                  const files = e.clipboardData?.files;
+                  if (files && files.length) { e.preventDefault(); uploadFiles(files); }
+                }}
                 className="min-h-[340px] max-h-[60vh] overflow-y-auto bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-slate-100 focus:outline-none focus:border-cyan-500"
                 style={{ fontSize: `${(fontSize * zoom) / 100}px`, zoom: zoom / 100 }}
               />
+              <NoteAttachments
+                attachments={noteAttachments.filter((a) => String(a.noteId) === String(activeNote.id))}
+                onDelete={deleteAttachment}
+              />
+              <p className="text-[10px] text-slate-600">
+                {t('notes_attach_paste_hint', 'Tempel file/gambar langsung ke editor, atau seret ke sini.')}
+              </p>
               <p className="text-[10px] text-slate-600">
                 {activeNote.updatedAt ? `${t('notes_updated', 'Diubah')}: ${String(activeNote.updatedAt).replace('T', ' ').slice(0, 16)}` : ''}
                 {dirty ? ` · ${t('notes_unsaved', 'Belum disimpan')}` : ''}
