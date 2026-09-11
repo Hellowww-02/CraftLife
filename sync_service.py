@@ -420,6 +420,22 @@ class CloudSyncService:
                 db.mark_sync_job_failed(job["id"], str(exc), retry); failed += 1
         return {"done": done, "failed": failed, "conflicts": conflicts}
 
+    def pull_social_now(self, local_user_id: int) -> dict:
+        """P61: mirror ringan social/couple cloud → lokal TANPA maintenance/wallet.
+        Best-effort — dipanggil jalur Love Space (GET /api/love) supaya relasi couple
+        yang terjadi di device lain langsung terdeteksi, bukan hanya saat sync penuh."""
+        if not self._lock.acquire(blocking=False):
+            return {"ok": False, "code": "busy"}
+        try:
+            if not self.ensure_session(local_user_id):
+                return {"ok": False, "code": "auth_required"}
+            pulled = self._pull_social(local_user_id)
+            return {"ok": True, **(pulled if isinstance(pulled, dict) else {})}
+        except Exception as exc:
+            return {"ok": False, "code": "error", "error": str(exc)}
+        finally:
+            self._lock.release()
+
     def _pull_social(self, local_user_id: int) -> dict:
         client = self.cloud._require_auth()
         cloud_uid = self.cloud.current_cloud_user_id

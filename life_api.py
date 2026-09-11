@@ -271,6 +271,16 @@ def snapshot(uid: int) -> dict:
     except Exception:
         note_folders = []
     try:
+        # P54: metadata lampiran note (file fisik di craftlife_attachments/).
+        note_atts = [
+            {"id": str(r["id"]), "noteId": str(r["note_id"]), "fileName": r.get("file_name") or "",
+             "mime": r.get("mime") or "", "size": int(r.get("size") or 0),
+             "kind": r.get("kind") or "file", "createdAt": r.get("created_at")}
+            for r in db.get_note_attachments(uid)
+        ]
+    except Exception:
+        note_atts = []
+    try:
         rems = [map_reminder(r) for r in db.get_reminders(uid)]
     except Exception:
         rems = []
@@ -373,6 +383,7 @@ def snapshot(uid: int) -> dict:
         "debts": debts,
         "notes": notes,
         "noteFolders": note_folders,
+        "noteAttachments": note_atts,
         "reminders": rems,
         "healthLogs": health,
         "pomodoroSessions": pomos,
@@ -520,12 +531,37 @@ def _healthfood_history(uid: int) -> dict:
         height_cm = float(hgoals.get("height_cm") or 170)
     except Exception:
         height_cm = 170.0
+    # P52: seri tinggi dibangun dari health_logs ASLI (kolom height_cm) dengan
+    # carry-forward nilai terakhir diketahui. Dulu semua 7 hari memakai nilai goal
+    # statis → chart selalu flat meski user sudah input tinggi via BMI/daily.
+    window_start = (date.today() - timedelta(days=6)).isoformat()
+    height_by_date = {}
+    try:
+        for l in (db.get_health_logs(uid, days=90) or []):
+            hv = l.get("height_cm")
+            dkey = str(l.get("log_date") or "")
+            if hv is None or not dkey:
+                continue
+            try:
+                height_by_date[dkey] = round(float(hv), 1)
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        pass
+    # Seed carry-forward: log tinggi TERAKHIR sebelum jendela 7 hari.
+    last_h = None
+    for k in sorted(height_by_date):
+        if k < window_start:
+            last_h = height_by_date[k]
     for i in range(7):
         d = (date.today() - timedelta(days=6 - i)).isoformat()
         l = by_date.get(d)
         w = float(l.get("weight_kg") or 0) if l and l.get("weight_kg") is not None else 0.0
         weight_series.append({"label": d[5:], "value": w})
-        height_series.append({"label": d[5:], "value": height_cm})
+        if d in height_by_date:
+            last_h = height_by_date[d]
+        # Prioritas: log hari itu → carry-forward terakhir diketahui → goal (belum pernah log).
+        height_series.append({"label": d[5:], "value": last_h if last_h is not None else height_cm})
     # Tips (parity _update_tips): dinamis berdasar net kalori hari ini + 1 statis acak
     try:
         today = _today()
@@ -548,6 +584,7 @@ def _healthfood_history(uid: int) -> dict:
         "avg7": avg,
         "weightSeries": weight_series,
         "heightSeries": height_series,
+        "heightHasData": bool(height_by_date),
         "tips": {"dynamic": dynamic, "static": f"health_tip_static_{static_idx}", "netCal": net_cal},
     }
 
@@ -854,7 +891,8 @@ def handle_get(path: str, uid: int, qs=None):
         return {"ok": True, "debts": snapshot(uid)["debts"]}
     if path == "/api/notes":
         s = snapshot(uid)
-        return {"ok": True, "notes": s["notes"], "noteFolders": s["noteFolders"]}
+        # P54: sertakan metadata lampiran agar UI Notes tetap segar.
+        return {"ok": True, "notes": s["notes"], "noteFolders": s["noteFolders"], "noteAttachments": s.get("noteAttachments", [])}
     if path == "/api/reminders":
         return {"ok": True, "reminders": snapshot(uid)["reminders"]}
     if path == "/api/health":
@@ -1611,6 +1649,7 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             steps=steps, sleep_hours=sleep, water_ml=water_total,
             weight_kg=weight, resting_hr=resting_hr,
             stress_level=stress, mood=mood, notes=notes, net_calories=net_cal,
+            height_cm=height,  # P52: simpan tinggi per-hari untuk tren 7 hari
         )
         # Parity: sinkronkan height/weight ke user_health_goals.
         try:

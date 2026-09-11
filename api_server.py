@@ -151,6 +151,7 @@ WEB_I18N_KEYS = [
     "profile_redeem", "profile_redeem_placeholder", "profile_redeem_btn",
     "profile_redeem_desc", "redeem_code_empty", "redeem_admin_password_title",
     "redeem_admin_password_prompt", "redeem_admin_password_wrong",
+    "redeem_admin_password_required",
     "profile_lock_account", "profile_account_locked", "profile_lock_confirm",
     "profile_unlock_account", "profile_unlock_confirm",
     "food_today", "food_cal_stat", "food_protein_stat", "food_carbs_stat", "food_fat_stat", "food_set_goals_btn",
@@ -172,7 +173,7 @@ WEB_I18N_KEYS = [
     "health_stress_normal", "health_stress_high", "health_mood_label", "health_mood_happy", "health_mood_normal", "health_mood_tired",
     "health_mood_sad", "health_notes_group", "health_notes_placeholder", "health_save", "health_data_saved", "saved_title",
     "health_avg_7days", "health_avg_7days_suffix", "health_avg_steps", "health_avg_sleep", "health_avg_water", "health_avg_hr",
-    "health_unit_hour", "health_unit_ml", "health_unit_bpm", "health_weight_trend", "health_height_trend", "health_chart_weight",
+    "health_unit_hour", "health_unit_ml", "health_unit_bpm", "health_weight_trend", "health_height_trend", "health_height_week_delta", "health_chart_weight",
     "health_chart_height", "health_tips", "health_tip_calorie_deficit", "health_tip_calorie_surplus", "health_tip_calorie_normal", "health_tip_static_1",
     "health_tip_static_2", "health_tip_static_3", "health_tip_static_4", "health_tip_static_5", "health_tip_static_6", "health_tip_static_7",
     "food_add_custom", "food_log", "food_recipes", "food_export", "food_export_format_title", "economy_export_label",
@@ -554,6 +555,67 @@ WEB_I18N_KEYS = [
     "notes_duplicate_title",
     "notes_duplicate_choose_folder",
     "notes_duplicate_btn",
+    "notes_attach_file",
+    "notes_attach_paste_hint",
+    "notes_attach_delete_confirm",
+    "notes_attach_too_large",
+    "notes_attach_type_unsupported",
+    "notes_attach_open",
+    "notes_attach_download",
+    "notes_math_palette_greek",
+    "notes_math_palette_operators",
+    "notes_math_palette_arrows",
+    "notes_math_palette_relations",
+    "notes_math_palette_calculus",
+    "notes_math_palette_letters",
+    "notes_math_palette_templates",
+    "folder_edit_title",
+    "folder_edit_icon",
+    "folder_icon_picker_title",
+    "folder_icon_reset",
+    "essay_answer_ph",
+    "quiz_model_answer",
+    "quiz_score",
+    "panel_resize_hint",
+    "panel_slider_aria",
+    "music_miniplayer_now_playing",
+    "music_miniplayer_open",
+    "music_lyrics_saved_badge",
+    "music_lyrics_save",
+    "music_lyrics_saved_ok",
+    "music_lyrics_delete_saved",
+    "music_lyrics_import",
+    "music_lyrics_import_ok",
+    "music_lyrics_import_invalid",
+    "music_lyrics_offset",
+    "music_lyrics_offset_reset",
+    "music_lyrics_match_duration",
+    "music_playlist_icon_change",
+    "music_playlist_icon_emoji",
+    "music_playlist_icon_photo",
+    "music_playlist_icon_reset",
+    "music_playlist_icon_too_large",
+    "music_playlist_icon_ok",
+    "music_playlist_icon_hint",
+    "love_couple_status_active",
+    "love_couple_status_pending",
+    "love_couple_status_none",
+    "love_couple_partner_card",
+    "settings_maintenance_title",
+    "settings_db_size",
+    "settings_cleanup_now",
+    "settings_cleanup_confirm",
+    "settings_cleanup_done",
+    "settings_cleanup_retention",
+    "settings_cleanup_retention_1d",
+    "settings_cleanup_retention_7d",
+    "settings_cleanup_retention_30d",
+    "settings_cleanup_retention_90d",
+    "settings_cleanup_retention_off",
+    "settings_cleanup_auto",
+    "settings_cleanup_estimate",
+    "settings_cleanup_last",
+    "settings_cleanup_warning",
     "notes_duplicate_tooltip",
     "notes_select_note_first",
     "notes_edit_icon_title",
@@ -1109,6 +1171,13 @@ WEB_I18N_KEYS = [
 def configure(user_id: int, token: str | None = None) -> None:
     _state["user_id"] = int(user_id)
     _state["token"] = token
+    # P62: auto-purge history tracker di background bila sudah due (best-effort,
+    # tidak memblokir login; backup otomatis dibuat di dalam purge).
+    try:
+        import threading as _th
+        _th.Thread(target=db.maybe_auto_purge, args=(int(user_id),), daemon=True).start()
+    except Exception:
+        pass
 
 
 def _json_bytes(obj) -> bytes:
@@ -1763,8 +1832,21 @@ def _guild_id(uid: int):
 
 
 _UPLOAD_IMAGE_MAX = 8 * 1024 * 1024
+# P54: lampiran note — maks 5 MB/file, whitelist ekstensi (keputusan user 2026-09-08).
+_NOTE_ATTACH_MAX = 5 * 1024 * 1024
+_NOTE_ATTACH_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".txt", ".md", ".csv")
 _UPLOAD_AUDIO_MAX = 25 * 1024 * 1024
 
+
+def _note_attachments_dir(uid: int) -> str:
+    """Folder lampiran note P54: <data_root>/craftlife_attachments/<user_id>/."""
+    try:
+        root = db.get_data_root()  # type: ignore[attr-defined]
+    except Exception:
+        root = os.path.dirname(os.path.abspath(db.DB_PATH)) if getattr(db, "DB_PATH", "") else os.getcwd()
+    d = os.path.join(root, "craftlife_attachments", str(uid))
+    os.makedirs(d, exist_ok=True)
+    return d
 
 def _learning_sources_dir() -> str:
     """Folder penyimpanan file sumber Learning (parity path PyQt di data root)."""
@@ -1879,6 +1961,35 @@ def _handle_upload_file(uid: int, body: dict) -> dict:
             f.write(raw)
         return {"ok": True, "path": dest, "name": os.path.basename(dest)}
 
+    if target == "playlist_icon":
+        # P59: icon playlist dari foto komputer — resize ≤512px (JPEG q88),
+        # simpan ke <data_root>/playlist_icons/<uid>/, playlists.icon='photo:<id>'.
+        if len(raw) > _UPLOAD_IMAGE_MAX:
+            return {"ok": False, "error": "file_too_large", "msg": "music_playlist_icon_too_large"}
+        try:
+            pid = int(body.get("playlistId") or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        if not pid:
+            return {"ok": False, "error": "playlist_required", "msg": "playlist_required"}
+        prepared = _prepare_upload_image(raw, 512)
+        if not prepared:
+            return {"ok": False, "error": "bad_type", "msg": "web_upload_bad_type"}
+        blob, mime, _w, _h = prepared
+        try:
+            root = db.get_data_root()  # type: ignore[attr-defined]
+        except Exception:
+            root = os.path.dirname(os.path.abspath(db.DB_PATH)) if getattr(db, "DB_PATH", "") else os.getcwd()
+        idir = os.path.join(root, "playlist_icons", str(uid))
+        os.makedirs(idir, exist_ok=True)
+        dest = os.path.join(idir, f"{uuid.uuid4().hex[:8]}.jpg")
+        with open(dest, "wb") as f:
+            f.write(blob)
+        icon_id = db.add_playlist_icon(uid, pid, dest, mime)
+        if not icon_id:
+            return {"ok": False, "error": "playlist_not_found", "msg": "db_playlist_not_found"}
+        return {"ok": True, "icon": f"photo:{icon_id}"}
+
     if target == "learning_source":
         # Parity LovePage._add_source_files: .txt/.md/.pdf/.docx, word-count >=
         # LEARNING_MIN_SOURCE_WORDS divalidasi di studio_api.add_learning_source.
@@ -1894,6 +2005,40 @@ def _handle_upload_file(uid: int, body: dict) -> dict:
         with open(dest, "wb") as f:
             f.write(raw)
         return {"ok": True, "path": dest, "name": os.path.basename(dest)}
+
+    if target == "note_attachment":
+        # P54: lampiran catatan. File disimpan ke craftlife_attachments/<uid>/,
+        # metadata ke tabel note_attachments. Konten note memakai URL file langsung.
+        if len(raw) > _NOTE_ATTACH_MAX:
+            return {"ok": False, "error": "file_too_large", "msg": "notes_attach_too_large"}
+        name = _safe_upload_name(body.get("name") or "", ".txt")
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in _NOTE_ATTACH_EXTS:
+            return {"ok": False, "error": "bad_type", "msg": "notes_attach_type_unsupported"}
+        try:
+            note_id = int(body.get("noteId") or 0)
+        except (TypeError, ValueError):
+            note_id = 0
+        conn = db.get_conn()
+        row = conn.execute("SELECT id FROM notes WHERE id=? AND user_id=?", (note_id, uid)).fetchone()
+        conn.close()
+        if not note_id or not row:
+            return {"ok": False, "error": "bad_note", "msg": "notes_to_learning_no_note"}
+        kind = "image" if ext in (".png", ".jpg", ".jpeg", ".webp", ".gif") else "file"
+        mime = (body.get("mime") or "").split(";")[0].strip() or "application/octet-stream"
+        adir = _note_attachments_dir(uid)
+        dest = os.path.join(adir, f"{uuid.uuid4().hex[:8]}_{name}")
+        with open(dest, "wb") as f:
+            f.write(raw)
+        result = db.add_note_attachment(uid, note_id, name, mime, len(raw), kind, dest)
+        if not result.get("ok"):
+            try:
+                os.remove(dest)
+            except Exception:
+                pass
+            return {"ok": False, "error": "attach_fail", "msg": "web_upload_bad_type"}
+        att = result.get("attachment") or {}
+        return {"ok": True, "attachment": att}
 
     return {"ok": False, "error": "unknown_target", "msg": "web_upload_bad_type"}
 
@@ -2113,6 +2258,33 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(blob)
             return
 
+        if path == "/api/music/playlist-icon/image":
+            # P59: serve icon playlist (owner-only; file di playlist_icons/<uid>/).
+            try:
+                icon_id = int((qs.get("id") or ["0"])[0])
+            except (TypeError, ValueError):
+                icon_id = 0
+            row = None
+            if icon_id:
+                try:
+                    row = db.get_playlist_icon(uid, icon_id)
+                except Exception:
+                    row = None
+            if not row or not row.get("storage_path") or not os.path.isfile(row["storage_path"]):
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            with open(row["storage_path"], "rb") as f:
+                blob = f.read()
+            mime = (row.get("mime") or "image/jpeg").split(";")[0].strip()
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(blob)))
+            self.send_header("Cache-Control", "private, max-age=300")
+            self.end_headers()
+            self.wfile.write(blob)
+            return
+
         if path == "/api/profile/photo":
             try:
                 ph = db.get_profile_photo(uid)
@@ -2130,6 +2302,34 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "private, max-age=300")
             self.end_headers()
             self.wfile.write(blob)
+            return
+
+        # P54 — serve file lampiran note (owner only).
+        if path == "/api/notes/attachment/file":
+            try:
+                att_id = int(parse_qs(urlparse(self.path).query).get("id", ["0"])[0])
+            except (TypeError, ValueError):
+                att_id = 0
+            att = db.get_note_attachment(uid, att_id) if att_id else None
+            if not att:
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            try:
+                with open(att["storage_path"], "rb") as f:
+                    raw = f.read()
+            except Exception:
+                self._send(404, {"ok": False, "error": "file_missing"})
+                return
+            fname = (att.get("file_name") or "attachment").split("/")[-1]
+            mime = (att.get("mime") or "application/octet-stream").split(";")[0].strip()
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Content-Disposition", f'inline; filename="{fname}"')
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.end_headers()
+            self.wfile.write(raw)
             return
 
         # P44 — download attachment chat (parity ChatDialog._download_selected_attachment).
@@ -2355,6 +2555,12 @@ class Handler(BaseHTTPRequestHandler):
                 is_admin_code = (code == "ADMINADMINADMIN")
             if is_admin_code:
                 pwd = body.get("password") or ""
+                if not pwd:
+                    # P47: server yang meminta password untuk kode bertipe admin APA PUN
+                    # (frontend tidak lagi meng-hardcode nama kode admin, jadi kode
+                    # admin kustom yang ditambah via add_redeem_code juga terlindungi).
+                    self._send(400, {"ok": False, "error": "admin_redeem_password_required"})
+                    return
                 u = db.get_user(uid) or {}
                 try:
                     valid = db._verify_password(pwd, u.get("password_hash", ""))
@@ -2440,6 +2646,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"ok": False, "error": str(e)})
                 return
             self._send(200, _ok_payload(uid, {"ok": True}))
+            return
+        if path == "/api/notes/attachment/delete":
+            if not _auth_ok(self):
+                self._send(401, {"ok": False, "error": "unauthorized"})
+                return
+            uid = _state.get("user_id")
+            try:
+                att_id = int(body.get("id") or 0)
+            except (TypeError, ValueError):
+                att_id = 0
+            att = db.get_note_attachment(uid, att_id) if att_id else None
+            if not att:
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            try:
+                os.remove(att["storage_path"])
+            except Exception:
+                pass
+            result = db.delete_note_attachment(uid, att_id)
+            self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True}))
             return
         if path == "/api/upload/file":
             if not _auth_ok(self):

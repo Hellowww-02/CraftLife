@@ -286,6 +286,24 @@ def _love_map(uid: int) -> dict:
         data["coupleActive"] = bool((db.get_couple_context(uid) or {}).get("active"))
     except Exception:
         data["coupleActive"] = False
+    # P61: akun pasangan couple (untuk kartu partner Love Space) + jumlah
+    # permintaan couple pending (badge "menunggu konfirmasi").
+    try:
+        cc = db.get_couple_context(uid) or {}
+        partner_u = cc.get("partner") or {}
+        data["couplePartner"] = {
+            "displayName": partner_u.get("display_name") or partner_u.get("username") or "",
+            "username": partner_u.get("username") or "",
+            "avatarEmoji": partner_u.get("avatar_emoji") or "",
+            "avatarColor": partner_u.get("avatar_color") or "",
+            "level": int(partner_u.get("level") or 0),
+        } if cc.get("active") else None
+    except Exception:
+        data["couplePartner"] = None
+    try:
+        data["couplePending"] = len(db.get_pending_couple_requests(uid) or [])
+    except Exception:
+        data["couplePending"] = 0
     # Parity LovePage.load(): status shared (linked username) + realtime cloud
     # + profil kesehatan tersinkron (gender/usia dari BMI settings).
     try:
@@ -328,6 +346,70 @@ def _love_map(uid: int) -> dict:
     except Exception:
         data["cyclePrediction"] = None
     return data
+
+
+def _refresh_couple_mirror(uid: int) -> None:
+    """P61: best-effort mirror couple cloud → lokal sebelum membaca Love Space.
+    Aman offline / tanpa cloud (diam)."""
+    try:
+        if db.get_cloud_user_link(uid):
+            from sync_service import get_sync_service
+            get_sync_service().pull_social_now(uid)
+    except Exception:
+        pass
+
+
+def _couple_cloud_push(uid: int, action: str, friend_id=None, rel_id=None, accept=None):
+    """P61: best-effort naikkan aksi couple web → cloud RPC (bila session cloud
+    aktif & pasangan cloud-linked). Gagal = diam — relasi lokal tetap sah;
+    desktop dapat menyusul via sync queue couple_end."""
+    try:
+        if not db.get_cloud_user_link(uid):
+            return None
+        from sync_service import get_sync_service
+        svc = get_sync_service()
+        if not svc.ensure_session(uid):
+            return None
+        cloud = svc.cloud
+        if action == "request" and friend_id:
+            target = (db.get_user(friend_id) or {}).get("cloud_user_id")
+            if not target:
+                return None
+            rel = cloud.rpc("send_couple_request", {"target_user_id": target})
+            if isinstance(rel, list):
+                rel = rel[0] if rel else None
+            if isinstance(rel, dict) and rel.get("id"):
+                db.attach_cloud_id_to_couple(uid, friend_id, str(rel["id"]))
+                return str(rel["id"])
+        elif action == "respond" and rel_id:
+            rel = db.get_couple_relationship_record(rel_id, uid) or {}
+            if not rel.get("cloud_id"):
+                return None
+            cloud.rpc("respond_couple_request", {"relationship_id": rel["cloud_id"], "accept_request": bool(accept)})
+            return rel["cloud_id"]
+        elif action == "cancel" and rel_id:
+            rel = db.get_couple_relationship_record(rel_id, uid) or {}
+            if not rel.get("cloud_id"):
+                return None
+            cloud.rpc("cancel_couple_request", {"relationship_id": rel["cloud_id"]})
+            return rel["cloud_id"]
+        elif action == "end" and rel_id:
+            rel = db.get_couple_relationship_record(rel_id, uid) or {}
+            if not rel.get("cloud_id"):
+                return None
+            try:
+                cloud.rpc("end_couple_relationship", {"relationship_id": rel["cloud_id"]})
+            except Exception as exc:
+                low = str(exc).lower()
+                if not any(c in low for c in ("invalid_relationship", "p0001", "not found", "does not exist")):
+                    try:
+                        db.enqueue_sync(uid, "couple_end", rel.get("id") or 0, "end", {"cloud_id": rel["cloud_id"]})
+                    except Exception:
+                        pass
+            return rel["cloud_id"]
+    except Exception:
+        return None
+    return None
 
 
 def _couple_tracking_map(uid: int) -> dict:
@@ -427,10 +509,9 @@ def _couple_tracking_map(uid: int) -> dict:
                 rs = [r for r in (db.get_reminders(uid2) or []) if r.get("is_active")]
                 return [f"⏰ {r.get('title')} · {str(r.get('reminder_datetime') or '')[:16]}" for r in rs[:8]] or [db.tr_db(lang=lang, key="ct_none")]
             if key == "ct_tab_achievements":
-                try:
-                    lang = (db.get_user(uid2) or {}).get("language") or "id"
-                except Exception:
-                    lang = "id"
+                # P61 fix: JANGAN re-assign `lang` di dalam closure — itu membuat
+                # `lang` lokal di seluruh _lines sehingga cabang lain crash
+                # UnboundLocalError (akar couple tracking 500 / item #9).
                 ua = db.get_user_achievements(uid2) or []
                 unlocked = [a for a in ua if a.get("unlocked_at")]
                 out = []
@@ -529,6 +610,7 @@ def _guild_map(uid: int) -> dict:
                 "level": int(m.get("level") or 1),
                 "role": "leader" if str(m.get("id")) == str(g.get("leader_id")) else "member",
                 "avatarEmoji": m.get("avatar_emoji") or "⚔️",
+                "avatarColor": m.get("avatar_color") or "",
                 "hp": int(m.get("hp") or 0),
                 "maxHp": int(m.get("max_hp") or 1),
             }
@@ -582,6 +664,7 @@ def _friends_map(uid: int) -> list:
                 "displayName": f.get("display_name") or f.get("username") or "",
                 "username": f.get("username") or "",
                 "avatarEmoji": f.get("avatar_emoji") or "⚔️",
+                "avatarColor": f.get("avatar_color") or "",
                 "level": int(f.get("level") or 1),
                 "coupleStatus": status if status in ("accepted", "pending") else "friend",
                 "presence": presence or "offline",
@@ -924,9 +1007,22 @@ def handle_get(path: str, uid: int, qs=None):
         s = snapshot(uid)
         return {"ok": True, "playlists": s["playlists"], "history": s["musicHistory"]}
     if path == "/api/love":
+        # P61: segarkan mirror couple cloud → lokal supaya relasi couple yang
+        # terjadi di device lain langsung terdeteksi (best-effort, aman offline).
+        _refresh_couple_mirror(uid)
         return {"ok": True, "loveSpace": snapshot(uid)["loveSpace"]}
     if path == "/api/love/couple-tracking":
+        _refresh_couple_mirror(uid)
         return _couple_tracking_map(uid)
+    if path == "/api/settings/cleanup":
+        # P62: status pembersihan DB (ukuran, retensi, estimasi dry-run).
+        st = db.get_maintenance_state(uid)
+        rd = int(st.get("retention_days") or 0)
+        if rd > 0:
+            est = db.estimate_tracker_purge(uid, rd)
+        else:
+            est = {"cutoff": "", "tables": {}, "total_rows": 0, "db_size_bytes": db.db_file_size_bytes()}
+        return {"ok": True, "cleanup": {**st, **est}}
     if re.match(r"^/api/friends/[^/]+/chat$", path):
         # Parity ChatDialog._load_messages (hybrid cloud/local).
         fid = path.split("/")[3]
@@ -967,6 +1063,7 @@ def handle_get(path: str, uid: int, qs=None):
                 "username": u.get("username") or "",
                 "bio": u.get("bio") or "",
                 "avatarEmoji": u.get("avatar_emoji") or "⚔️",
+                "avatarColor": u.get("avatar_color") or "",
                 "level": d.get("level"),
                 "xp": d.get("xp"),
                 "xpNeeded": d.get("xp_needed"),
@@ -1084,11 +1181,31 @@ def handle_get(path: str, uid: int, qs=None):
         except Exception as e:
             return {"ok": False, "error": str(e)}
     if path == "/api/music/lyrics":
-        return {"ok": True, "lyrics": get_lyrics(
-            (qs.get("artist") or [""])[0].strip(),
-            (qs.get("title") or [""])[0].strip(),
-            (qs.get("path") or [""])[0].strip(),
-        )}
+        # P58: (1) cek lirik TERSIMPAN dulu (source apapun) — kecuali refresh=1;
+        # (2) cari web dengan DURASI lagu agar tidak salah versi (live/remix).
+        qs = qs or {}
+        key = (qs.get("key") or [""])[0].strip()
+        artist = (qs.get("artist") or [""])[0].strip()
+        title = (qs.get("title") or [""])[0].strip()
+        fpath = (qs.get("path") or [""])[0].strip()
+        refresh = (qs.get("refresh") or [""])[0] == "1"
+        try:
+            dur = float((qs.get("duration") or ["0"])[0]) or None
+        except (TypeError, ValueError):
+            dur = None
+        if key and not refresh:
+            try:
+                row = db.get_song_lyrics(uid, key)
+            except Exception:
+                row = None
+            if row and (row.get("plain") or row.get("synced")):
+                return {"ok": True, "lyrics": {
+                    "plain": row.get("plain") or "", "synced": row.get("synced") or "",
+                    "source": row.get("source") or "saved", "saved": True,
+                    "offsetMs": int(row.get("offset_ms") or 0)}}
+        ly = get_lyrics(artist, title, fpath, dur)
+        ly.update({"saved": False, "offsetMs": 0})
+        return {"ok": True, "lyrics": ly}
     return None
 
 
@@ -1154,11 +1271,55 @@ def _read_embedded_lyrics(file_path: str) -> str:
     return ""
 
 
-def get_lyrics(artist: str, title: str, file_path: str = "") -> dict:
-    """Cari lirik online CEPAT & LUAS: LRCLIB get + LRCLIB search (beberapa varian
-    query) + lyrics.ovh, paralel — meniru _LyricsFetcher PyQt namun dengan
-    fallback query makin longgar (artis+judul → judul saja → artis saja).
-    Fallback terakhir: lirik tertanam file audio. Return {plain, synced, source}."""
+def _norm_lyrics_text(s: str) -> str:
+    """Normalisasi ringan utk pencocokan nama (lower, & → and, buang non-alfanumerik)."""
+    import re as _re
+    s = (s or "").lower().replace("&", " and ")
+    return _re.sub(r"[^a-z0-9]+", " ", s).strip()
+
+
+def _score_lyrics_candidate(cand: dict, artist: str, title: str, duration=None) -> float:
+    """P58: skor kandidat lirik — kecocokan judul+artis, kedekatan DURASI (≤3 dtk
+    = versi studio yang sama, bukan live/remix), bonus bila synced (live per detik)."""
+    score = 0.0
+    ca = _norm_lyrics_text(cand.get("artist") or "")
+    ct = _norm_lyrics_text(cand.get("title") or "")
+    ta = _norm_lyrics_text(artist)
+    tt = _norm_lyrics_text(title)
+    if tt and ct and (tt in ct or ct in tt):
+        score += 2.0
+    if ta and ca and (ta in ca or ca in ta):
+        score += 2.0
+    if cand.get("synced"):
+        score += 1.5
+    try:
+        dur = float(duration) if duration else None
+    except (TypeError, ValueError):
+        dur = None
+    if dur:
+        try:
+            cd = float(cand["duration"]) if cand.get("duration") is not None else None
+        except (TypeError, ValueError):
+            cd = None
+        if cd:
+            diff = abs(cd - dur)
+            if diff <= 3:
+                score += 3.0
+            elif diff <= 8:
+                score += 0.5
+            else:
+                score -= min(2.0, (diff - 8) / 30.0)
+    return score
+
+
+def get_lyrics(artist: str, title: str, file_path: str = "", duration=None) -> dict:
+    """Cari lirik online CEPAT, LUAS, dan P58: AKURAT.
+
+    Kandidat dikumpulkan paralel dari LRCLIB get (+param durasi) & search (varian
+    query) + lyrics.ovh, lalu dipilih skor terbaik: kecocokan judul+artis,
+    kedekatan durasi lagu (menghindari versi live/remix yang salah), synced
+    diprioritaskan (live per detik). Fallback terakhir: lirik tertanam file.
+    Return {plain, synced, source}."""
     import concurrent.futures as _cf
     import os
     import requests
@@ -1173,26 +1334,44 @@ def get_lyrics(artist: str, title: str, file_path: str = "") -> dict:
         user_agent = {"User-Agent": "CraftLifeDesktop/1.0"}
 
         def lrclib_get():
+            params = {"artist_name": artist, "track_name": title}
+            try:
+                if duration:
+                    params["duration"] = int(float(duration))
+            except (TypeError, ValueError):
+                pass
             r = requests.get("https://lrclib.net/api/get",
-                             params={"artist_name": artist, "track_name": title},
+                             params=params,
                              headers=user_agent, timeout=5)
             d = r.json() if r.ok else {}
-            return (d.get("plainLyrics") or "", d.get("syncedLyrics") or "")
+            if d.get("syncedLyrics") or d.get("plainLyrics"):
+                return [{"plain": d.get("plainLyrics") or "", "synced": d.get("syncedLyrics") or "",
+                         "artist": d.get("artistName") or "", "title": d.get("trackName") or "",
+                         "duration": d.get("duration")}]
+            return []
 
         def lrclib_search(q):
             r = requests.get("https://lrclib.net/api/search",
                              params={"q": q},
                              headers=user_agent, timeout=5)
+            out = []
             for it in (r.json() if r.ok else []) or []:
                 if it.get("syncedLyrics") or it.get("plainLyrics"):
-                    return (it.get("plainLyrics") or "", it.get("syncedLyrics") or "")
-            return ("", "")
+                    out.append({"plain": it.get("plainLyrics") or "", "synced": it.get("syncedLyrics") or "",
+                                "artist": it.get("artistName") or "", "title": it.get("trackName") or "",
+                                "duration": it.get("duration")})
+                    if len(out) >= 12:
+                        break
+            return out
 
         def ovh():
             if not (artist and title):
-                return ("", "")
+                return []
             r = requests.get(f"https://api.lyrics.ovh/v1/{quote(artist)}/{quote(title)}", timeout=5)
-            return (((r.json() or {}).get("lyrics") or ""), "") if r.ok else ("", "")
+            if not r.ok:
+                return []
+            ly = ((r.json() or {}).get("lyrics") or "")
+            return [{"plain": ly, "synced": "", "artist": artist, "title": title, "duration": None}] if ly else []
 
         # Varian query progresif (paling akurat → paling longgar) utk coverage luas.
         queries = []
@@ -1210,22 +1389,29 @@ def get_lyrics(artist: str, title: str, file_path: str = "") -> dict:
             for q in queries:
                 yield lambda q=q: lrclib_search(q)
 
+        cands = []
         try:
             with _cf.ThreadPoolExecutor(max_workers=5) as ex:
                 futs = [ex.submit(fn) for fn in _jobs()]
                 for fut in _cf.as_completed(futs, timeout=9):
                     try:
-                        p, s = fut.result()
+                        cands.extend(fut.result() or [])
                     except Exception:
                         continue
-                    if s and not synced:
-                        synced = s
-                    if p and not plain:
-                        plain = p
-                    if synced and plain:
-                        break
         except Exception:
             pass
+
+        # P58: pilih kandidat TERBAIK (bukan sekadar yang pertama selesai).
+        if cands:
+            scored = [(_score_lyrics_candidate(c, artist, title, duration), c) for c in cands]
+            best_synced = max((s for s in scored if s[1]["synced"]), key=lambda x: x[0], default=None)
+            best_plain = max((s for s in scored if s[1]["plain"]), key=lambda x: x[0], default=None)
+            if best_synced:
+                synced = best_synced[1]["synced"]
+                source = "lrclib"
+            if best_plain:
+                plain = best_plain[1]["plain"]
+                source = source or "lrclib"
 
     # Fallback: lirik tertanam di file (parity _embedded_lyrics), hanya path valid.
     if not synced and not plain and file_path:
@@ -1359,8 +1545,19 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
     try:
         import learning_helper as lh
         kwargs = {}
-        if studio_type == "quiz":
-            kwargs["count"] = int(body.get("questionCount") or 10)
+        if studio_type in ("quiz", "flashcards"):
+            # P56: jumlah soal/kartu dari counter Studio. Terima beberapa nama key
+            # (frontend memakai `count`; `questionCount`/`numQuestions` nama lama) —
+            # dulu hanya quiz + key `questionCount` sehingga counter 30 soal
+            # diabaikan dan selalu jatuh ke default 10.
+            for _ck in ("count", "questionCount", "numQuestions"):
+                _cv = body.get(_ck)
+                if _cv not in (None, ""):
+                    try:
+                        kwargs["count"] = int(_cv)
+                        break
+                    except (TypeError, ValueError):
+                        pass
         raw = lh.generate_studio_content(studio_type, topic or "Materi", chunks, key, **kwargs)
     except Exception as e:
         return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
@@ -1379,6 +1576,8 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
                     "correctAnswerIndex": int(q.get("answer") or q.get("correctAnswerIndex") or 0),
                     "explanation": q.get("explain") or q.get("explanation") or "",
                     "type": q.get("type") or "mc",
+                    # P56: jawaban contoh untuk soal essay (dulu dibuang).
+                    "modelAnswer": q.get("model_answer") or q.get("modelAnswer") or "",
                 })
         except Exception as e:
             return {"result": {"ok": False, "msg": str(e), "quiz": []}, "skip_snap": True}
@@ -1521,6 +1720,12 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 body.get("content") or "",
             )
             return {"result": result}
+        if len(parts) >= 6 and parts[4] == "chat" and parts[5] == "clear":
+            # P48: bersihkan history chat notebook (parity tombol "Bersihkan chat"
+            # — dulu hanya membersihkan state React sehingga history kembali
+            # setelah reload/restart). Wajib dicek SEBELUM route chat generik.
+            db.clear_learning_chats(nid)
+            return {"result": {"ok": True}}
         if len(parts) >= 5 and parts[4] == "chat":
             text = (body.get("text") or "").strip()
             if not text:
@@ -1638,6 +1843,81 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         tpid = int(body.get("toPlaylistId") or 0)
         idx = int(body.get("index")) if body.get("index") is not None else -1
         return {"result": db.copy_song_to_playlist(uid, fpid, tpid, idx), "skip_snap": True}
+
+    # ── P58: lirik — simpan / hapus / import manual / offset live-sync ──────
+    if path == "/api/music/lyrics-save":
+        key = (body.get("key") or "").strip()
+        if not key:
+            return {"result": {"ok": False, "msg": "key_required"}, "skip_snap": True}
+        db.save_song_lyrics(uid, key, body.get("title") or "", body.get("artist") or "",
+                            body.get("source") or "web", body.get("plain") or "",
+                            body.get("synced") or "",
+                            body.get("offsetMs") if body.get("offsetMs") is not None else None)
+        return {"result": {"ok": True}, "skip_snap": True}
+    if path == "/api/music/lyrics-delete":
+        key = (body.get("key") or "").strip()
+        return {"result": {"ok": bool(db.delete_song_lyrics(uid, key))}, "skip_snap": True}
+    if path == "/api/music/lyrics-import":
+        # Import manual: konten .lrc (bertimestamp) atau .txt polos — auto-deteksi.
+        key = (body.get("key") or "").strip()
+        content = (body.get("content") or "").strip()
+        if not key or not content:
+            return {"result": {"ok": False, "msg": "key_and_content"}, "skip_snap": True}
+        import re as _re_lrc
+        is_lrc = bool(_re_lrc.search(r"\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]", content))
+        synced = content if is_lrc else ""
+        plain = "" if is_lrc else content
+        db.save_song_lyrics(uid, key, body.get("title") or "", body.get("artist") or "",
+                            "user", plain, synced, 0)
+        return {"result": {"ok": True, "lyrics": {"plain": plain, "synced": synced,
+                                                  "source": "user", "saved": True, "offsetMs": 0}},
+                "skip_snap": True}
+    if path == "/api/music/lyrics-offset":
+        key = (body.get("key") or "").strip()
+        if not key:
+            return {"result": {"ok": False, "msg": "key_required"}, "skip_snap": True}
+        try:
+            off = int(body.get("offsetMs") or 0)
+        except (TypeError, ValueError):
+            off = 0
+        db.set_song_lyrics_offset(uid, key, off)
+        return {"result": {"ok": True, "offsetMs": off}, "skip_snap": True}
+    if path == "/api/music/playlist-icon":
+        # P59: ganti/reset icon playlist (emoji). Foto via /api/upload/file
+        # target=playlist_icon (hasilkan playlists.icon='photo:<id>').
+        try:
+            pid = int(body.get("playlistId") or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        icon = (body.get("icon") or "").strip()
+        if not pid or not icon or len(icon) > 32:
+            return {"result": {"ok": False, "msg": "playlist_and_icon"}, "skip_snap": True}
+        return {"result": {"ok": db.set_playlist_icon(uid, pid, icon)}, "skip_snap": True}
+
+    if path == "/api/settings/cleanup":
+        # P62: aksi pembersihan DB — 'set' (retensi/auto) | 'run' (purge sekarang).
+        action = (body.get("action") or "").strip()
+        if action == "set":
+            rd = body.get("retentionDays")
+            if rd is not None:
+                try:
+                    rd = int(rd)
+                except (TypeError, ValueError):
+                    rd = -1
+                if rd not in (0, 1, 7, 30, 90):
+                    return {"result": {"ok": False, "msg": "retention_invalid"}, "skip_snap": True}
+                db.set_maintenance_state(uid, retention_days=rd)
+            if body.get("auto") is not None:
+                db.set_maintenance_state(uid, auto=bool(body.get("auto")))
+            return {"result": {"ok": True, "state": db.get_maintenance_state(uid)}, "skip_snap": True}
+        if action == "run":
+            st = db.get_maintenance_state(uid)
+            rd = int(st.get("retention_days") or 0)
+            if rd <= 0:
+                return {"result": {"ok": False, "msg": "cleanup_disabled"}, "skip_snap": True}
+            report = db.purge_tracker_history(uid, rd, do_backup=True)
+            return {"result": {"ok": True, "report": report}, "skip_snap": True}
+        return {"result": {"ok": False, "msg": "action_invalid"}, "skip_snap": True}
 
     if path == "/api/love/profile":
         cur = db.get_relationship_profile(uid) or {}
@@ -2106,16 +2386,30 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             uid, gid, body.get("name") or "Boss", body.get("icon") or "👾",
             int(body.get("hp") or 1000), int(body.get("atk") or 20), int(body.get("minLevel") or 1))}
     if path == "/api/couple/request":
-        return {"result": db.send_couple_request(uid, int(body.get("friendId") or 0))}
+        friend_id = int(body.get("friendId") or 0)
+        result = db.send_couple_request(uid, friend_id)
+        if result.get("ok"):
+            # P61: bila kedua pihak cloud-linked, relasi juga dibuat di cloud
+            # supaya pasangan di device lain dapat mirror (best-effort).
+            _couple_cloud_push(uid, "request", friend_id=friend_id)
+        return {"result": result}
     if path == "/api/couple/end":
         rel = db.get_active_couple_relationship(uid)
         if not rel:
             return {"result": {"ok": False, "msg": "no_couple"}}
-        return {"result": db.end_local_couple_relationship(uid, rel.get("id"))}
+        result = db.end_local_couple_relationship(uid, rel.get("id"))
+        _couple_cloud_push(uid, "end", rel_id=rel.get("id"))
+        return {"result": result}
     if len(parts) >= 4 and parts[1] == "couple" and parts[3] == "respond":
-        return {"result": db.respond_couple_request(uid, int(parts[2]), bool(body.get("accept", True)))}
+        result = db.respond_couple_request(uid, int(parts[2]), bool(body.get("accept", True)))
+        if result.get("ok"):
+            _couple_cloud_push(uid, "respond", rel_id=int(parts[2]), accept=bool(body.get("accept", True)))
+        return {"result": result}
     if len(parts) >= 4 and parts[1] == "couple" and parts[3] == "cancel":
-        return {"result": db.cancel_couple_request(uid, int(parts[2]))}
+        result = db.cancel_couple_request(uid, int(parts[2]))
+        if result.get("ok"):
+            _couple_cloud_push(uid, "cancel", rel_id=int(parts[2]))
+        return {"result": result}
     if path == "/api/guild/boss/attack":
         # Parity GuildPage._perform_action: aksi "light"|"heavy"|"block"|"ultimate".
         u = db.get_user(uid) or {}

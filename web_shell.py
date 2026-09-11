@@ -185,5 +185,25 @@ class WebMainWindow(QMainWindow):
         self._view = view
 
     def closeEvent(self, event):
+        # P57: hentikan media halaman web SEBELUM window ditutup — audio
+        # Chromium bisa terus bunyi setelah window hilang sampai page
+        # benar-benar dibebaskan (bug #17: musik tetap main setelah logout).
+        view = getattr(self, "_view", None)
+        if view is not None:
+            try:
+                view.page().setAudioMuted(True)
+            except Exception:
+                pass
+            try:
+                view.page().runJavaScript(
+                    "(window.craftlifeStopAllAudio && window.craftlifeStopAllAudio());"
+                    "document.querySelectorAll('audio,video').forEach(function(e){e.pause();})"
+                )
+            except Exception:
+                pass
+            try:
+                view.stop()
+            except Exception:
+                pass
         self.logout_signal.emit()
         super().closeEvent(event)

@@ -157,6 +157,24 @@ _SYMBOLS = {
     # Over/under braces
     "\\overbrace": "", "\\underbrace": "", "\\overrightarrow": "→", "\\overleftarrow": "←",
     "\\xrightarrow": "→", "\\xleftarrow": "←",
+
+    # ── P55: operator & relasi tambahan (AMS dsb.) ──
+    "\\oiint": "∯", "\\oiiint": "∰",
+    "\\varsubsetneqq": "⊊", "\\varsupsetneqq": "⊋",
+    "\\nleqslant": "≰", "\\ngeqslant": "≱", "\\nleq": "≰", "\\ngeq": "≱",
+    "\\nsubseteq": "⊈", "\\nsupseteq": "⊉",
+    "\\triangleq": "≜", "\\coloneqq": "≔", "\\eqqcolon": "≕",
+    "\\lessgtr": "≶", "\\gtrless": "≷", "\\lesssim": "≲", "\\gtrsim": "≳",
+    "\\circledast": "⊛", "\\circledcirc": "⊚", "\\boxdot": "⊡", "\\intercal": "⊺",
+    "\\curvearrowright": "↷", "\\curvearrowleft": "↶",
+    "\\circlearrowright": "↻", "\\circlearrowleft": "↺",
+    "\\dashrightarrow": "⇢", "\\dashleftarrow": "⇠",
+    "\\rightleftharpoons": "⇌", "\\rightrightarrows": "⇉", "\\leftleftarrows": "⇇",
+    "\\nrightarrow": "↛", "\\nleftarrow": "↚", "\\nRightarrow": "⇏", "\\nLeftrightarrow": "⇎",
+    "\\complement": "∁", "\\smallsetminus": "∖",
+    # Kimia & fisika umum (P55)
+    "\\degree": "°", "\\celsius": "℃", "\\micro": "µ", "\\angstrom": "Å", "\\AA": "Å",
+    "\\Bbbk": "𝕜",
 }
 _SYMBOL_KEYS = sorted(_SYMBOLS.keys(), key=len, reverse=True)
 
@@ -171,6 +189,7 @@ _LATEX_MARKERS = (
     "\\hbar", "\\ell", "\\wp", "\\forall", "\\exists", "\\in", "\\notin", "\\subset", "\\supset",
     "\\cup", "\\cap", "\\emptyset", "\\angle", "\\perp", "\\hbar", "\\mathbb", "\\mathbf", "\\mathcal",
     "\\overline", "\\hat", "\\tilde", "\\vec", "\\langle", "\\rangle", "\\lfloor", "\\rfloor",
+    "\\boldsymbol", "\\overset", "\\underset", "\\stackrel", "\\substack", "\\begin{", "\\oiint",
 )
 
 
@@ -263,8 +282,11 @@ def _convert_commands(out: str, _depth: int) -> str:
                 parts.append(out[m.start():m.end()])
                 i = m.end()
                 continue
+            # P55: pecahan cerdas — a/b untuk token sederhana,
+            # (a+b)/(c+d) untuk ekspresi majemuk (bukan lagi (a)⁄(b) selalu).
             parts.append(
-                f"({latex_to_unicode(num.strip(), _depth + 1)})⁄({latex_to_unicode(den.strip(), _depth + 1)})")
+                f"{_wrap_frac(latex_to_unicode(num.strip(), _depth + 1))}"
+                f"/{_wrap_frac(latex_to_unicode(den.strip(), _depth + 1))}")
             i = j3
         else:  # binom
             a, j2 = _extract_braced(out, j)
@@ -281,6 +303,91 @@ def _convert_commands(out: str, _depth: int) -> str:
                 f"C({latex_to_unicode(a.strip(), _depth + 1)},{latex_to_unicode(b.strip(), _depth + 1)})")
             i = j3
     return "".join(parts)
+
+
+# ── P55: dukungan tambahan ──────────────────────────────────────────────────
+# Aksen → combining Unicode (ditempel SETELAH isi): \overline{x} → x̅, \vec{v} → v⃗.
+_ACCENTS = {
+    "overrightarrow": "⃗", "overleftarrow": "⃖",
+    "overline": "̅", "underline": "̲",
+    "widehat": "̂", "widetilde": "̃",
+    "hat": "̂", "tilde": "̃", "bar": "̄",
+    "vec": "⃗", "dot": "̇", "ddot": "̈",
+    "check": "̌", "breve": "̆", "acute": "́",
+    "grave": "̀", "mathring": "̊",
+}
+_ACCENT_RE = re.compile(
+    r"\\(overrightarrow|overleftarrow|overline|underline|widehat|widetilde|"
+    r"hat|tilde|bar|vec|ddot|dot|check|breve|acute|grave|mathring)\s*\{([^{}]*)\}")
+
+
+def _accent_sub(_depth):
+    def _sub(m):
+        return latex_to_unicode(m.group(2), _depth + 1) + _ACCENTS[m.group(1)]
+    return _sub
+
+
+_OVERSET_RE = re.compile(r"\\(?:overset|stackrel)\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+_UNDERSET_RE = re.compile(r"\\underset\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+_SUBSTACK_RE = re.compile(r"\\substack\s*\{([^{}]*)\}")
+_XRIGHT_RE = re.compile(r"\\xrightarrow(?:\[[^\]]*\])?\s*\{([^{}]*)\}")
+_XLEFT_RE = re.compile(r"\\xleftarrow(?:\[[^\]]*\])?\s*\{([^{}]*)\}")
+
+_ENV_DELIMS = {
+    "cases": ("{", "}"), "pmatrix": ("(", ")"), "bmatrix": ("[", "]"),
+    "vmatrix": ("|", "|"), "Bmatrix": ("{", "}"), "matrix": ("", ""), "array": ("", ""),
+}
+_ENV_RE = re.compile(r"\\begin\{(cases|pmatrix|bmatrix|vmatrix|Bmatrix|matrix|array\*?)\}(.*?)\\end\{\1\}", re.S)
+
+
+def _env_sub(_depth):
+    def _sub(m):
+        env = m.group(1).rstrip("*")
+        sep = "│" if env == "cases" else "; "
+        rows = [latex_to_unicode(r.strip(), _depth + 1).replace("&", " ")
+                for r in m.group(2).split("\\\\") if r.strip()]
+        lo, hi = _ENV_DELIMS.get(env, ("", ""))
+        # '{' asli akan dibuang oleh cleanup braces di akhir latex_to_unicode —
+        # pakai placeholder lalu dipulihkan di langkah terakhir.
+        if lo == "{":
+            lo, hi = "\x01", "\x02"
+        return lo + sep.join(rows) + hi
+    return _sub
+
+
+# \boldsymbol: Latin/Greek/digit → Mathematical Bold (𝐚, 𝜶, 𝟎).
+_BOLD_GR = {
+    "α": "𝜶", "β": "𝜷", "γ": "𝜸", "δ": "𝜹", "ε": "𝜺", "ζ": "𝜻",
+    "η": "𝜼", "θ": "𝜽", "ι": "𝜾", "κ": "𝜿", "λ": "𝝀", "μ": "𝝁",
+    "ν": "𝝂", "ξ": "𝝃", "π": "𝝅", "ρ": "𝝆", "σ": "𝝈", "τ": "𝝉",
+    "υ": "𝝊", "φ": "𝝋", "χ": "𝝌", "ψ": "𝝍", "ω": "𝝎",
+}
+_BOLD_GR_U = {
+    "Γ": "𝚪", "Δ": "𝚫", "Θ": "𝚯", "Λ": "𝚲", "Ξ": "𝚰", "Π": "𝚷",
+    "Σ": "𝚺", "Φ": "𝚽", "Ψ": "𝚿", "Ω": "𝛀",
+}
+_BOLDSYMBOL_RE = re.compile(r"\\boldsymbol\s*\{([^{}]*)\}")
+
+
+def _bold_char(ch):
+    o = ord(ch)
+    if 0x61 <= o <= 0x7A:
+        return chr(0x1D41E + o - 0x61)   # a..z → 𝐚..
+    if 0x41 <= o <= 0x5A:
+        return chr(0x1D400 + o - 0x41)   # A..Z → 𝐀..
+    if 0x30 <= o <= 0x39:
+        return chr(0x1D7CE + o - 0x30)   # 0..9 → 𝟎..
+    return _BOLD_GR.get(ch) or _BOLD_GR_U.get(ch) or ch
+
+
+# Pecahan cerdas (P55): token atomik tanpa kurung, sisanya dibungkus.
+_ATOMIC_RE = re.compile(r"^[0-9A-Za-z.]+$")
+
+
+def _wrap_frac(s):
+    if _ATOMIC_RE.match(s) or (s.startswith("(") and s.endswith(")")):
+        return s
+    return "(" + s + ")"
 
 
 def _strip_generic_font_commands(text: str) -> str:
@@ -315,8 +422,28 @@ def latex_to_unicode(text: str, _depth: int = 0) -> str:
     out = re.sub(r"\{\s*([^{}]+?)\s*\\choose\s+([^{}]+?)\s*\}", r"C(\1,\2)", out)
     out = re.sub(r"([^\s{}]+)\s*\\choose\s+([^\s{}]+)", r"C(\1,\2)", out)
 
-    # Handle \overline, \underline, \hat etc wrapping: \overline{abc} -> abc
-    out = re.sub(r"\\(?:overline|underline|hat|widehat|tilde|widetilde|bar|vec|dot|ddot|check|breve|acute|grave|mathring)\s*\{([^{}]*)\}", r"\1", out)
+    # P55: aksen kini combining Unicode (lihat _ACCENT_RE).
+    # P55: aksen sebagai COMBINING character (bukan dibuang): \overline{x} → x̅.
+    out = _ACCENT_RE.sub(_accent_sub(_depth), out)
+    out = re.sub(r"\\(?:overbrace|underbrace)\s*\{([^{}]*)\}", r"\1", out)
+
+    # P55: \overset{X}{Y} / \stackrel{X}{Y} → Y + superskrip(X); \underset → subskrip.
+    out = _OVERSET_RE.sub(lambda m: latex_to_unicode(m.group(2), _depth + 1)
+                          + _to_sup(latex_to_unicode(m.group(1), _depth + 1)), out)
+    out = _UNDERSET_RE.sub(lambda m: latex_to_unicode(m.group(2), _depth + 1)
+                           + _to_sub(latex_to_unicode(m.group(1), _depth + 1)), out)
+    # P55: \substack{a\\b} → superskrip bertumpuk (dipakai di limit ∑).
+    out = _SUBSTACK_RE.sub(lambda m: "".join(
+        _to_sup(latex_to_unicode(seg.strip(), _depth + 1))
+        for seg in m.group(1).split("\\\\") if seg.strip()), out)
+    # P55: \xrightarrow[text]{X} → panah panjang + superskrip(X).
+    out = _XRIGHT_RE.sub(lambda m: "⟶" + _to_sup(latex_to_unicode(m.group(1), _depth + 1)), out)
+    out = _XLEFT_RE.sub(lambda m: "⟵" + _to_sup(latex_to_unicode(m.group(1), _depth + 1)), out)
+    # P55: environment cases & matrix → bentuk flat (baris dipisah │ / ;).
+    out = _ENV_RE.sub(_env_sub(_depth), out)
+    # P55: \boldsymbol{X} → Mathematical Bold.
+    out = _BOLDSYMBOL_RE.sub(lambda m: "".join(
+        _bold_char(c) for c in latex_to_unicode(m.group(1), _depth + 1)), out)
     out = re.sub(r"\\(?:overbrace|underbrace)\s*\{([^{}]*)\}", r"\1", out)
 
     # 2) Pangkat & indeks
@@ -336,6 +463,8 @@ def latex_to_unicode(text: str, _depth: int = 0) -> str:
     out = re.sub(r"\\([a-zA-Z]+)", r"\1", out)
     # Cleanup sisa braces ganda? keep single braces for readability
     out = out.replace("{", "").replace("}", "")
+    # P55: pulihkan kurung environment cases/matrix (placeholder \x01/\x02).
+    out = out.replace("\x01", "{").replace("\x02", "}")
     # Normalize whitespace
     out = re.sub(r"[ \t]{2,}", " ", out)
     return out.strip()

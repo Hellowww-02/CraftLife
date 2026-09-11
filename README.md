@@ -9,7 +9,7 @@
 > **ID:** Tracker kebiasaan bergaya RPG — habits, quest, boss, pets, ekonomi, kesehatan, belajar, dan sosial.
 > Semua fitur lokal jalan **100% offline**; cloud (Supabase) opsional untuk sync & fitur sosial online.
 
-![Release](https://img.shields.io/badge/release-v1.4.0%20%E2%80%9CFull%20Parity%E2%80%9D-5a8a2e?style=for-the-badge)
+![Release](https://img.shields.io/badge/release-v1.6.0%20%E2%80%9CQuality%20of%20Life%E2%80%9D-5a8a2e?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6?style=for-the-badge&logo=windows11&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)
@@ -20,7 +20,7 @@
 ![Tailwind](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-optional-3FCF8E?style=flat-square&logo=supabase&logoColor=white)
 ![UI](https://img.shields.io/badge/UI-v2%20%E2%80%9CCraft%20Design%20System%E2%80%9D-a78bfa?style=flat-square)
-![i18n](https://img.shields.io/badge/i18n-%F0%9F%87%AE%F0%9F%87%A9%20id%20%2B%20%F0%9F%87%AC%F0%9F%87%A7%20en-3%2C694%20keys-blueviolet?style=flat-square)
+![i18n](https://img.shields.io/badge/i18n-%F0%9F%87%AE%F0%9F%87%A9%20id%20%2B%20%F0%9F%87%AC%F0%9F%87%A7%20en-3%2C757%20keys-blueviolet?style=flat-square)
 
 **Python + SQLite is the brain. React is the skin. Cloud is optional.**
 
@@ -32,14 +32,14 @@
 
 ## 📌 What is CraftLife?
 
-**CraftLife v1.4.0** is a **Windows-first desktop app** that turns real-life productivity into an RPG.
+**CraftLife v1.6.0** is a **Windows-first desktop app** that turns real-life productivity into an RPG.
 Finish habits → gain XP → level up → fight bosses → own pets → build an economy — all while your data stays
 in a **local SQLite file you own**.
 
-| Area | Status in v1.4.0 |
+| Area | Status in v1.6.0 |
 |------|------------------|
 | 🖥️ Local tracker (habits, RPG, notes, health, economy, music, learning) | ✅ Ready — works **fully offline** |
-| 🧊 Hybrid React UI in a PyQt6 WebEngine shell | ✅ Ready (29 pages, full parity P30–P46) |
+| 🧊 Hybrid React UI in a PyQt6 WebEngine shell | ✅ Ready (29 pages, full parity + Craft Design System v2) |
 | 🗿 Legacy PyQt widgets | ✅ Kept — launch with `CRAFTLIFE_WEB_UI=0` |
 | ☁️ Cloud sync + social (Supabase) | ✅ Source ready — **you** apply the migrations |
 | 🔔 Push notifications while the app is closed | ⏳ Not in this release |
@@ -52,6 +52,43 @@ in a **local SQLite file you own**.
 ---
 
 <a id="whats-new"></a>
+
+## ✨ What's New in v1.6.0
+
+> **“Quality of Life Release”** — 17 perbaikan yang Anda minta (P47–P62), termasuk 3 bug fatal.
+> Rekap lengkap per fase: [`UPDATES/2026-09-08-P47-P63-PHASE-SUMMARY.md`](UPDATES/2026-09-08-P47-P63-PHASE-SUMMARY.md).
+
+| # | Perbaikan | Fase |
+|---|-----------|------|
+| 1 | 🧧 **Redeem code memberi hadiah lagi** (fatal) — seed order fixed, kode admin + password bekerja, one-time per akun | P47 |
+| 2 | 💬 **Chat AI tidak lagi terkirim dobel** (fatal) — 1 request = 1 blok jawaban (hemat token 2×) | P48 |
+| 3 | 🔢 **Input nominal**: backspace ke kosong kini mulus (saldo, tabungan, investasi, dll.) | P49 |
+| 4 | 🎨 **Tema tersimpan permanen** — restart tidak kembali ke default | P50 |
+| 5 | 🦸 **Warna avatar tampil** di chip profil & navbar | P51 |
+| 6 | 📏 **Tren tinggi badan 7 hari** tidak lagi datar (kolom `height_cm`) | P52 |
+| 7 | 📝 **Duplikat catatan** di folder & posisi sama, tanpa imbuhan "(copy)" | P53 |
+| 8 | 📎 **Lampiran catatan** — gambar/PDF/txt ≤5 MB per file, tersimpan lokal per user | P54 |
+| 9 | ∑ **Simbol LaTeX** — palet 7 kategori + live preview Unicode | P55 |
+| 10 | 📂 **Ikon folder bisa diganti** (task & SportTrack) + jumlah soal quiz sesuai counter + resize panel Learning + soal essay | P56 |
+| 11 | 🎵 **Musik tidak putus pindah halaman** — music engine global + mini-player di navbar | P57 |
+| 12 | 📜 **Lirik akurat & live per detik** — dicocokkan durasi lagu, import .lrc manual, offset ±0.5s, bisa disimpan | P58 |
+| 13 | 🖼️ **Icon playlist khusus** — emoji atau foto dari komputer (auto-resize ≤512px) + indikator shuffle/repeat ON/OFF | P59 |
+| 14 | 🖥️ **Halaman Musik fit page** — satu scroll utama (hero + daftar lagu), deck selalu terlihat | P60 |
+| 15 | 💞 **Couple terdeteksi & tracking jalan** (fatal) — fix crash 500 + mirror couple cloud + badge status | P61 |
+| 16 | 🧹 **Pembersihan DB bulanan** — history tracker saja (retensi 30 hari default), backup otomatis, VACUUM (DB 1 GB tidak lagi) | P62 |
+| 17 | 🔇 **Musik berhenti saat logout/tutup aplikasi** — stop-all-audio hook di shell PyQt | P57 |
+
+<details>
+<summary><b>🔍 Verification checklist for this release</b> (click to expand)</summary>
+
+- ✅ `py_compile` — all core modules pass
+- ✅ `tsc --noEmit` — 0 errors · `vite build` clean
+- ✅ Live smoke — register → bootstrap → redeem `WELCOME100` → notes duplicate → music lyrics
+- ✅ i18n — **3,757 keys** consistent across `translations.py` ↔ `WEB_I18N_KEYS` ↔ `messages.json` (id + en)
+- ✅ SQLite-only migrations, auto-applied on first run — **no Supabase migration needed**
+</details>
+
+---
 
 ## 🎨 UI v2 — Craft Design System (v1.5.0)
 
@@ -148,10 +185,10 @@ IOU notes · multi-currency display · supplies stock in/out/adjust.
 <details>
 <summary><b> 🎓 Studio — Notes · Learning · Music · Calendar</b></summary>
 
-- **Notes** — folders, archive, duplicate, LaTeX preview (rendered in Python)
+- **Notes** — folders, archive, duplicate, attachments (image/PDF/txt ≤5 MB), LaTeX preview + symbol palette
 - **Learning (NotebookLM-style)** — notebooks, sources, **Gemini chat** (key stored in Python, never in React),
   quiz, flashcards, FAQ, timeline, summary, mind map, study guide, TTS
-- **Music** — local library, playlists, yt-dlp search/download, **live time-synced lyrics**
+- **Music** — local library, playlists (custom icons), yt-dlp search/download, **live time-synced lyrics**, mini-player that keeps playing across pages
 - **Calendar** — Indonesian holidays (2025–2027), day notes, year jump, reminders with sounds
 
 </details>
@@ -184,7 +221,7 @@ IOU notes · multi-currency display · supplies stock in/out/adjust.
 
 Local login/register/switch account/stay logged in · password, lock, security question, backup codes ·
 cloud link, sync, conflict resolution, device management, local→cloud migration · language (id/en),
-sound, high contrast, font scale, currency · tracker SQLite export/import · check for updates.
+sound, high contrast, font scale, currency · tracker SQLite export/import · monthly DB cleanup (configurable retention) · check for updates.
 
 </details>
 
@@ -243,8 +280,8 @@ Developers
 
 ### 👤 For users (Windows)
 
-1. Go to the [latest release](https://github.com/Hellowww-02/CraftLife/releases/latest) — **`CraftLife-1.4.0`**.
-2. Download the attached **`.zip`** (~371 MB) and extract it anywhere.
+1. Go to the [latest release](https://github.com/Hellowww-02/CraftLife/releases/latest) — **`CraftLife-1.6.0`**.
+2. Download the attached **`.zip`** and extract it anywhere.
 3. Run **`CraftLife.exe`**. That's it — no Python, no Node, no installer.
 
 > [!TIP]
@@ -372,8 +409,8 @@ CraftLife/
 ├── studio_api.py         🎓 Learning, music, love, guild, friends, notifications
 ├── cloud_api.py          ☁️ Cloud HTTP surface for the UI
 ├── database.py           🧠 SQLite schema + ALL game logic (single source of truth)
-├── translations.py       🌐 id / en (3,694 keys per language)
-├── updater.py            🔄 v1.4.0 · GitHub Releases (default) or Supabase · SHA-256
+├── translations.py       🌐 id / en (3,757 keys per language)
+├── updater.py            🔄 v1.6.0 · GitHub Releases (default) or Supabase · SHA-256
 ├── cloud_config.py / cloud_service.py / sync_service.py
 ├── food_data.py  holidays.py  mathtools.py  learning_helper.py  music_downloader.py
 ├── CraftLife.spec        📦 PyInstaller (onedir, web/dist embedded)
@@ -458,7 +495,7 @@ Users run `dist\CraftLife\CraftLife.exe`.
 
 ### 🔄 Shipping an auto-update
 
-`updater.py` reads **GitHub Releases** (`/releases/latest`) — the default `UPDATE_SOURCE` in v1.4.0 —
+`updater.py` reads **GitHub Releases** (`/releases/latest`) — the default `UPDATE_SOURCE` since v1.4.0 —
 or Supabase Storage `app-updates` when switched to `"supabase"`.
 
 1. Zip the **contents** of `dist\CraftLife\` (no `.env`, no `craftlife.db`).
@@ -503,6 +540,8 @@ Also: `cd web && npm run lint` (= `tsc --noEmit`, expect 0 errors).
 **✅ UI overhaul U1–U12 — COMPLETE (2026-09):** seluruh UI web direkonstruksi ke
 "Craft Design System" — lihat [`UIUX_ROADMAP_U1_U12.md`](UIUX_ROADMAP_U1_U12.md).
 Backlog UI v2.1: Esc-per-modal · count-up angka · code-splitting per view.
+
+**✅ Quality of Life P47–P63 — COMPLETE (2026-09):** 17 perbaikan permintaan user dirilis di v1.6.0 — lihat [rekap fase](UPDATES/2026-09-08-P47-P63-PHASE-SUMMARY.md).
 
 
 **In the repo (code):** cloud phases 1–4 · couple 4f · `app_updates` · reward ledger 5a · shop/inventory 5b.
@@ -583,6 +622,6 @@ Include: OS, CraftLife version, source vs exe, local vs cloud, and the exact err
 
 **⚔️ Complete real quests. 🛡️ Keep your data. 🐺 Level up your life. ⚒️**
 
-*CraftLife v1.4.0 — “Full Parity Release”*
+*CraftLife v1.6.0 — “Quality of Life Release”*
 
 </div>

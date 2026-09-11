@@ -1190,6 +1190,21 @@ def init_db():
         created_at TEXT DEFAULT(datetime('now'))
     )""")
 
+    # ── P47: riwayat penukaran PER-USER. Semantik lama (kolom used_by) membuat
+    # kode one-time hangus GLOBAL: sekali dipakai satu akun, akun lain di
+    # desktop yang sama tidak bisa menukar salinannya sendiri. Tabel ini membuat
+    # one-time = sekali per akun dan menjadi sumber kebenaran status penukaran
+    # (kolom used_by dipertahankan hanya untuk kompatibilitas tampilan lama). ──
+    c.execute("""CREATE TABLE IF NOT EXISTS redeem_code_redemptions(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        redeemed_at TEXT DEFAULT(datetime('now')),
+        UNIQUE(code_id, user_id),
+        FOREIGN KEY(code_id) REFERENCES redeem_codes(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+
     c.execute("""CREATE TABLE IF NOT EXISTS task_history(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -1224,6 +1239,49 @@ def init_db():
         FOREIGN KEY(folder_id) REFERENCES note_folders(id) ON DELETE SET NULL
     )""")
     _safe_alter(c, "notes", "sort_order", "INTEGER DEFAULT 0")
+
+    # P54: lampiran catatan — file di disk (craftlife_attachments/<uid>/),
+    # metadata di DB. kind: image | file.
+    c.execute("""CREATE TABLE IF NOT EXISTS note_attachments(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        file_name TEXT NOT NULL,
+        mime TEXT DEFAULT '',
+        size INTEGER DEFAULT 0,
+        kind TEXT DEFAULT 'file',
+        storage_path TEXT NOT NULL,
+        created_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_note_att_user_note ON note_attachments(user_id, note_id)")
+
+    # P58: lirik tersimpan per track (web / import user / embedded) + offset live-sync.
+    # track_key = 'path:<file>' atau 'meta:<artist>::<title>' (dibuat frontend, opaque).
+    c.execute("""CREATE TABLE IF NOT EXISTS song_lyrics(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        track_key TEXT NOT NULL,
+        track_title TEXT DEFAULT '',
+        artist TEXT DEFAULT '',
+        source TEXT DEFAULT 'web',
+        plain TEXT DEFAULT '',
+        synced TEXT DEFAULT '',
+        offset_ms INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT(datetime('now')),
+        UNIQUE(user_id, track_key),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_song_lyrics_user ON song_lyrics(user_id, track_key)")
+
+    # P62: state pembersihan bulanan (retention default 30 hari, keputusan user).
+    c.execute("""CREATE TABLE IF NOT EXISTS maintenance_state(
+        user_id INTEGER PRIMARY KEY,
+        retention_days INTEGER DEFAULT 30,
+        auto INTEGER DEFAULT 1,
+        last_purge_at TEXT
+    )""")
 
     # ========== REMINDERS ==========
     c.execute("""CREATE TABLE IF NOT EXISTS reminders(
@@ -1264,6 +1322,19 @@ def init_db():
         created_at TEXT DEFAULT(datetime('now')),
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
+    # P59: icon playlist khusus — emoji, atau 'photo:<id>' (tabel playlist_icons).
+    _safe_alter(c, "playlists", "icon", "TEXT DEFAULT '🎵'")
+    c.execute("""CREATE TABLE IF NOT EXISTS playlist_icons(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        playlist_id INTEGER NOT NULL,
+        storage_path TEXT NOT NULL,
+        mime TEXT DEFAULT 'image/jpeg',
+        created_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_playlist_icons_user ON playlist_icons(user_id, playlist_id)")
 
     # ========== LEARNING PAGE (NotebookLM) ==========
     c.execute("""CREATE TABLE IF NOT EXISTS learning_notebooks(
@@ -1622,6 +1693,9 @@ def init_db():
     _safe_alter(c, "users", "total_gold_spent", "INTEGER DEFAULT 0")
     _safe_alter(c, "users", "currency", "TEXT DEFAULT 'IDR'")
     _safe_alter(c, "health_logs", "net_calories", "REAL DEFAULT 0")
+    # P52: tinggi badan per-hari di health_logs untuk tren 7 hari
+    # (dulu hanya tersimpan sebagai nilai goal tunggal di user_health_goals).
+    _safe_alter(c, "health_logs", "height_cm", "REAL")
     _safe_alter(c, "user_health_goals", "height_cm", "INTEGER DEFAULT 170")
     _safe_alter(c, "user_health_goals", "weight_kg", "REAL DEFAULT 70")
     _safe_alter(c, "user_health_goals", "age", "INTEGER DEFAULT 25")
@@ -1775,24 +1849,40 @@ def init_db():
     else:
         log.warning("Tidak ada makanan default baru, skip.")
 
-    # Insert default redeem codes
-    cur = c.execute("SELECT COUNT(*) FROM redeem_codes")
-    if cur.fetchone()[0] == 0:
-        default_codes = [
-            ("ADMINADMINADMIN", "admin", 0, None, 1),
-            ("WELCOME100", "xp", 100, None, 1),
-            ("STARTGOLD", "gold", 500, None, 1),
-            ("WOODSWORD", "item", 0, "wooden_sword", 1),
-            ("GOLDENAPPLE", "item", 0, "golden_apple", 1),
-        ]
-        for code, rtype, rval, ritem, onetime in default_codes:
-            try:
-                c.execute(
-                    "INSERT INTO redeem_codes(code, reward_type, reward_value, reward_item, is_one_time) VALUES(?,?,?,?,?)",
-                    (code, rtype, rval, ritem, onetime)
-                )
-            except:
-                pass
+    # ── P47 FIX (bug "Invalid or expired code" untuk SEMUA kode default) ──
+    # Dulu: blok ini hanya jalan bila tabel redeem_codes KOSONG, padahal
+    # migrate_redeem_codes() di atas sudah mengisi 15 kode baru SEBELUM blok
+    # ini dievaluasi → COUNT(*) != 0 → 5 kode default (termasuk kode admin
+    # ADMINADMINADMIN) TIDAK PERNAH di-seed, baik di DB baru MAUPUN lama.
+    # Sekarang: INSERT OR IGNORE per kode → idempoten, bebas urutan, dan
+    # sekalian memulihkan kode default yang hilang di database user lama. ──
+    default_codes = [
+        ("ADMINADMINADMIN", "admin", 0, None, 1),
+        ("WELCOME100", "xp", 100, None, 1),
+        ("STARTGOLD", "gold", 500, None, 1),
+        ("WOODSWORD", "item", 0, "wooden_sword", 1),
+        ("GOLDENAPPLE", "item", 0, "golden_apple", 1),
+    ]
+    for code, rtype, rval, ritem, onetime in default_codes:
+        try:
+            c.execute(
+                "INSERT OR IGNORE INTO redeem_codes(code, reward_type, reward_value, reward_item, is_one_time) VALUES(?,?,?,?,?)",
+                (code, rtype, rval, ritem, onetime)
+            )
+        except Exception:
+            pass
+
+    # ── P47: migrasi riwayat lama — kode yang sudah ditandai used_by (semantik
+    # lama: global) dipindah ke tabel per-user redeem_code_redemptions, agar
+    # status "sudah ditukar" milik user lama tetap dikenali setelah update. ──
+    try:
+        c.execute(
+            """INSERT OR IGNORE INTO redeem_code_redemptions(code_id, user_id, redeemed_at)
+               SELECT id, used_by, COALESCE(used_at, datetime('now'))
+               FROM redeem_codes WHERE used_by IS NOT NULL"""
+        )
+    except Exception:
+        pass
 
     # ── OPTIMASI: Buat indeks untuk mempercepat query ─────────────────────────
     c.execute("CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log(user_id)")
@@ -6323,6 +6413,164 @@ def get_couple_relationship_record(relationship_id,user_id=None):
     else:row=conn.execute("SELECT * FROM couple_relationships WHERE id=? AND (user_a_id=? OR user_b_id=?)",(relationship_id,user_id,user_id)).fetchone()
     conn.close();return dict(row) if row else {}
 
+def attach_cloud_id_to_couple(user_id,other_user_id,cloud_id):
+    """P61: simpan cloud_id pada relasi couple lokal (canonical pair) — jembatan
+    couple web → cloud agar pasangan di device lain dapat mirror."""
+    a,b=_canonical_couple_pair(user_id,other_user_id)
+    conn=get_conn();conn.execute("UPDATE couple_relationships SET cloud_id=? WHERE user_a_id=? AND user_b_id=?",(cloud_id,a,b))
+    conn.commit();conn.close()
+
+
+# ── P62: pembersihan bulanan history tracker ────────────────────────────────
+def db_file_size_bytes():
+    # Total ukuran file DB (db + wal + shm) dalam byte.
+    total = 0
+    for p in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm"):
+        try:
+            total += os.path.getsize(p)
+        except Exception:
+            pass
+    return total
+
+
+def _tracker_purge_specs():
+    # Tabel history tracker per-user: (tabel, kolom_user, kolom_waktu).
+    # Data master (health/food/water logs, economy, tasks) TIDAK disentuh.
+    return [
+        ("task_history", "user_id", "created_at"),
+        ("activity_log", "user_id", "created_at"),
+        ("pomodoro_sessions", "user_id", "completed_at"),
+        ("sport_rep_logs", "user_id", "created_at"),
+        ("music_play_history", "user_id", "played_at"),
+        ("boss_rewards", "user_id", "created_at"),
+        ("notifications", "user_id", "created_at"),
+        ("trash_bin", "user_id", "deleted_at"),
+        ("chat_attachments_cache", "local_user_id", "created_at"),
+    ]
+
+
+def get_maintenance_state(user_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM maintenance_state WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if row:
+        # P62: hati-hati falsy — retention 0 (= nonaktif) harus tetap 0, bukan 30.
+        rd = row["retention_days"] if row["retention_days"] is not None else 30
+        return {"retention_days": int(rd), "auto": bool(row["auto"]),
+                "last_purge_at": row["last_purge_at"] or ""}
+    return {"retention_days": 30, "auto": True, "last_purge_at": ""}
+
+
+def set_maintenance_state(user_id, retention_days=None, auto=None):
+    if retention_days is None and auto is None:
+        return
+    conn = get_conn()
+    row = conn.execute("SELECT user_id FROM maintenance_state WHERE user_id=?", (user_id,)).fetchone()
+    if row:
+        if retention_days is not None:
+            conn.execute("UPDATE maintenance_state SET retention_days=? WHERE user_id=?",
+                         (int(retention_days), user_id))
+        if auto is not None:
+            conn.execute("UPDATE maintenance_state SET auto=? WHERE user_id=?",
+                         (1 if auto else 0, user_id))
+    else:
+        rd = int(retention_days) if retention_days is not None else 30
+        au = 1 if (auto if auto is not None else True) else 0
+        conn.execute("INSERT INTO maintenance_state(user_id, retention_days, auto) VALUES(?,?,?)",
+                     (user_id, rd, au))
+    conn.commit()
+    conn.close()
+
+
+def estimate_tracker_purge(user_id, retention_days):
+    # Dry-run: hitung baris history yang akan dihapus + ukuran DB saat ini.
+    conn = get_conn()
+    cutoff = conn.execute("SELECT datetime('now', ?)", (f"-{int(retention_days)} day",)).fetchone()[0]
+    tables = {}
+    for tbl, ucol, tcol in _tracker_purge_specs():
+        tables[tbl] = int(conn.execute(
+            f"SELECT COUNT(*) c FROM {tbl} WHERE {ucol}=? AND {tcol} < ?", (user_id, cutoff)
+        ).fetchone()["c"])
+    tables["boss_battles"] = int(conn.execute(
+        "SELECT COUNT(*) c FROM boss_battles WHERE COALESCE(ended_at, started_at) < ?",
+        (cutoff,)).fetchone()["c"])
+    tables["cloud_messages"] = int(conn.execute(
+        "SELECT COUNT(*) c FROM cloud_messages WHERE created_at < ?"
+        " AND (sync_status IS NULL OR sync_status != 'pending')",
+        (cutoff,)).fetchone()["c"])
+    conn.close()
+    return {"cutoff": cutoff, "tables": tables, "total_rows": sum(tables.values()),
+            "db_size_bytes": db_file_size_bytes()}
+
+
+def purge_tracker_history(user_id, retention_days, do_backup=True):
+    # Hapus history tracker lebih tua dari cutoff; backup dulu, lalu
+    # checkpoint + VACUUM. Return laporan sebelum/sesudah.
+    report = {"before_bytes": db_file_size_bytes(), "deleted": {}, "backup_path": None}
+    if do_backup:
+        try:
+            report["backup_path"] = backup_database() or None
+        except Exception:
+            report["backup_path"] = None
+    cutoff = estimate_tracker_purge(user_id, retention_days)["cutoff"]
+    conn = get_conn()
+    for tbl, ucol, tcol in _tracker_purge_specs():
+        report["deleted"][tbl] = conn.execute(
+            f"DELETE FROM {tbl} WHERE {ucol}=? AND {tcol} < ?", (user_id, cutoff)).rowcount
+    report["deleted"]["boss_battles"] = conn.execute(
+        "DELETE FROM boss_battles WHERE COALESCE(ended_at, started_at) < ?", (cutoff,)).rowcount
+    report["deleted"]["cloud_messages"] = conn.execute(
+        "DELETE FROM cloud_messages WHERE created_at < ?"
+        " AND (sync_status IS NULL OR sync_status != 'pending')", (cutoff,)).rowcount
+    conn.execute(
+        "INSERT INTO maintenance_state(user_id, last_purge_at) VALUES(?, datetime('now'))"
+        " ON CONFLICT(user_id) DO UPDATE SET last_purge_at=excluded.last_purge_at", (user_id,))
+    conn.commit()
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:
+        pass
+    conn.close()
+    try:
+        conn2 = get_conn()
+        conn2.execute("VACUUM")
+        conn2.close()
+    except Exception:
+        pass
+    # VACUUM menulis seluruh DB baru ke WAL — checkpoint lagi supaya file
+    # benar-benar mengecil (wal truncate) setelah dibebaskan.
+    try:
+        conn3 = get_conn()
+        conn3.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn3.close()
+    except Exception:
+        pass
+    report["after_bytes"] = db_file_size_bytes()
+    report["freed_bytes"] = max(0, report["before_bytes"] - report["after_bytes"])
+    report["total_deleted"] = sum(report["deleted"].values())
+    return report
+
+
+def maybe_auto_purge(user_id):
+    # Auto-purge saat login bila last_purge_at sudah lewat interval retensi.
+    # Best-effort — tidak pernah raise.
+    try:
+        st = get_maintenance_state(user_id)
+        rd = int(st.get("retention_days") or 0)
+        if not st.get("auto") or rd <= 0:
+            return {"ok": False, "code": "disabled"}
+        interval = max(1, rd)
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT julianday('now') - julianday(last_purge_at) elapsed FROM maintenance_state"
+            " WHERE user_id=? AND last_purge_at IS NOT NULL", (user_id,)).fetchone()
+        conn.close()
+        if row and row["elapsed"] is not None and float(row["elapsed"]) >= interval:
+            return {"ok": True, "report": purge_tracker_history(user_id, interval, do_backup=True)}
+        return {"ok": False, "code": "not_due"}
+    except Exception as e:
+        return {"ok": False, "code": "error", "error": str(e)}
+
 
 def get_pending_friend_requests(user_id):
     conn = get_conn()
@@ -8335,7 +8583,7 @@ def get_food_summary_stats(user_id):
 
 # ========== HEALTH TRACKER (steps, sleep, etc.) ==========
 @retry_on_lock
-def add_health_log(user_id, log_date, steps=0, sleep_hours=0, water_ml=0, weight_kg=None, resting_hr=0, stress_level="normal", mood="normal", notes="", net_calories=None):
+def add_health_log(user_id, log_date, steps=0, sleep_hours=0, water_ml=0, weight_kg=None, resting_hr=0, stress_level="normal", mood="normal", notes="", net_calories=None, height_cm=None):
     conn = get_conn()
     if is_account_locked(user_id):
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
@@ -8366,21 +8614,24 @@ def add_health_log(user_id, log_date, steps=0, sleep_hours=0, water_ml=0, weight
             # Jika weight_kg tidak diberikan (None), gunakan nilai yang sudah ada
             if weight_kg is None:
                 weight_kg = existing["weight_kg"] if existing["weight_kg"] is not None else 0.0
+            # P52: pertahankan tinggi lama bila tidak dikirim (mirror pola weight).
+            if height_cm is None:
+                height_cm = existing["height_cm"]
             # Update hanya kolom yang diberikan
             conn.execute("""
                 UPDATE health_logs 
                 SET steps=?, sleep_hours=?, water_ml=?, weight_kg=?, resting_hr=?, 
-                    stress_level=?, mood=?, notes=?, net_calories=?
+                    stress_level=?, mood=?, notes=?, net_calories=?, height_cm=?
                 WHERE id=?
-            """, (steps, sleep_hours, water_ml, weight_kg, resting_hr, stress_level, mood, notes, net_calories, existing["id"]))
+            """, (steps, sleep_hours, water_ml, weight_kg, resting_hr, stress_level, mood, notes, net_calories, height_cm, existing["id"]))
         else:
             # Insert baru, default weight_kg 0 jika None
             if weight_kg is None:
                 weight_kg = 0.0
             conn.execute("""
-                INSERT INTO health_logs(user_id, log_date, steps, sleep_hours, water_ml, weight_kg, resting_hr, stress_level, mood, notes, net_calories)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)
-            """, (user_id, log_date, steps, sleep_hours, water_ml, weight_kg, resting_hr, stress_level, mood, notes, net_calories))
+                INSERT INTO health_logs(user_id, log_date, steps, sleep_hours, water_ml, weight_kg, resting_hr, stress_level, mood, notes, net_calories, height_cm)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (user_id, log_date, steps, sleep_hours, water_ml, weight_kg, resting_hr, stress_level, mood, notes, net_calories, height_cm))
         conn.commit()
     finally:
         conn.close()
@@ -9484,29 +9735,66 @@ def add_redeem_code(code, reward_type, reward_value=0, reward_item=None, is_one_
     finally:
         conn.close()
 
+def _mark_redeemed(code_data, user_id):
+    """P47: catat penukaran per-user SETELAH hadiah sukses diberikan.
+
+    - redeem_code_redemptions = sumber kebenaran status "sudah ditukar" (per akun).
+    - Kolom lama used_by/used_at tetap diisi (kode one-time) demi kompatibilitas
+      tampilan/admin versi lama, tapi TIDAK lagi dipakai untuk validasi.
+    """
+    try:
+        conn = get_conn()
+        conn.execute(
+            "INSERT OR IGNORE INTO redeem_code_redemptions(code_id, user_id, redeemed_at) VALUES(?,?,?)",
+            (code_data["id"], user_id, datetime.now().isoformat())
+        )
+        if code_data.get("is_one_time"):
+            conn.execute(
+                "UPDATE redeem_codes SET used_by=?, used_at=? WHERE id=? AND used_by IS NULL",
+                (user_id, datetime.now().isoformat(), code_data["id"])
+            )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.warning(f"Gagal mencatat penukaran kode (code_id={code_data.get('id')}): {e}")
+
+
 def redeem_code(user_id, code):
-    """Redeem kode dan berikan hadiah."""
+    """Redeem kode dan berikan hadiah.
+
+    P47 FIX:
+    - One-time kini berarti sekali PER AKUN (tabel redeem_code_redemptions),
+      bukan sekali global (kolom used_by) — tiap akun di desktop ini tetap
+      bisa menukar salinan kodenya sendiri.
+    - Kode ditandai terpakai SETELAH hadiah berhasil diberikan: hadiah gagal
+      (mis. item tidak ada) tidak lagi menghanguskan kode tanpa kompensasi.
+    - Field "code" pada return membedakan penyebab gagal (invalid /
+      already_redeemed / already_admin / item_fail / unknown) untuk UI.
+    """
     conn = get_conn()
     if is_account_locked(user_id):
-        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
-    # Cek apakah kode valid
+        return {"ok": False, "code": "locked", "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
+    # Cek apakah kode valid (P47: validitas per-user, bukan kolom used_by global)
     row = conn.execute(
-        "SELECT * FROM redeem_codes WHERE code = ? AND (used_by IS NULL OR is_one_time = 0)",
+        "SELECT * FROM redeem_codes WHERE code = ?",
         (code.upper().strip(),)
     ).fetchone()
     if not row:
         conn.close()
-        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_redeem_invalid")}
-    
+        return {"ok": False, "code": "invalid", "msg": tr_db(user_id=user_id, key="db_redeem_invalid")}
+
     code_data = dict(row)
-    
-    # Jika one-time, tandai sudah dipakai
+
+    # One-time = sekali per akun
     if code_data["is_one_time"]:
-        conn.execute(
-            "UPDATE redeem_codes SET used_by = ?, used_at = ? WHERE id = ?",
-            (user_id, datetime.now().isoformat(), code_data["id"])
-        )
-        conn.commit()
+        used = conn.execute(
+            "SELECT id FROM redeem_code_redemptions WHERE code_id=? AND user_id=?",
+            (code_data["id"], user_id)
+        ).fetchone()
+        if used:
+            conn.close()
+            return {"ok": False, "code": "already_redeemed",
+                    "msg": tr_db(user_id=user_id, key="db_redeem_already_used")}
     conn.close()
     
     # Proses hadiah berdasarkan reward_type
@@ -9518,23 +9806,26 @@ def redeem_code(user_id, code):
         # Ubah user menjadi admin (hanya bisa sekali seumur hidup)
         u = get_user(user_id)
         if u.get("is_admin", 0):
-            return {"ok": False, "msg": tr_db(user_id=user_id, key="db_redeem_admin_already")}
+            return {"ok": False, "code": "already_admin", "msg": tr_db(user_id=user_id, key="db_redeem_admin_already")}
         set_user_admin(user_id, True)
+        _mark_redeemed(code_data, user_id)
         return {"ok": True, "msg": tr_db(user_id=user_id, key="db_redeem_admin_success")}
     
     elif reward_type == "xp":
         gain_xp_gold(user_id, reward_value, 0)
+        _mark_redeemed(code_data, user_id)
         return {"ok": True, "msg": tr_db(user_id=user_id, key="db_redeem_xp", xp=reward_value), "xp": reward_value}
     
     elif reward_type == "gold":
         gain_xp_gold(user_id, 0, reward_value)
+        _mark_redeemed(code_data, user_id)
         return {"ok": True, "msg": tr_db(user_id=user_id, key="db_redeem_gold", gold=reward_value), "gold": reward_value}
     
     elif reward_type == "item":
         # Tambahkan item ke inventory
         item = SHOP_ITEMS.get(reward_item)
         if not item:
-            return {"ok": False, "msg": tr_db(user_id=user_id, key="db_redeem_item_fail")}
+            return {"ok": False, "code": "item_fail", "msg": tr_db(user_id=user_id, key="db_redeem_item_fail")}
         conn2 = get_conn()
         ex = conn2.execute(
             "SELECT * FROM inventory WHERE user_id=? AND item_id=?", (user_id, reward_item)
@@ -9549,10 +9840,11 @@ def redeem_code(user_id, code):
         conn2.commit()
         conn2.close()
         recalculate_all_buffs(user_id)
+        _mark_redeemed(code_data, user_id)
         return {"ok": True, "msg": tr_db(user_id=user_id, key="db_redeem_item_success", name=item['name'])}
     
     else:
-        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_redeem_unknown")}
+        return {"ok": False, "code": "unknown_type", "msg": tr_db(user_id=user_id, key="db_redeem_unknown")}
     
 def set_user_admin(user_id, is_admin):
     conn = get_conn()
@@ -9871,6 +10163,8 @@ def reset_user_progress(user_id):
 
         # ========== 6. Reset redeem_codes ==========
         conn.execute("UPDATE redeem_codes SET used_by = NULL, used_at = NULL WHERE used_by = ?", (user_id,))
+        # P47: riwayat penukaran per-user ikut direset agar kode bisa ditukar ulang
+        conn.execute("DELETE FROM redeem_code_redemptions WHERE user_id = ?", (user_id,))
 
         # ========== 7. Hapus teman? Tidak, biarkan hubungan tetap ==========
         # ========== 8. Security question? Biarkan, tidak direset ==========
@@ -9992,6 +10286,8 @@ def reset_progress_keep_assets(user_id):
 
         # Reset redeem_codes
         conn.execute("UPDATE redeem_codes SET used_by = NULL, used_at = NULL WHERE used_by = ?", (user_id,))
+        # P47: riwayat penukaran per-user ikut direset agar kode bisa ditukar ulang
+        conn.execute("DELETE FROM redeem_code_redemptions WHERE user_id = ?", (user_id,))
 
         conn.commit()
     except Exception as e:
@@ -10601,24 +10897,49 @@ def update_note(note_id, user_id, title=None, content=None, folder_id=None, zoom
     conn.close()
 
 def duplicate_note(user_id, note_id, dest_folder_id=None):
-    """Duplikasi catatan ke folder tujuan (bisa None untuk tanpa folder). FIX 3"""
+    """Duplikasi catatan. P53:
+    - dest_folder_id None (default) = folder note SUMBER (dulu jatuh ke root "All Notes").
+    - Judul TANPA sufiks " (Copy)" (permintaan user #10).
+    - sort_order disisipkan TEPAT SETELAH note sumber (normalisasi urutan folder dulu,
+      lalu geser sisanya) sehingga duplikat muncul di sebelah aslinya.
+    """
     conn = get_conn()
-    src = conn.execute("SELECT title, content, is_archived FROM notes WHERE id=? AND user_id=?", (note_id, user_id)).fetchone()
+    src = conn.execute("SELECT title, content, is_archived, folder_id FROM notes WHERE id=? AND user_id=?", (note_id, user_id)).fetchone()
     if not src:
         conn.close()
         return {"ok": False, "msg": "Catatan tidak ditemukan"}
-    if dest_folder_id is not None:
-        chk = conn.execute("SELECT id FROM note_folders WHERE id=? AND user_id=?", (dest_folder_id, user_id)).fetchone()
+    # Default: folder yang sama dengan note sumber.
+    dest = dest_folder_id if dest_folder_id is not None else src["folder_id"]
+    if dest is not None:
+        chk = conn.execute("SELECT id FROM note_folders WHERE id=? AND user_id=?", (dest, user_id)).fetchone()
         if not chk:
             conn.close()
             return {"ok": False, "msg": "Folder tujuan tidak valid"}
-    new_title = src["title"] + " (Copy)"
-    cur = conn.execute("INSERT INTO notes(user_id, folder_id, title, content, is_archived) VALUES(?,?,?,?,?)",
-        (user_id, dest_folder_id, new_title, src["content"], src["is_archived"]))
+    # P53: normalisasi sort_order folder tujuan sesuai urutan tampilan saat ini
+    # (sort_order ASC, updated_at DESC — legacy semua 0).
+    rows = conn.execute(
+        "SELECT id FROM notes WHERE user_id=? AND folder_id IS ? ORDER BY sort_order ASC, updated_at DESC",
+        (user_id, dest)
+    ).fetchall()
+    ids = [r["id"] for r in rows]
+    for idx, nid in enumerate(ids):
+        conn.execute("UPDATE notes SET sort_order=? WHERE id=?", (idx, nid))
+    # Posisi sisipan: tepat setelah note sumber (atau di akhir bila sumber tak ada di folder tujuan).
+    pos = ids.index(note_id) + 1 if note_id in ids else len(ids)
+    conn.execute(
+        "UPDATE notes SET sort_order = sort_order + 1 WHERE user_id=? AND folder_id IS ? AND sort_order >= ?",
+        (user_id, dest, pos)
+    )
+    cur = conn.execute(
+        "INSERT INTO notes(user_id, folder_id, title, content, is_archived, sort_order) VALUES(?,?,?,?,?,?)",
+        (user_id, dest, src["title"], src["content"], src["is_archived"], pos)
+    )
     new_id = cur.lastrowid
     conn.commit()
     conn.close()
-    return {"ok": True, "new_note_id": new_id, "msg": f"Catatan '{new_title}' berhasil diduplikasi!"}
+    dup_title = src["title"]
+    return {"ok": True, "new_note_id": new_id, "folder_id": dest,
+            "msg": f"Catatan '{dup_title}' berhasil diduplikasi!"}
 
 def delete_note(note_id, user_id):
     purge_trash()
@@ -10637,6 +10958,46 @@ def archive_note(note_id, user_id, archived):
     )
     conn.commit()
     conn.close()
+
+# ========== NOTE ATTACHMENTS (P54) =========
+def add_note_attachment(user_id, note_id, file_name, mime, size, kind, storage_path):
+    """Metadata lampiran catatan (file fisik ditangani api_server)."""
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO note_attachments(note_id, user_id, file_name, mime, size, kind, storage_path) VALUES(?,?,?,?,?,?,?)",
+        (note_id, user_id, file_name, mime or "", int(size or 0), kind or "file", storage_path)
+    )
+    att_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "attachment": {"id": att_id, "noteId": note_id, "fileName": file_name,
+            "mime": mime or "", "size": int(size or 0), "kind": kind or "file"}}
+
+def get_note_attachments(user_id, note_id=None):
+    conn = get_conn()
+    if note_id is None:
+        rows = conn.execute("SELECT * FROM note_attachments WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM note_attachments WHERE user_id=? AND note_id=? ORDER BY id DESC", (user_id, note_id)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_note_attachment(user_id, attachment_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM note_attachments WHERE id=? AND user_id=?", (attachment_id, user_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def delete_note_attachment(user_id, attachment_id):
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM note_attachments WHERE id=? AND user_id=?", (attachment_id, user_id)).fetchone()
+    if not row:
+        conn.close()
+        return {"ok": False, "msg": "Lampiran tidak ditemukan"}
+    conn.execute("DELETE FROM note_attachments WHERE id=?", (attachment_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 # ========== REMINDERS CRUD ==========
 def get_reminders(user_id, active_only=False):
@@ -11104,7 +11465,7 @@ def create_playlist(user_id, name, is_favorite=0):
 def get_all_playlists(user_id):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT id, name, tracks, is_favorite FROM playlists WHERE user_id=? ORDER BY is_favorite DESC, name",
+        "SELECT id, name, tracks, is_favorite, icon FROM playlists WHERE user_id=? ORDER BY is_favorite DESC, name",
         (user_id,)
     ).fetchall()
     conn.close()
@@ -11113,7 +11474,7 @@ def get_all_playlists(user_id):
 def get_playlist(user_id, playlist_id):
     conn = get_conn()
     row = conn.execute(
-        "SELECT id, name, tracks, is_favorite FROM playlists WHERE id=? AND user_id=?",
+        "SELECT id, name, tracks, is_favorite, icon FROM playlists WHERE id=? AND user_id=?",
         (playlist_id, user_id)
     ).fetchone()
     conn.close()
@@ -11145,9 +11506,21 @@ def delete_playlist(user_id, playlist_id):
     if playlist and playlist['is_favorite']:
         return False  # tidak bisa hapus favorite
     conn = get_conn()
+    # P59: bersihkan file icon foto playlist yang dihapus.
+    icon_rows = conn.execute(
+        "SELECT id, storage_path FROM playlist_icons WHERE playlist_id=? AND user_id=?", (playlist_id, user_id)
+    ).fetchall()
+    if icon_rows:
+        conn.execute("DELETE FROM playlist_icons WHERE playlist_id=? AND user_id=?", (playlist_id, user_id))
     conn.execute("DELETE FROM playlists WHERE id=? AND user_id=?", (playlist_id, user_id))
     conn.commit()
     conn.close()
+    for _r in icon_rows:
+        try:
+            import os as _os
+            _os.remove(_r["storage_path"])
+        except Exception:
+            pass
     return True
 
 def add_song_to_playlist(user_id, playlist_id, file_path):
@@ -11200,6 +11573,122 @@ def copy_song_to_playlist(user_id, from_playlist_id, to_playlist_id, index):
     to_tracks.append(song)
     update_playlist_tracks(user_id, to_playlist_id, to_tracks)
     return True
+
+# ── P58: lirik tersimpan per track ──────────────────────────────────────
+def save_song_lyrics(user_id, track_key, track_title="", artist="", source="web", plain="", synced="", offset_ms=None):
+    """Upsert lirik per (user, track_key). offset_ms None → pertahankan offset lama."""
+    conn = get_conn()
+    off_val = int(offset_ms or 0)
+    if offset_ms is None:
+        row = conn.execute("SELECT offset_ms FROM song_lyrics WHERE user_id=? AND track_key=?",
+                           (user_id, track_key)).fetchone()
+        off_val = int(row["offset_ms"] or 0) if row else 0
+    conn.execute(
+        """INSERT INTO song_lyrics(user_id, track_key, track_title, artist, source, plain, synced, offset_ms, updated_at)
+           VALUES(?,?,?,?,?,?,?,?,datetime('now'))
+           ON CONFLICT(user_id, track_key) DO UPDATE SET
+             track_title=excluded.track_title, artist=excluded.artist, source=excluded.source,
+             plain=excluded.plain, synced=excluded.synced, offset_ms=excluded.offset_ms,
+             updated_at=excluded.updated_at""",
+        (user_id, track_key, track_title or "", artist or "", source or "web", plain or "", synced or "", off_val),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+def get_song_lyrics(user_id, track_key):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM song_lyrics WHERE user_id=? AND track_key=?",
+                       (user_id, track_key)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def delete_song_lyrics(user_id, track_key):
+    conn = get_conn()
+    cur = conn.execute("DELETE FROM song_lyrics WHERE user_id=? AND track_key=?", (user_id, track_key))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+def set_song_lyrics_offset(user_id, track_key, offset_ms):
+    """Update offset baris yang sudah ada (return False bila belum tersimpan)."""
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE song_lyrics SET offset_ms=?, updated_at=datetime('now') WHERE user_id=? AND track_key=?",
+        (int(offset_ms or 0), user_id, track_key),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+# ── P59: icon playlist khusus (emoji | photo:<id>) ──────────────────────────────
+def _drop_playlist_photo(user_id, icon_id):
+    """Hapus baris + file icon foto (best-effort)."""
+    import os as _os
+    conn = get_conn()
+    row = conn.execute("SELECT storage_path FROM playlist_icons WHERE id=? AND user_id=?",
+                       (int(icon_id), user_id)).fetchone()
+    conn.execute("DELETE FROM playlist_icons WHERE id=? AND user_id=?", (int(icon_id), user_id))
+    conn.commit()
+    conn.close()
+    if row and row["storage_path"]:
+        try:
+            _os.remove(row["storage_path"])
+        except Exception:
+            pass
+
+def set_playlist_icon(user_id, playlist_id, icon):
+    """P59: set icon playlist (emoji / default). Beralih dari photo: ke emoji
+    otomatis membersihkan file foto lama."""
+    conn = get_conn()
+    row = conn.execute("SELECT icon FROM playlists WHERE id=? AND user_id=?",
+                       (playlist_id, user_id)).fetchone()
+    if not row:
+        conn.close()
+        return False
+    prev = row["icon"] or ""
+    conn.execute("UPDATE playlists SET icon=? WHERE id=? AND user_id=?",
+                 (icon or '🎵', playlist_id, user_id))
+    conn.commit()
+    conn.close()
+    if prev.startswith("photo:"):
+        try:
+            _drop_playlist_photo(user_id, prev[6:])
+        except Exception:
+            pass
+    return True
+
+def add_playlist_icon(user_id, playlist_id, storage_path, mime):
+    """P59: simpan file icon foto baru, return id; playlists.icon=photo:id.
+    Icon foto lama playlist yang sama dibersihkan."""
+    conn = get_conn()
+    row = conn.execute("SELECT icon FROM playlists WHERE id=? AND user_id=?",
+                       (playlist_id, user_id)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    prev = row["icon"] or ""
+    cur = conn.execute(
+        "INSERT INTO playlist_icons(user_id, playlist_id, storage_path, mime) VALUES(?,?,?,?)",
+        (user_id, playlist_id, storage_path, mime or "image/jpeg"))
+    icon_id = cur.lastrowid
+    conn.execute("UPDATE playlists SET icon=? WHERE id=? AND user_id=?",
+                 (f"photo:{icon_id}", playlist_id, user_id))
+    conn.commit()
+    conn.close()
+    if prev.startswith("photo:") and prev[6:] != str(icon_id):
+        try:
+            _drop_playlist_photo(user_id, prev[6:])
+        except Exception:
+            pass
+    return icon_id
+
+def get_playlist_icon(user_id, icon_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM playlist_icons WHERE id=? AND user_id=?",
+                       (icon_id, user_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def lock_account(user_id, password):
     """Lock akun, hanya jika password benar. Kembalikan dict."""

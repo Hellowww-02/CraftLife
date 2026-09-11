@@ -1789,6 +1789,20 @@ class TopBar(QWidget):
         else:
             login = LoginWindow()
             login.show()
+        # P57: hentikan audio web UI (mode WebMainWindow) sebelum menutup
+        # window — panggil window.craftlifeStopAllAudio di halaman web lalu
+        # mute + stop view agar tidak ada audio Chromium yang tersisa.
+        try:
+            _view = getattr(main_win, "_view", None)
+            if _view is not None:
+                _view.page().setAudioMuted(True)
+                _view.page().runJavaScript(
+                    "(window.craftlifeStopAllAudio && window.craftlifeStopAllAudio());"
+                    "document.querySelectorAll('audio,video').forEach(function(e){e.pause();})"
+                )
+                _view.stop()
+        except Exception:
+            pass
         main_win.close()
 
     # ── internal ──────────────────────────────────────────────────────────────
