@@ -3,6 +3,9 @@ import { useGame } from '../../context/GameContext';
 import { useMusicPlayer, type LibraryEntry } from '../../music/MusicPlayerContext';
 import { LyricsDrawer } from '../../components/music/LyricsDrawer';
 import { PlaylistIconDialog } from '../../components/music/PlaylistIconDialog';
+import { LyricsSearchDialog, type LyricsCandidate } from '../../components/music/LyricsSearchDialog';
+import { LyricsImportDialog, exportLyrics } from '../../components/music/LyricsImportDialog';
+import { downloadTargetInfo } from '../../api/client';
 import { studio } from '../../api/studio';
 import { t } from '../../i18n';
 import {
@@ -86,6 +89,10 @@ const parseLrc = (text: string): { ms: number; text: string }[] => {
   return out;
 };
 
+// A01: payload lirik per trek (bentuk yang dipakai state + cache).
+type LyricsPayload = { plain: string; synced: string; source: string; saved: boolean; offsetMs: number };
+const EMPTY_LYRICS: LyricsPayload = { plain: '', synced: '', source: '', saved: false, offsetMs: 0 };
+
 export const MusicView: React.FC = () => {
   const { lang, showToast } = useGame();
   const tr = (key: string, vars?: Record<string, string | number>, fb?: string) => {
@@ -121,12 +128,24 @@ export const MusicView: React.FC = () => {
 
   // Lyrics drawer (parity _toggle_lyrics + _load_lyrics + _update_synced_lyric)
   // P58: + source/saved/offsetMs per track (tersimpan di server, table song_lyrics).
+  // A01: lirik kini MENGIKUTI trek aktif (auto-advance/next/prev/mini-player) —
+  //      cache per trek + penjaga balapan respons (lihat loadLyrics + efek di bawah).
   const [lyricsOpen, setLyricsOpen] = useState(false);
-  const [lyrics, setLyrics] = useState<{ plain: string; synced: string; source: string; saved: boolean; offsetMs: number }>({ plain: '', synced: '', source: '', saved: false, offsetMs: 0 });
+  const [lyrics, setLyrics] = useState<LyricsPayload>(EMPTY_LYRICS);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [activeLyricLine, setActiveLyricLine] = useState(-1);
+  // A02: dialog kandidat lirik (album + durasi + versi) — user memilih sumber yang benar.
+  const [candOpen, setCandOpen] = useState(false);
+  // A03: dialog import lirik + panduan format (satu dialog, dua tab).
+  const [importTab, setImportTab] = useState<'import' | 'guide' | null>(null);
   const syncedLines = useMemo(() => parseLrc(lyrics.synced), [lyrics.synced]);
-  const importLyricsRef = useRef<HTMLInputElement | null>(null);
+
+  // A01: cache lirik per trackKey (pindah-pindah lagu jadi instan, tanpa request ulang)
+  // + in-flight guard supaya klik trek tidak memicu dua request (klik + efek trek).
+  const lyricsCacheRef = useRef<Map<string, LyricsPayload>>(new Map());
+  const lyricsReqRef = useRef<{ key: string; refresh: boolean } | null>(null);
+  // trackKey selalu sinkron untuk penulisan cache dari handler (save/offset/import).
+  const trackKeyRef = useRef<string>('');
 
   // yt-dlp downloader modal (parity _open_downloader)
   const [dlOpen, setDlOpen] = useState(false);
@@ -143,9 +162,17 @@ export const MusicView: React.FC = () => {
   const [iconDlgFor, setIconDlgFor] = useState<PlaylistEntry | null>(null);
 
 
+  // A01: kunci trek aktif — dipakai cache lirik, reset baris aktif, & header drawer.
+  const trackKey = trackKeyFor(playingFile);
+
   useEffect(() => {
+    trackKeyRef.current = trackKey;
+  }, [trackKey]);
+
+  useEffect(() => {
+    // Ganti trek → baris lirik aktif direset (lirik trek baru dimulai dari awal).
     setActiveLyricLine(-1);
-  }, [syncedLines]);
+  }, [trackKey, syncedLines]);
 
   const activePlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
   const activeTracks = activePlaylist?.tracks || [];
@@ -301,85 +328,211 @@ export const MusicView: React.FC = () => {
   };
 
   // ── Lyrics (P58: tersimpan dulu → web; kunci per track; durasi utk akurasi) ──
+  // A01: + cache per trek, in-flight guard, dan penjaga balapan (respons usang dibuang).
   const loadLyrics = useCallback((entry: { path?: string; artist?: string; title?: string; name?: string; duration?: number } | null, refresh = false) => {
     if (!entry) return;
     const title = entry.title || entry.name || '';
     if (!title) return;
+    const key = trackKeyFor(entry);
+
+    // 1) Cache: trek yang pernah dimuat tampil seketika (tanpa hit API/network).
+    if (!refresh) {
+      const cached = lyricsCacheRef.current.get(key);
+      if (cached) {
+        lyricsReqRef.current = null;
+        setLyrics(cached);
+        setLyricsLoading(false);
+        return;
+      }
+    }
+    // 2) In-flight guard: klik trek + efek pergantian trek tidak boleh dobel request.
+    const inflight = lyricsReqRef.current;
+    if (!refresh && inflight && inflight.key === key) return;
+
+    lyricsReqRef.current = { key, refresh };
     setLyricsLoading(true);
-    setLyrics({ plain: '', synced: '', source: '', saved: false, offsetMs: 0 });
+    setLyrics({ ...EMPTY_LYRICS });
     studio.musicLyrics(entry.artist || '', title, entry.path || '', {
-      key: trackKeyFor(entry), duration: entry.duration || undefined, refresh,
+      key, duration: entry.duration || undefined, refresh,
+      // A02: album ikut dikirim → pencocokan versi (album vs single/live) lebih akurat.
+      album: (entry as { album?: string }).album || '',
     }).then((res) => {
+      // 3) Race guard: bila trek sudah berganti lagi, respons ini diabaikan.
+      if (lyricsReqRef.current?.key !== key) return;
+      lyricsReqRef.current = null;
       const d = res?.lyrics || res?.result || res || {};
-      setLyrics({
+      const payload: LyricsPayload = {
         plain: typeof d.plain === 'string' ? d.plain : '',
         synced: typeof d.synced === 'string' ? d.synced : '',
         source: typeof d.source === 'string' ? d.source : '',
         saved: !!d.saved,
         offsetMs: Number(d.offsetMs) || 0,
-      });
+      };
+      lyricsCacheRef.current.set(key, payload);
+      setLyrics(payload);
       setLyricsLoading(false);
-    }).catch(() => setLyricsLoading(false));
+    }).catch(() => {
+      if (lyricsReqRef.current?.key === key) lyricsReqRef.current = null;
+      setLyricsLoading(false);
+    });
   }, []);
 
-  const toggleLyrics = () => {
-    setLyricsOpen((o) => {
-      const next = !o;
-      if (next && playingFile) loadLyrics(playingFile);
+  // A01: drawer lirik mengikuti lagu yang sedang diputar. Ini menutup jalur yang
+  // sebelumnya tidak pernah memuat lirik: auto-advance akhir lagu (MusicPlayerProvider
+  // onEnded → next), tombol Next/Prev, shuffle/repeat, dan kontrol MiniPlayer di Navbar.
+  useEffect(() => {
+    if (!lyricsOpen) return;
+    if (!playingFile?.path) {
+      // Tidak ada trek → bersihkan panel (jangan menampilkan lirik trek sebelumnya).
+      lyricsReqRef.current = null;
+      setLyrics(EMPTY_LYRICS);
+      setLyricsLoading(false);
+      return;
+    }
+    loadLyrics(playingFile);
+  }, [lyricsOpen, playingFile?.path, loadLyrics]);
+
+  // Penulisan state lirik + sinkronisasi cache (dipakai save/offset/import).
+  const patchLyrics = useCallback((patch: Partial<LyricsPayload>, key = trackKeyRef.current) => {
+    setLyrics((prev) => {
+      const next = { ...prev, ...patch };
+      if (key) lyricsCacheRef.current.set(key, next);
       return next;
     });
+  }, []);
+
+  // A02: backfill metadata trek yang MELEWATI batas listing library.
+  // Dulu library dibatasi 80 berkas → trek lama tidak punya durasi → lirik dicari
+  // tanpa durasi → versi live/remix bisa terpilih. Sekarang metadata diambil batch.
+  const metaBackfillRef = useRef<Set<string>>(new Set());
+  const ensureTrackMeta = useCallback((paths: string[]) => {
+    const missing = paths.filter((p) => p && !metaBackfillRef.current.has(p));
+    if (!missing.length) return;
+    missing.forEach((p) => metaBackfillRef.current.add(p));
+    studio.musicTrackMeta(missing.slice(0, 200)).then((d) => {
+      const rows: any[] = Array.isArray(d?.tracks) ? d.tracks : [];
+      if (!rows.length) return;
+      setLibrary((prev) => {
+        const byPath = new Map(prev.map((e) => [e.path, e]));
+        for (const r of rows) {
+          if (!r?.path) continue;
+          const old = byPath.get(r.path);
+          byPath.set(r.path, {
+            name: r.name || old?.name || baseName(r.path),
+            path: r.path,
+            size: Number(r.size || old?.size || 0),
+            title: r.title || old?.title,
+            artist: r.artist || old?.artist,
+            album: r.album || old?.album,
+            duration: Number(r.duration || old?.duration || 0) || undefined,
+          });
+        }
+        return Array.from(byPath.values());
+      });
+      // Trek aktif kini punya durasi/album → muat ulang lirik dengan metadata baru.
+      if (lyricsOpen && playingFile?.path && rows.some((r) => r?.path === playingFile.path)) {
+        lyricsCacheRef.current.delete(trackKeyFor(playingFile));
+        loadLyrics(playingFile, false);
+      }
+    }).catch(() => {});
+  }, [lyricsOpen, playingFile, loadLyrics]);
+
+  // A02: trek di playlist aktif yang metadatanya belum ada → minta ke server (batch).
+  useEffect(() => {
+    if (!library.length || !activeTracks.length) return;
+    const missing = activeTracks.filter((p) => !library.some((e) => e.path === p));
+    if (missing.length) ensureTrackMeta(missing);
+  }, [activeTracks, library, ensureTrackMeta]);
+
+  // A02: pakai kandidat pilihan user → tersimpan permanen sebagai "user-pick".
+  const applyCandidate = (c: LyricsCandidate) => {
+    if (!playingFile) return;
+    const key = trackKeyFor(playingFile);
+    studio.musicLyricsApply({
+      key, artist: playingFile.artist || '', title: playingFile.title || playingFile.name || '',
+      plain: c.plainText || '', synced: c.syncedText || '',
+    }).then((res) => {
+      if (res?.result?.ok || res?.ok) {
+        patchLyrics({
+          plain: c.plainText || '', synced: c.syncedText || '',
+          source: 'user-pick', saved: true, offsetMs: 0,
+        }, key);
+        setCandOpen(false);
+        showToast('success', tr('music_lyrics_saved_ok'), `${c.title}${c.album ? ` · ${c.album}` : ''}`);
+      }
+    }).catch(() => {});
   };
 
+  const toggleLyrics = () => setLyricsOpen((o) => !o);
+
   // P58: simpan / hapus / offset — lirik tersimpan per track di server.
+  // A01: setiap perubahan ditulis balik ke cache trek agar konsisten saat pindah lagu.
   const saveLyrics = () => {
     if (!playingFile || (!lyrics.plain && !lyrics.synced)) return;
+    const key = trackKeyFor(playingFile);
     studio.musicLyricsSave({
-      key: trackKeyFor(playingFile),
+      key,
       title: playingFile.title || playingFile.name || '',
       artist: playingFile.artist || '',
       source: lyrics.source === 'user' ? 'user' : (lyrics.source || 'web'),
       plain: lyrics.plain, synced: lyrics.synced, offsetMs: lyrics.offsetMs,
     }).then((res) => {
-      if (res?.result?.ok) { setLyrics((p) => ({ ...p, saved: true })); showToast('success', tr('music_lyrics_saved_ok'), ''); }
+      if (res?.result?.ok) { patchLyrics({ saved: true }, key); showToast('success', tr('music_lyrics_saved_ok'), ''); }
     }).catch(() => {});
   };
   const deleteSavedLyrics = () => {
     if (!playingFile) return;
-    studio.musicLyricsDelete(trackKeyFor(playingFile)).then(() => {
-      setLyrics((p) => ({ ...p, saved: false, offsetMs: 0 }));
+    const key = trackKeyFor(playingFile);
+    studio.musicLyricsDelete(key).then(() => {
+      patchLyrics({ saved: false, offsetMs: 0 }, key);
     }).catch(() => {});
   };
   const shiftLyricsOffset = (deltaMs: number) => {
     if (!playingFile) return;
+    const key = trackKeyFor(playingFile);
     const next = Math.max(-10000, Math.min(10000, lyrics.offsetMs + deltaMs));
-    setLyrics((p) => ({ ...p, offsetMs: next }));
+    patchLyrics({ offsetMs: next }, key);
     // Offset per track harus TERSIMPAN → upsert lirik beserta offset barunya.
     studio.musicLyricsSave({
-      key: trackKeyFor(playingFile),
+      key,
       title: playingFile.title || playingFile.name || '',
       artist: playingFile.artist || '',
       source: lyrics.source === 'user' ? 'user' : (lyrics.source || 'web'),
       plain: lyrics.plain, synced: lyrics.synced, offsetMs: next,
     }).then((res) => {
-      if (res?.result?.ok) setLyrics((p) => ({ ...p, saved: true }));
+      if (res?.result?.ok) patchLyrics({ saved: true }, key);
     }).catch(() => {});
   };
-  const handleImportLyricsFile = (f: File) => {
+  // A03: import kini lewat dialog (panduan format + validasi sebelum simpan).
+  // Hasil simpan membawa laporan (jumlah baris bertimestamp, offset dari [offset:], jeda).
+  const handleLyricsImported = (lyrics: { plain: string; synced: string; offsetMs: number }) => {
     if (!playingFile) return;
-    const title = playingFile.title || playingFile.name || '';
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = String(reader.result || '');
-      studio.musicLyricsImport({ key: trackKeyFor(playingFile), title, artist: playingFile.artist || '', content })
-        .then((res) => {
-          const d = res?.result || {};
-          if (d.ok && d.lyrics) {
-            setLyrics({ plain: d.lyrics.plain || '', synced: d.lyrics.synced || '', source: 'user', saved: true, offsetMs: 0 });
-            showToast('success', tr('music_lyrics_import_ok'), '');
-          } else showToast('info', tr('music_lyrics_import_invalid'), '');
-        }).catch(() => showToast('info', tr('music_lyrics_import_invalid'), ''));
-    };
-    reader.readAsText(f);
+    patchLyrics({
+      plain: lyrics.plain || '', synced: lyrics.synced || '',
+      source: 'user', saved: true, offsetMs: Number(lyrics.offsetMs) || 0,
+    }, trackKeyFor(playingFile));
+  };
+
+  // A03: ekspor lirik — server bila tersimpan (header tag lengkap), selain itu dari layar.
+  const handleExportLyrics = (format: 'lrc' | 'txt') => {
+    if (!playingFile || (!lyrics.plain && !lyrics.synced)) {
+      showToast('info', tr('music_lyrics_export'), tr('music_lyrics_export_none'));
+      return;
+    }
+    const key = trackKeyFor(playingFile);
+    const mode = exportLyrics(key, format, {
+      title: playingFile.title || playingFile.name || '',
+      artist: playingFile.artist || '',
+      album: playingFile.album || '',
+      offsetMs: lyrics.offsetMs, plain: lyrics.plain, synced: lyrics.synced,
+      saved: lyrics.saved,
+    });
+    // A03.5: lokasi berkas diberitahukan setelah shell menyimpannya.
+    downloadTargetInfo().then((info) => {
+      showToast('success', tr('music_lyrics_export'),
+        tr('download_started_msg', { dir: info.dir || tr('download_folder_default') }, 'Menyimpan ke: {dir}'));
+    }).catch(() => showToast('success', tr('music_lyrics_export'),
+      mode === 'server' ? tr('music_lyrics_export_ok') : tr('music_lyrics_export_unsaved')));
   };
 
   // P57: event audio kini ditangani MusicPlayerProvider. View hanya menurunkan
@@ -476,9 +629,6 @@ export const MusicView: React.FC = () => {
           className="hidden" onChange={(e) => { if (e.target.files?.length) handleImport(e.target.files, false); e.target.value = ''; }} />
         <input ref={importFolderRef} type="file" multiple {...({ webkitdirectory: '', directory: '' } as any)}
           className="hidden" onChange={(e) => { if (e.target.files?.length) handleImport(e.target.files, true); e.target.value = ''; }} />
-        {/* P58: import lirik manual (.lrc bertimestamp / .txt polos) */}
-        <input ref={importLyricsRef} type="file" accept=".lrc,.txt,text/plain"
-          className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportLyricsFile(f); e.target.value = ''; }} />
         <button onClick={() => importFilesRef.current?.click()} disabled={importing || selectedPlaylistId === null}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold">
           <FolderInput className="w-4 h-4" />{tr('music_add_files')}
@@ -604,7 +754,9 @@ export const MusicView: React.FC = () => {
           })()}
         </div>
 
-        {/* ── Lyrics drawer (P58: refactor ke komponen + simpan/import/offset) ── */}
+        {/* ── Lyrics drawer (P58: refactor ke komponen + simpan/import/offset) ──
+            A01: header drawer kini menampilkan TREK AKTIF (judul · artis · durasi)
+            sehingga jelas lirik ini milik lagu yang mana saat musik berganti sendiri. */}
         {lyricsOpen && (
           <LyricsDrawer
             loading={lyricsLoading}
@@ -614,13 +766,48 @@ export const MusicView: React.FC = () => {
             source={lyrics.source}
             saved={lyrics.saved}
             offsetMs={lyrics.offsetMs}
+            trackKey={trackKey}
+            trackTitle={playingFile?.title || playingFile?.name || ''}
+            trackArtist={playingFile?.artist || ''}
+            trackDurationMs={durationMs || (playingFile?.duration ? playingFile.duration * 1000 : 0)}
             tr={tr}
             onRefresh={() => loadLyrics(playingFile, true)}
-            onImportPick={() => importLyricsRef.current?.click()}
+            onSearchCandidates={() => setCandOpen(true)}
+            onImportPick={() => setImportTab('import')}
+            onExport={handleExportLyrics}
+            onOpenGuide={() => setImportTab('guide')}
             onSave={saveLyrics}
             onDeleteSaved={deleteSavedLyrics}
             onOffset={(d) => shiftLyricsOffset(d)}
             onOffsetReset={() => shiftLyricsOffset(-lyrics.offsetMs)}
+          />
+        )}
+
+        {/* A03: dialog import lirik + panduan format (validasi sebelum simpan). */}
+        {importTab !== null && (
+          <LyricsImportDialog
+            keyName={trackKey}
+            trackTitle={playingFile?.title || playingFile?.name || ''}
+            trackArtist={playingFile?.artist || ''}
+            trackDurationSec={playingFile?.duration || (durationMs ? Math.round(durationMs / 1000) : 0)}
+            initialTab={importTab}
+            tr={tr}
+            showToast={showToast}
+            onClose={() => setImportTab(null)}
+            onImported={handleLyricsImported}
+          />
+        )}
+
+        {/* A02: dialog kandidat lirik — user memilih versi yang benar. */}
+        {candOpen && (
+          <LyricsSearchDialog
+            trackTitle={playingFile?.title || playingFile?.name || ''}
+            trackArtist={playingFile?.artist || ''}
+            trackAlbum={playingFile?.album || ''}
+            trackDurationSec={playingFile?.duration || (durationMs ? Math.round(durationMs / 1000) : 0)}
+            tr={tr}
+            onClose={() => setCandOpen(false)}
+            onPick={applyCandidate}
           />
         )}
       </div>

@@ -50,7 +50,9 @@ export const rpg = {
   getDashboardWidgets: () => apiGet<any>('/api/dashboard/widgets'),
   saveDashboardWidgets: (widgets: Record<string, unknown>[]) =>
     apiPost<any>('/api/dashboard/widgets', { widgets }),
-  yearWrapped: () => apiGet<any>('/api/year-wrapped'),
+  // A13: pemilih tahun (opsional) — tanpa parameter = tahun berjalan.
+  yearWrapped: (year?: number) =>
+    apiGet<any>(`/api/year-wrapped${year ? `?year=${year}` : ''}`),
   // ── Phase P6: notes drag & drop reorder ──
   reorderNotes: (items: { id: string | number; folderId?: string | number | null }[]) =>
     apiPost<any>('/api/notes/reorder', { items }),

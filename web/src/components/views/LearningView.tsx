@@ -1,38 +1,44 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
+import { saveFileToComputer, downloadTargetInfo, downloadApiFile, apiPost, apiBase } from '../../api/client';
 import {
   BookOpen,
   Plus,
-  Trash2,
-  Sparkles,
-  Bot,
-  Brain,
   HelpCircle,
   Headphones,
-  Send,
-  FileText,
   CheckCircle2,
   XCircle,
   Play,
   Pause,
   RotateCcw,
   Layers,
-  Calculator,
-  ExternalLink,
   Pencil,
   Eye,
   Download,
   ZoomIn,
+  ChevronDown,
   ZoomOut,
   Maximize,
-  Upload,
   KeyRound,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { studio } from '../../api/studio';
 import { t as tr } from '../../i18n';
-import { NumberInput } from '../NumberInput';
+import {
+  QUIZ_TOTAL_MAX, QUIZ_DEFAULT_MC, QUIZ_DEFAULT_ESSAY,
+} from '../learning/QuizCountFields';
+import StudioGenerateDialog from '../learning/StudioGenerateDialog';
+import {
+  STUDIO_META, StudioKind,
+  loadStudioConfig, buildStudioPayload, summarizeStudioConfig,
+} from '../learning/studioOptions';
+import StudioArtifactList, { ArtifactItem } from '../learning/StudioArtifactList';
+import LearningShell from '../learning/LearningShell';
+import NotebookRail, { LearningViewKey } from '../learning/NotebookRail';
+import SourcesRail from '../learning/SourcesRail';
+import ChatPanel from '../learning/ChatPanel';
+import PodcastPlayer from '../learning/PodcastPlayer';
 
 // Parity LearningPage._STUDIO_TYPES — 8 generator dalam urutan PyQt.
 type StudioType = 'summary' | 'study-guide' | 'flashcards' | 'faq' | 'mindmap' | 'timeline' | 'quiz' | 'podcast';
@@ -138,6 +144,36 @@ const MindMapView: React.FC<{ raw: unknown; lang: string; fontSize: number }> = 
   );
 };
 
+/** A15: daftar emoji notebook — satu sumber untuk dialog “Notebook Baru” & “Ganti nama”. */
+const NB_EMOJI = ['📚', '🧠', '🔬', '💻', '📐', '🚀', '📝', '⚡'];
+
+/** Pemilih emoji notebook (dipakai saat membuat & saat mengubah notebook). */
+const NotebookIconPicker: React.FC<{
+  value: string;
+  onChange: (icon: string) => void;
+  label: string;
+}> = ({ value, onChange, label }) => (
+  <div>
+    <label className="block text-xs font-bold text-slate-400 mb-1">{label}</label>
+    <div className="flex flex-wrap gap-2">
+      {NB_EMOJI.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => onChange(emoji)}
+          aria-label={emoji}
+          aria-pressed={value === emoji}
+          className={`text-xl p-2 rounded-lg border ${
+            value === emoji ? 'bg-violet-600/30 border-violet-500' : 'bg-slate-950 border-slate-800'
+          }`}
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
 export const LearningView: React.FC = () => {
   const {
     notebooks,
@@ -149,11 +185,11 @@ export const LearningView: React.FC = () => {
     updateNotebook,
     refreshNotebooks,
     lang,
+    setLang,
     showToast,
   } = useGame();
 
   const [activeNotebookId, setActiveNotebookId] = useState<string>(notebooks[0]?.id || '');
-  const [activeTab, setActiveTab] = useState<'chat' | 'sources' | 'studio'>('chat');
   // PyQt parity: auto-create a first notebook when the list is empty (PyQt seeds
   // a "First Notebook" via `db.create_learning_notebook`). Guarded to run once.
   const seededRef = useRef(false);
@@ -188,22 +224,60 @@ export const LearningView: React.FC = () => {
   const [studioFontSize, setStudioFontSize] = useState(13);
   const [renaming, setRenaming] = useState(false);
   const [renameTitle, setRenameTitle] = useState('');
+  // A15: ikon notebook ikut bisa diubah lewat dialog ganti nama (rail kiri).
+  const [renameIcon, setRenameIcon] = useState('📚');
   const [studioTopic, setStudioTopic] = useState('');
   const [selectedGen, setSelectedGen] = useState<any | null>(null);
   const [viewingSource, setViewingSource] = useState<{ title: string; content: string } | null>(null);
   const [uploadingSource, setUploadingSource] = useState(false);
-  const sourceFileRef = useRef<HTMLInputElement | null>(null);
+  // A07: judul notebook di topbar bisa diganti langsung (inline-rename).
+  // Draf disinkronkan setiap kali notebook aktif berganti (lihat useEffect di bawah).
+  const [nbTitleDraft, setNbTitleDraft] = useState('');
+
+  /** A15: buka dialog ganti nama dengan judul & ikon notebook aktif yang sudah terisi. */
+  const openRenameDialog = () => {
+    if (!activeNotebook) return;
+    setRenameTitle(activeNotebook.title);
+    setRenameIcon(activeNotebook.icon || '📚');
+    setRenaming(true);
+  };
 
   const handleRename = async () => {
     if (!activeNotebook || !renameTitle.trim()) return;
     try {
-      const r = await studio.renameNotebook(activeNotebook.id, renameTitle.trim());
+      // A15: ikut mengirim ikon supaya emoji yang dipilih benar-benar tersimpan.
+      const r = await studio.renameNotebook(activeNotebook.id, renameTitle.trim(), renameIcon);
       const res = r?.result || r;
       if (res?.ok === false) { showToast('damage', tr('learning_no_title', 'Judul tidak boleh kosong.'), ''); return; }
-      updateNotebook(activeNotebook.id, { title: renameTitle.trim() });
+      updateNotebook(activeNotebook.id, { title: renameTitle.trim(), icon: renameIcon });
       refreshNotebooks();
       setRenaming(false);
     } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  // A07: commit inline-rename dari topbar (Enter / blur). Dianggap sukses bila
+  // judul benar-benar berubah — kalau tidak, tidak ada panggilan API sama sekali.
+  const commitNotebookTitle = async () => {
+    if (!activeNotebook) return;
+    const next = nbTitleDraft.trim();
+    if (!next || next === activeNotebook.title) { setNbTitleDraft(activeNotebook.title); return; }
+    try {
+      const r = await studio.renameNotebook(activeNotebook.id, next);
+      const res = r?.result || r;
+      if (res?.ok === false) { showToast('damage', tr('learning_no_title', 'Judul tidak boleh kosong.'), ''); setNbTitleDraft(activeNotebook.title); return; }
+      updateNotebook(activeNotebook.id, { title: next });
+      refreshNotebooks();
+    } catch (e) {
+      showToast('damage', String((e as any)?.message || e), '');
+      setNbTitleDraft(activeNotebook.title);
+    }
+  };
+
+  // A07: pemilih bahasa di rail → set bahasa global (sama seperti SettingsView).
+  const handleLanguageChange = (next: 'id' | 'en') => {
+    if (next === lang) return;
+    setLang(next);
+    apiPost('/api/settings', { language: next }).catch(() => undefined);
   };
 
   const handleDeleteGeneration = async (genId: string) => {
@@ -213,6 +287,93 @@ export const LearningView: React.FC = () => {
       if (selectedGen?.id === genId) setSelectedGen(null);
       refreshNotebooks();
     } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  // ── A06: aksi daftar artefak Studio ────────────────────────────────────────
+  // Daftar artefak menggantikan riwayat chip lama; kartunya bisa dibuka (interaktif),
+  // diganti nama, diekspor, diduplikat, dan dihapus.
+  const normalizeArtifactType = (t: string): StudioType => {
+    const v = String(t || '').toLowerCase().replace(/_/g, '-');
+    if (v === 'audio-overview' || v === 'podcast') return 'podcast';
+    if (v === 'mind-map') return 'mindmap';
+    if (v === 'study-guide') return 'study-guide';
+    if ((STUDIO_TYPES as { type: string }[]).some((x) => x.type === v)) return v as StudioType;
+    return 'summary';
+  };
+
+  const handleOpenArtifact = (a: ArtifactItem) => {
+    const t = normalizeArtifactType(a.gtype);
+    setActiveStudioType(t);
+    setSelectedGen(a);
+    setShowStudioPreview(true);
+    if (interactiveArtifactId && String(a.id) !== interactiveArtifactId) {
+      // Jujur ke user: area interaktif selalu memakai hasil TERBARU tipe tersebut;
+      // isi artefak yang diklik tetap bisa dibaca pada pratinjau akordeon di daftar.
+      showToast('info', tr('learning_artifact_open', 'Buka'),
+        tr('learning_artifact_not_latest', 'Pratinjau di daftar menampilkan hasil yang diklik; area interaktif memakai hasil terbaru tipe ini.'));
+    }
+  };
+
+  const handleRenameArtifact = async (a: ArtifactItem, title: string) => {
+    if (!activeNotebook) return;
+    try {
+      const r = await studio.renameGeneration(activeNotebook.id, a.id, title);
+      const res = r?.result || r;
+      if (res?.ok === false) {
+        showToast('damage', tr('learning_artifact_rename', 'Ganti nama'),
+          tr(res?.msg || 'learning_not_found', 'Hasil tidak ditemukan.'));
+        return;
+      }
+      setSelectedGen((prev: any) => (prev && String(prev.id) === String(a.id) ? { ...prev, title } : prev));
+      showToast('success', tr('learning_artifact_renamed', 'Nama hasil diperbarui'), title);
+      refreshNotebooks();
+    } catch (e) {
+      showToast('damage', String((e as any)?.message || e), '');
+    }
+  };
+
+  const handleDuplicateArtifact = async (a: ArtifactItem) => {
+    if (!activeNotebook) return;
+    try {
+      const r = await studio.duplicateGeneration(activeNotebook.id, a.id);
+      const res = r?.result || r;
+      if (res?.ok === false) {
+        showToast('damage', tr('learning_artifact_duplicate', 'Duplikat'),
+          tr(res?.msg || 'learning_not_found', 'Hasil tidak ditemukan.'));
+        return;
+      }
+      showToast('success', tr('learning_artifact_duplicated', 'Hasil diduplikat'), res?.title || '');
+      refreshNotebooks();
+    } catch (e) {
+      showToast('damage', String((e as any)?.message || e), '');
+    }
+  };
+
+  const handleDeleteArtifact = async (a: ArtifactItem) => {
+    await handleDeleteGeneration(a.id);
+    showToast('success', tr('learning_artifact_deleted', 'Hasil dihapus'), a.title || '');
+  };
+
+  // Ekspor artefak: server menyiapkan berkas (staged) → diunduh lewat jalur unduhan
+  // A03.5 (`/api/system/download-file`) sehingga berkas benar-benar sampai ke komputer.
+  const handleExportArtifact = async (a: ArtifactItem, format: 'md' | 'txt') => {
+    if (!activeNotebook) return;
+    try {
+      const res = await studio.exportGeneration(activeNotebook.id, a.id, format);
+      if (!res?.ok || !res?.id) {
+        showToast('damage', tr('learning_artifact_export_failed', 'Ekspor gagal'),
+          tr(res?.msg || 'learning_not_found', 'Hasil tidak ditemukan.'));
+        return;
+      }
+      downloadApiFile(`/api/system/download-file?id=${encodeURIComponent(res.id)}`, res.name || `${a.title}.${format}`);
+      downloadTargetInfo().then((info) => {
+        showToast('success', tr('learning_artifact_export_done', 'Ekspor selesai'),
+          tr('download_saved_msg', 'Tersimpan di: {path}').replace('{path}',
+            info.lastPath || info.dir || tr('download_folder_default', 'folder unduhan CraftLife')));
+      }).catch(() => showToast('success', tr('learning_artifact_export_done', 'Ekspor selesai'), res.name || ''));
+    } catch (e) {
+      showToast('damage', tr('learning_artifact_export_failed', 'Ekspor gagal'), String((e as any)?.message || e));
+    }
   };
 
   const handleUploadSource = async (file: File) => {
@@ -252,13 +413,17 @@ export const LearningView: React.FC = () => {
     if (!parts.length && nb.timeline) parts.push(String(nb.timeline));
     if (!parts.length && nb.mindMap) parts.push(typeof nb.mindMap === 'string' ? nb.mindMap : JSON.stringify(nb.mindMap, null, 2));
     if (!parts.length) return;
-    const blob = new Blob([parts.join('\n\n')], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${(activeNotebook.title || 'studio').replace(/[^\w\- ]+/g, '').trim() || 'studio'}.txt`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    showToast('success', tr('learning_export_done', 'Ekspor selesai'), '');
+    // A03.5: ekspor via attachment server (dulu blob dibuang diam-diam oleh Qt WebEngine).
+    saveFileToComputer({
+      name: `${(activeNotebook.title || 'studio').replace(/[^\w\- ]+/g, '').trim() || 'studio'}.txt`,
+      mime: 'text/plain',
+      text: parts.join('\n\n'),
+    });
+    downloadTargetInfo().then((info) => {
+      showToast('success', tr('learning_export_done', 'Ekspor selesai'),
+        tr('download_saved_msg', 'Tersimpan di: {path}').replace('{path}',
+          info.lastPath || info.dir || tr('download_folder_default', 'folder unduhan CraftLife')));
+    }).catch(() => showToast('success', tr('learning_export_done', 'Ekspor selesai'), ''));
   };
 
   // Flashcards state
@@ -266,134 +431,47 @@ export const LearningView: React.FC = () => {
   const [isCardFlipped, setIsCardFlipped] = useState(false);
 
   // Quiz state
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
-  const [quizSubmitted, setQuizSubmitted] = useState(false);
-  // P56: jawaban soal essay (teks bebas) + reset saat quiz baru.
-  const [essayAnswers, setEssayAnswers] = useState<Record<number, string>>({});
+  // A04: kunci jawaban TIDAK lagi memakai indeks soal. `activeNotebook` di-refetch
+  // setelah generate (`refreshNotebooks()`), dan indeks bisa bergeser/berbeda antar
+  // render → jawaban tampak hilang. Sekarang kuncinya ID SOAL yang stabil (q.id).
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
+  // A04: `quizReviewed` = mode PENILAIAN (skor + kunci + pembahasan). Dipisah dari
+  // kemampuan menjawab, sehingga textarea essay tidak pernah ikut terkunci.
+  const [quizReviewed, setQuizReviewed] = useState(false);
+  // P56/A04: jawaban essay (teks bebas) per ID soal + penilaian mandiri (1 / 0.5 / 0).
+  const [essayAnswers, setEssayAnswers] = useState<Record<string, string>>({});
+  const [essayMarks, setEssayMarks] = useState<Record<string, number>>({});
+  // A04: mode latihan — tampilkan seluruh jawaban contoh sekaligus.
+  const [showModelAnswers, setShowModelAnswers] = useState(false);
+  // A05: dialog konfigurasi per tipe Studio. Counter PG/Essay (A04) kini hidup DI DALAM
+  // dialog tipe Quiz — bukan lagi di panel — supaya tidak ada dua tempat mengatur hal sama.
+  const [studioDialogKind, setStudioDialogKind] = useState<StudioKind | null>(null);
+  // A06: area interaktif (kuis bisa dikerjakan, kartu dibalik, podcast diputar) tetap ada
+  // di panel, tapi kini bisa dilipat karena daftar artefak menjadi isi utama panel.
+  const [showStudioPreview, setShowStudioPreview] = useState(true);
+  // Ringkasan "pengaturan terakhir" untuk tipe yang sedang aktif (diperbarui setelah dialog).
+  const [cfgTick, setCfgTick] = useState(0);
 
   // Podcast / Audio playback state
   const [isPodcastPlaying, setIsPodcastPlaying] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
 
   // ── Parity LearningPage 3-panel: output type, count (quiz/flashcards 10-30),
-  //    panel toggles (sources/studio) & compact-nav (mobile). ──
+  //    panel toggles & navigasi antar kolom (A07). ──
   const [activeStudioType, setActiveStudioType] = useState<StudioType>('summary');
-  const [studioCount, setStudioCount] = useState(15);
-  const [showSources, setShowSources] = useState(true);
-  const [showStudio, setShowStudio] = useState(true);
-  const [compactPanel, setCompactPanel] = useState<'sources' | 'chat' | 'studio'>('sources');
-  // P56: slider antar 3 slide (sources/chat/studio) di layout compact.
-  const PANELS = ['sources', 'chat', 'studio'] as const;
-  const PANEL_ORDER: Record<'sources' | 'chat' | 'studio', number> = { sources: 0, chat: 1, studio: 2 };
-  const switchPanel = (k: 'sources' | 'chat' | 'studio') => setCompactPanel(k);
-  const panelIdx = PANEL_ORDER[compactPanel];
-  const gotoPanel = (i: number) => {
-    if (i >= 0 && i <= 2) setCompactPanel(PANELS[i]);
+  // A08: audio podcast dua host (MP3 nyata + offset tiap giliran untuk pemutar interaktif).
+  const [podcastAudio, setPodcastAudio] = useState<any | null>(null);
+  const [podcastBusy, setPodcastBusy] = useState(false);
+  // A07: satu state navigasi untuk rail + tab mobile; di desktop 'sources'/'chat'
+  // adalah isi kolom tengah, 'studio' berarti kolom Studio yang ditonjolkan.
+  const [view, setView] = useState<LearningViewKey>('sources');
+  // A07: status "dipakai" per sumber (grounding). Semua sumber dipakai secara default;
+  // A08 akan menghubungkan pilihan ini ke API (`sourceIds`) — bentuk kartunya sudah siap.
+  const [usedSourceIds, setUsedSourceIds] = useState<string[]>([]);
+  const toggleSourceUsed = (id: string, next: boolean) => {
+    setUsedSourceIds((prev) => (next ? Array.from(new Set([...prev, String(id)])) : prev.filter((x) => x !== String(id))));
   };
-  // Swipe antar slide (touch).
-  const touchX = useRef<number | null>(null);
-  // P56 rev: resize manual — seret pembatas antar panel dengan kursor (desktop lg),
-  // seperti resize kolom. Lebar tersimpan di localStorage.
-  const MIN_SRC_W = 240, MAX_SRC_W = 640, MIN_STU_W = 280, MAX_STU_W = 800, MIN_CHAT_W = 320, DIVIDER_W = 40;
-  const DEF_SRC_W = 280, DEF_STU_W = 330;
-  const [panelSizes, setPanelSizes] = useState<{ src: number; stu: number }>(() => {
-    try {
-      const raw = localStorage.getItem('cl_learning_panel_widths');
-      if (raw) {
-        const v = JSON.parse(raw) as { src?: unknown; stu?: unknown };
-        const src = Number(v.src), stu = Number(v.stu);
-        if (Number.isFinite(src) && Number.isFinite(stu)) {
-          return {
-            src: Math.min(MAX_SRC_W, Math.max(MIN_SRC_W, src)),
-            stu: Math.min(MAX_STU_W, Math.max(MIN_STU_W, stu)),
-          };
-        }
-      }
-    } catch { /* abaikan */ }
-    return { src: DEF_SRC_W, stu: DEF_STU_W };
-  });
-  const [resizing, setResizing] = useState<'src' | 'stu' | null>(null);
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const dragInfo = useRef<{ side: 'src' | 'stu'; startX: number; startW: number; maxW: number; w: number } | null>(null);
-  const savePanelSizes = (sizes: { src: number; stu: number }) => {
-    try { localStorage.setItem('cl_learning_panel_widths', JSON.stringify(sizes)); } catch { /* abaikan */ }
-  };
-  const beginPanelResize = (e: React.PointerEvent<HTMLDivElement>, side: 'src' | 'stu') => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    const containerW = rowRef.current?.getBoundingClientRect().width ?? 0;
-    const minW = side === 'src' ? MIN_SRC_W : MIN_STU_W;
-    const other = side === 'src' ? panelSizes.stu : panelSizes.src;
-    dragInfo.current = {
-      side,
-      startX: e.clientX,
-      startW: side === 'src' ? panelSizes.src : panelSizes.stu,
-      maxW: Math.max(minW, Math.min(side === 'src' ? MAX_SRC_W : MAX_STU_W, containerW - other - MIN_CHAT_W - DIVIDER_W)),
-      w: side === 'src' ? panelSizes.src : panelSizes.stu,
-    };
-    setResizing(side);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const movePanelResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = dragInfo.current;
-    if (!d) return;
-    const dx = e.clientX - d.startX;
-    const minW = d.side === 'src' ? MIN_SRC_W : MIN_STU_W;
-    d.w = Math.max(minW, Math.min(d.maxW, d.side === 'src' ? d.startW + dx : d.startW - dx));
-    const w = d.w;
-    setPanelSizes((p) => (d.side === 'src' ? { ...p, src: w } : { ...p, stu: w }));
-  };
-  const endPanelResize = () => {
-    const d = dragInfo.current;
-    if (!d) return;
-    dragInfo.current = null;
-    setResizing(null);
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    savePanelSizes(d.side === 'src' ? { src: d.w, stu: panelSizes.stu } : { src: panelSizes.src, stu: d.w });
-  };
-  const resetPanelWidth = (side: 'src' | 'stu') => {
-    const next = side === 'src'
-      ? { src: DEF_SRC_W, stu: panelSizes.stu }
-      : { src: panelSizes.src, stu: DEF_STU_W };
-    setPanelSizes(next);
-    savePanelSizes(next);
-  };
-  // Jendela di-resize → pastikan kedua panel samping tetap muat (layout 3 kolom = lg).
-  useEffect(() => {
-    const clampSizes = () => {
-      if (window.innerWidth < 1024) return;
-      const containerW = rowRef.current?.getBoundingClientRect().width ?? 0;
-      if (!containerW) return;
-      setPanelSizes((p) => ({
-        src: Math.max(MIN_SRC_W, Math.min(MAX_SRC_W, Math.min(p.src, containerW - p.stu - MIN_CHAT_W - DIVIDER_W))),
-        stu: Math.max(MIN_STU_W, Math.min(MAX_STU_W, Math.min(p.stu, containerW - p.src - MIN_CHAT_W - DIVIDER_W))),
-      }));
-    };
-    clampSizes();
-    window.addEventListener('resize', clampSizes);
-    return () => window.removeEventListener('resize', clampSizes);
-  }, []);
-  // Pembatas (drag handle) antar panel — hanya tampil di desktop (lg).
-  const renderPanelDivider = (side: 'src' | 'stu') => (
-    <div
-      key={`panel-divider-${side}`}
-      role="separator"
-      aria-orientation="vertical"
-      title={tr('panel_resize_hint', 'Seret untuk mengubah lebar panel (klik dua kali: reset)')}
-      onPointerDown={(e) => beginPanelResize(e, side)}
-      onPointerMove={movePanelResize}
-      onPointerUp={endPanelResize}
-      onPointerCancel={endPanelResize}
-      onLostPointerCapture={endPanelResize}
-      onDoubleClick={() => resetPanelWidth(side)}
-      className={`hidden lg:flex w-5 shrink-0 cursor-col-resize items-center justify-center touch-none select-none group/div ${resizing === side ? 'bg-sky-500/15' : 'hover:bg-slate-500/10'}`}
-    >
-      <div className={`w-1 h-10 rounded-full ${resizing === side ? 'bg-sky-400' : 'bg-slate-700 group-hover/div:bg-sky-500'}`} />
-    </div>
-  );
+
   // Math Problem state
   const [mathProblem, setMathProblem] = useState('x^2 - 5x + 6 = 0');
   const [mathSolution, setMathSolution] = useState('');
@@ -401,6 +479,97 @@ export const LearningView: React.FC = () => {
 
   const activeNotebook = notebooks.find((nb) => nb.id === activeNotebookId) || notebooks[0];
   const activeGenList: any[] = (activeNotebook as any)?.generations || [];
+
+  // A04: helper terjemahan ber-interpolasi (tr bawaan i18n hanya 2 argumen).
+  // A07: draf judul mengikuti notebook aktif (kecuali user sedang mengetik di input —
+  // useState+useEffect sederhana sudah cukup karena commit terjadi onBlur/Enter).
+  useEffect(() => {
+    setNbTitleDraft(activeNotebook?.title || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNotebook?.id, activeNotebook?.title]);
+
+  const trv = (key: string, fallback: string, vars?: Record<string, string | number>) => {
+    let out = tr(key, fallback);
+    if (vars) for (const [k, v] of Object.entries(vars)) out = out.split(`{${k}}`).join(String(v));
+    return out;
+  };
+  // Bentuk yang dipakai komponen QuizCountFields: (key, vars?, fallback?)
+  const trq = (key: string, vars?: Record<string, string | number>, fallback?: string) =>
+    trv(key, fallback || key, vars);
+
+  // A04: kunci draft jawaban kuis = notebook + generasi kuis terbaru.
+  const quizGen = useMemo(
+    () => activeGenList.find((g: any) => String(g?.gtype || '') === 'quiz'),
+    [activeGenList],
+  );
+  const quizDraftKey = `cl_learning_quiz_draft_${activeNotebook?.id ?? 'nb'}_${quizGen?.id ?? 'local'}`;
+
+  // A05: ringkasan sumber untuk dialog (jumlah sumber + total kata).
+  const sourceWords = useMemo(() => {
+    const list = (activeNotebook?.sources || []) as any[];
+    // A07: pakai `wordCount` dari server (dihitung dari isi penuh) bila tersedia;
+    // fallback ke hitung dari `content` (dipotong 4000 char oleh API) seperti A05.
+    return list.reduce((sum, s) => {
+      const wc = Number(s?.wordCount);
+      if (Number.isFinite(wc) && wc > 0) return sum + wc;
+      return sum + String(s?.content || '').trim().split(/\s+/).filter(Boolean).length;
+    }, 0);
+  }, [activeNotebook]);
+  const sourceCount = ((activeNotebook?.sources || []) as any[]).length;
+
+  // A07: sumber baru otomatis "dipakai"; sumber yang dihapus dibuang dari daftar
+  // pilihan supaya chip Dipakai/Tidak dipakai selalu konsisten dengan kartu yang tampak.
+  const sourceIdsKey = ((activeNotebook?.sources || []) as any[]).map((x) => String(x?.id)).join(',');
+  useEffect(() => {
+    const ids = sourceIdsKey ? sourceIdsKey.split(',') : [];
+    setUsedSourceIds((prev) => {
+      const kept = prev.filter((id) => ids.includes(id));
+      const added = ids.filter((id) => !prev.includes(id));
+      return added.length ? [...kept, ...added] : kept;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceIdsKey]);
+
+  // A05: pengaturan terakhir tipe aktif — ditampilkan di panel sebagai ringkasan.
+  const activeStudioKind = activeStudioType as StudioKind;
+  const lastCfgSummary = useMemo(() => {
+    if (!activeNotebook?.id) return '';
+    return summarizeStudioConfig(activeStudioKind, loadStudioConfig(activeNotebook.id, activeStudioKind), trq);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNotebook?.id, activeStudioKind, cfgTick]);
+  const draftLoadedRef = useRef<string>('');
+
+  // A04: muat draft (jawaban + nilai mandiri) saat notebook/generasi kuis berganti.
+  useEffect(() => {
+    if (!activeNotebook?.id) return;
+    if (draftLoadedRef.current === quizDraftKey) return;
+    draftLoadedRef.current = quizDraftKey;
+    setQuizReviewed(false);
+    setShowModelAnswers(false);
+    let draft: any = null;
+    try {
+      draft = JSON.parse(localStorage.getItem(quizDraftKey) || 'null');
+    } catch {
+      draft = null;
+    }
+    setSelectedAnswers(draft?.answers || {});
+    setEssayAnswers(draft?.essays || {});
+    setEssayMarks(draft?.marks || {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quizDraftKey, activeNotebook?.id]);
+
+  // A04: auto-save draft — jawaban tidak hilang saat pindah panel/tab atau refresh.
+  useEffect(() => {
+    if (!activeNotebook?.id) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(quizDraftKey, JSON.stringify({
+          answers: selectedAnswers, essays: essayAnswers, marks: essayMarks, at: Date.now(),
+        }));
+      } catch { /* localStorage penuh / diblokir — abaikan */ }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [selectedAnswers, essayAnswers, essayMarks, quizDraftKey, activeNotebook?.id]);
 
   // ── Studio output renderers (parity LearningPage studio_output_stack) ──
   const renderFlashcards = () => {
@@ -429,76 +598,135 @@ export const LearningView: React.FC = () => {
   };
 
   const renderQuiz = () => {
-    const quizzes = activeNotebook?.quizzes || [];
-    if (!quizzes.length) {
+    const rawQuizzes: any[] = (activeNotebook?.quizzes || []) as any[];
+    if (!rawQuizzes.length) {
       return (
         <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><HelpCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{tr('no_quiz_yet', 'No quiz yet.')}</p><p className="text-xs mt-1">{tr('click_the_quiz_button', 'Click the Quiz button.')}</p></div>
       );
     }
+    // A04: normalisasi soal — kunci jawaban memakai ID SOAL (stabil), dan soal esai
+    // tetap dikenali walau server/model lupa mengirim `type` (ciri: tanpa opsi tapi
+    // punya jawaban contoh). Sebelumnya soal esai kehilangan penandanya saat
+    // notebook di-refetch → tampil seperti PG tanpa opsi = "tidak bisa mengetik".
+    const items = rawQuizzes.map((q: any, i: number) => {
+      const options = Array.isArray(q.options) ? q.options : [];
+      const modelAnswer = String(q.modelAnswer || q.model_answer || '');
+      const type = String(q.type || '').toLowerCase();
+      const isEssay = type === 'essay' || (type !== 'mc' && !options.length && !!modelAnswer);
+      return { ...q, key: String(q.id ?? i), options, modelAnswer, isEssay };
+    });
+    const mcItems = items.filter((q) => !q.isEssay);
+    const essayItems = items.filter((q) => q.isEssay);
+    const mcCorrect = mcItems.filter((q) => Number(selectedAnswers[q.key]) === Number(q.correctAnswerIndex)).length;
+    const essayPoints = essayItems.reduce((sum, q) => sum + (Number(essayMarks[q.key]) || 0), 0);
+    const scoreTotal = mcItems.length + essayItems.length;
+    const scoreGot = mcCorrect + essayPoints;
+    const scorePct = scoreTotal ? Math.round((scoreGot / scoreTotal) * 100) : 0;
+    const fmtScore = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
     return (
       <div className="space-y-4">
-        {quizSubmitted && (() => {
-          // P56: skor dihitung dari soal pilihan ganda saja (essay dinilai mandiri).
-          const mc = quizzes.filter((q) => (q.type || 'mc') !== 'essay');
-          const correct = mc.filter((q) => selectedAnswers[quizzes.indexOf(q)] === q.correctAnswerIndex).length;
-          return (
-            <div className="p-3 bg-violet-950/40 border border-violet-500/40 rounded-xl text-sm font-bold text-violet-200">
-              {tr('quiz_score', 'Skor')}: {correct}/{mc.length}
+        {quizReviewed && (
+          <div className="p-3 bg-violet-950/40 border border-violet-500/40 rounded-xl space-y-1">
+            <div className="text-sm font-black text-violet-100">
+              {tr('quiz_score', 'Skor')}: {fmtScore(scoreGot)}/{scoreTotal} ({scorePct}%)
             </div>
-          );
-        })()}
-        {quizzes.map((q, qIndex) => {
-          const userChoice = selectedAnswers[qIndex];
-          const isCorrect = userChoice === q.correctAnswerIndex;
-          // P56: soal essay (generator menghasilkan mc + essay sesuai count).
-          const isEssay = (q.type || 'mc') === 'essay';
+            <div className="text-[11px] text-violet-200/80">
+              {trv('learning_quiz_score_detail', 'PG {mcCorrect}/{mcTotal} · Essay {essayPoints}/{essayTotal}', {
+                mcCorrect, mcTotal: mcItems.length, essayPoints: fmtScore(essayPoints), essayTotal: essayItems.length,
+              })}
+            </div>
+            <div className="text-[10px] text-violet-200/60">
+              {trv('learning_quiz_score_hint', 'Nilai essay diisi mandiri (Sesuai = 1 · Sebagian = 0.5).', {})}
+            </div>
+          </div>
+        )}
+        {items.map((q, qIndex) => {
+          const userChoice = selectedAnswers[q.key];
+          const isCorrect = Number(userChoice) === Number(q.correctAnswerIndex);
           return (
-            <div key={q.id || qIndex} className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
-              <h4 className="font-bold text-sm text-slate-200">{qIndex + 1}. {q.question}{isEssay && <span className="ml-2 text-[10px] uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 align-middle">Essay</span>}</h4>
-              {isEssay ? (
+            <div key={q.key} className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+              <h4 className="font-bold text-sm text-slate-200">{qIndex + 1}. {q.question}{q.isEssay && <span className="ml-2 text-[10px] uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 align-middle">Essay</span>}</h4>
+              {q.isEssay ? (
                 <>
+                  {/* A04: textarea TIDAK PERNAH disabled — user tetap bisa memperbaiki
+                      jawaban setelah menekan Evaluate (dulu `disabled={quizSubmitted}`
+                      membuat kolom jawaban terkunci). */}
                   <textarea
-                    value={essayAnswers[qIndex] ?? ''}
-                    disabled={quizSubmitted}
-                    onChange={(e) => setEssayAnswers((prev) => ({ ...prev, [qIndex]: e.target.value }))}
+                    value={essayAnswers[q.key] ?? ''}
+                    onChange={(e) => setEssayAnswers((prev) => ({ ...prev, [q.key]: e.target.value }))}
                     placeholder={tr('essay_answer_ph', 'Tulis jawabanmu di sini…')}
                     rows={3}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 resize-none focus:outline-none focus:border-violet-500 disabled:opacity-70"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 resize-y focus:outline-none focus:border-violet-500"
                   />
-                  {quizSubmitted && q.modelAnswer && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{tr('learning_quiz_essay_self_mark', 'Nilai mandiri')}</span>
+                    {([
+                      [1, 'learning_quiz_essay_done', '✅ Sesuai'],
+                      [0.5, 'learning_quiz_essay_partial', '🟡 Sebagian'],
+                      [0, 'learning_quiz_essay_missing', '❌ Belum'],
+                    ] as const).map(([val, key, fb]) => {
+                      const active = (Number(essayMarks[q.key]) || 0) === val && (essayMarks[q.key] !== undefined);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setEssayMarks((prev) => ({ ...prev, [q.key]: val }))}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${active ? 'bg-emerald-600/25 border-emerald-500/50 text-emerald-200' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-emerald-500/40'}`}
+                        >
+                          {tr(key, fb)}
+                        </button>
+                      );
+                    })}
+                    <span className="ml-auto text-[10px] font-mono text-slate-500">{fmtScore(Number(essayMarks[q.key]) || 0)} / 1</span>
+                  </div>
+                  {(showModelAnswers || quizReviewed) && (q.modelAnswer ? (
                     <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{tr('quiz_model_answer', '💡 Jawaban contoh')}:</span> {q.modelAnswer}</p>
-                  )}
+                  ) : (
+                    <p className="text-[10px] text-amber-300">{tr('learning_quiz_no_model_answer', 'Soal ini tidak menyertakan jawaban contoh.')}</p>
+                  ))}
                 </>
               ) : (
                 <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {q.options.map((opt, optIndex) => {
-                  const isSelected = userChoice === optIndex;
+                {q.options.map((opt: string, optIndex: number) => {
+                  const isSelected = Number(userChoice) === optIndex;
                   let btnStyle = 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700';
-                  if (quizSubmitted) {
-                    if (optIndex === q.correctAnswerIndex) btnStyle = 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300 font-semibold';
+                  if (quizReviewed) {
+                    if (optIndex === Number(q.correctAnswerIndex)) btnStyle = 'bg-emerald-950/60 border-emerald-500/60 text-emerald-300 font-semibold';
                     else if (isSelected && !isCorrect) btnStyle = 'bg-rose-950/60 border-rose-500/60 text-rose-300';
                   } else if (isSelected) btnStyle = 'bg-violet-950/60 border-violet-500/60 text-violet-200 font-semibold';
                   return (
-                    <button key={optIndex} disabled={quizSubmitted} onClick={() => setSelectedAnswers((prev) => ({ ...prev, [qIndex]: optIndex }))} className={`p-2.5 text-left rounded-xl border text-xs transition-colors flex items-center justify-between ${btnStyle}`}>
+                    <button key={optIndex} disabled={quizReviewed} onClick={() => setSelectedAnswers((prev) => ({ ...prev, [q.key]: optIndex }))} className={`p-2.5 text-left rounded-xl border text-xs transition-colors flex items-center justify-between ${btnStyle}`}>
                       <span>{opt}</span>
-                      {quizSubmitted && optIndex === q.correctAnswerIndex && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-                      {quizSubmitted && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-rose-400 shrink-0" />}
+                      {quizReviewed && optIndex === Number(q.correctAnswerIndex) && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+                      {quizReviewed && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-rose-400 shrink-0" />}
                     </button>
                   );
                 })}
               </div>
-              {quizSubmitted && <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{tr('explanation', 'Explanation:')}</span> {q.explanation}</p>}
+              {quizReviewed && q.explanation && <p className="text-xs text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800/80"><span className="font-bold text-slate-300">{tr('explanation', 'Explanation:')}</span> {q.explanation}</p>}
                 </>
               )}
             </div>
           );
         })}
-        <div className="flex justify-end gap-2 pt-1">
-          {!quizSubmitted ? (
-            <button onClick={() => { setQuizSubmitted(true); showToast('success', tr('learning_quiz_evaluated', 'Quiz Evaluated'), tr('learning_quiz_check_score', 'Check your score.')); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl">{tr('evaluate', 'Evaluate')}</button>
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
+          <button onClick={() => setShowModelAnswers((v) => !v)} className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl">
+            <Eye className="w-3.5 h-3.5" />
+            <span>{showModelAnswers ? tr('learning_quiz_hide_model_answers', 'Sembunyikan jawaban contoh') : tr('learning_quiz_show_model_answers', 'Lihat semua jawaban contoh')}</span>
+          </button>
+          {!quizReviewed ? (
+            <button onClick={() => { setQuizReviewed(true); showToast('success', tr('learning_quiz_evaluated', 'Quiz Evaluated'), tr('learning_quiz_check_score', 'Check your score.')); }} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl">{tr('evaluate', 'Evaluate')}</button>
           ) : (
-            <button onClick={() => { setQuizSubmitted(false); setSelectedAnswers({}); }} className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl"><RotateCcw className="w-3.5 h-3.5" /><span>{tr('retake', 'Retake')}</span></button>
+            <>
+              <button onClick={() => setQuizReviewed(false)} className="flex items-center gap-1.5 px-4 py-2 bg-violet-600/30 hover:bg-violet-600/40 text-violet-200 font-bold text-xs rounded-xl border border-violet-500/40">
+                <RotateCcw className="w-3.5 h-3.5" /><span>{tr('learning_quiz_review_again', 'Evaluasi ulang')}</span>
+              </button>
+              <button onClick={() => { setQuizReviewed(false); setSelectedAnswers({}); setEssayAnswers({}); setEssayMarks({}); try { localStorage.removeItem(quizDraftKey); } catch { /* ignore */ } }} className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl">
+                <RotateCcw className="w-3.5 h-3.5" /><span>{tr('retake', 'Retake')}</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -506,27 +734,28 @@ export const LearningView: React.FC = () => {
   };
 
   const renderPodcast = () => {
-    const lines = activeNotebook?.podcast || [];
+    const lines: any[] = (activeNotebook as any)?.podcast || [];
     if (!lines.length) {
       return (
-        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500"><Headphones className="w-8 h-8 mx-auto mb-2 text-slate-600" /><p className="text-sm font-medium">{tr('no_episode_yet', 'No episode yet.')}</p><p className="text-xs mt-1">{tr('click_the_podcast_button', 'Click the Podcast button.')}</p></div>
+        <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500">
+          <Headphones className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+          <p className="text-sm font-medium">{tr('no_episode_yet', 'No episode yet.')}</p>
+          <p className="text-xs mt-1">{tr('click_the_podcast_button', 'Click the Podcast button.')}</p>
+        </div>
       );
     }
+    const gen = selectedGen && normalizeArtifactType((selectedGen as any).gtype) === 'podcast'
+      ? selectedGen as any : latestPodcastGen;
     return (
-      <div className="space-y-3">
-        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center gap-3">
-          <button onClick={() => { const next = !isPodcastPlaying; setIsPodcastPlaying(next); if (next && lines[currentLineIndex]) speakLine(lines[currentLineIndex].line); else window.speechSynthesis?.cancel(); }} className="ct-btn ct-btn-primary ct-btn-icon-sm w-9 h-9 rounded-xl justify-center">{isPodcastPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}</button>
-          <div><h4 className="font-bold text-sm text-slate-200">{tr('deep_dive_episode', 'Deep Dive Episode')}</h4><p className="text-[10px] text-slate-500">{tr('hosts_alex_sam_text_to_speech', 'Hosts: Alex & Sam · Text-to-Speech')}</p></div>
-        </div>
-        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-          {lines.map((line, idx) => (
-            <div key={idx} onClick={() => { setCurrentLineIndex(idx); speakLine(line.line); }} className={`p-2.5 rounded-xl border cursor-pointer transition-colors ${line.speaker === 'Alex' ? 'bg-indigo-950/30 border-indigo-500/30' : 'bg-emerald-950/30 border-emerald-500/30'}`}>
-              <div className="flex items-center justify-between mb-1"><span className={`text-xs font-bold uppercase tracking-wider ${line.speaker === 'Alex' ? 'text-indigo-400' : 'text-emerald-400'}`}>🎙️ {line.speaker}</span><span className="text-[10px] text-slate-500">{tr('click_to_listen', 'Click to listen')}</span></div>
-              <p className="text-xs text-slate-200 leading-relaxed">{line.line}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <PodcastPlayer
+        audio={podcastAudio}
+        title={gen?.title || gen?.topic || tr('deep_dive_episode', 'Deep Dive Episode')}
+        generationId={gen ? String(gen.id) : undefined}
+        fontSize={studioFontSize}
+        busy={podcastBusy}
+        onGenerate={(force) => handleGeneratePodcastAudio(force)}
+        tr={trq}
+      />
     );
   };
 
@@ -547,9 +776,12 @@ export const LearningView: React.FC = () => {
   // sehingga studio.chat() di bawah adalah SATU-SATUNYA request per pesan.
   // (Dulu: addNotebookChat('user') ikut memanggil API + await studio.chat()
   // lagi di sini = 2 request → 2 blok user + 2 jawaban tersimpan di server.)
-  const handleSendChat = async () => {
-    if (!chatInput.trim() || !activeNotebook || isAiLoading) return;
-    const userMsg = chatInput.trim();
+  // A07: `override` = teks eksplisit dari kartu saran; pemanggilan dari onClick biasa
+  // mengirim MouseEvent, karena itu argumen non-string diabaikan.
+  const handleSendChat = async (override?: string) => {
+    const raw = typeof override === 'string' ? override : chatInput;
+    if (!raw.trim() || !activeNotebook || isAiLoading) return;
+    const userMsg = raw.trim();
     setChatInput('');
     // Tampil optimistic lokal; server menyimpan pasangan user+jawaban pada
     // request di bawah (source of truth tetap tabel learning_chats).
@@ -557,9 +789,17 @@ export const LearningView: React.FC = () => {
     setIsAiLoading(true);
 
     try {
-      const data = await studio.chat(activeNotebook.id, userMsg);
-      const reply = data.answer || data.reply || data.result?.answer;
-      addNotebookChat(activeNotebook.id, reply || data.error || 'Failed to get response', 'ai');
+      // A08: kirim daftar sumber terpilih → AI hanya menjawab dari sumber itu
+      // dan mengembalikan sitasi yang bisa diklik.
+      const data = await studio.chat(activeNotebook.id, userMsg, usedSourceIds);
+      const result = data.result || data;
+      const reply = result.answer || data.answer || data.reply;
+      const citations = result.citations || data.citations || [];
+      addNotebookChat(activeNotebook.id, reply || data.error || 'Failed to get response', 'ai', citations);
+      if (citations.length) {
+        showToast('info', tr('learning_citations', 'Sitasi'),
+          trv('learning_citations_found', '{n} kutipan sumber ditandai pada jawaban.', { n: citations.length }));
+      }
     } catch {
       addNotebookChat(
         activeNotebook.id,
@@ -572,18 +812,20 @@ export const LearningView: React.FC = () => {
   };
 
   // Generate Flashcards
-  const handleGenerateFlashcards = async () => {
+  // A05: `extra` = opsi dari dialog (jumlah kartu, gaya kartu, kesulitan, bahasa, fokus).
+  const handleGenerateFlashcards = async (extra: Record<string, unknown> = {}) => {
     if (!activeNotebook) return;
     const combined = activeNotebook.sources.map((s) => s.content).join('\n\n') || activeNotebook.description;
     setIsAiLoading(true);
-    showToast('info', 'AI Thinking', 'Synthesizing study flashcards...');
+    showToast('info', tr('ai_thinking', 'AI Thinking'), tr('learning_gen_flashcards', 'Menyusun kartu belajar…'));
 
     try {
       const data = await studio.generate('flashcards', {
         content: combined,
-        topic: activeNotebook.title,
+        topic: studioTopic.trim() || activeNotebook.title,
         notebookId: activeNotebook.id,
-        count: studioCount,
+        count: Number(extra.count) || 15,
+        ...extra,
       });
       const cards = data.flashcards || data.result?.flashcards || [];
       if (cards.length > 0) {
@@ -593,31 +835,50 @@ export const LearningView: React.FC = () => {
         updateNotebook(activeNotebook.id, {
           flashcards: cards.map((f: any, i: number) => ({ id: 'fc_' + Date.now() + '_' + i, ...f })),
         });
-        showToast('success', 'Flashcards Ready', `Generated ${cards.length} cards.`);
+        showToast('success', tr('learning_gen_done_title', 'Selesai'), trv('learning_gen_flashcards_done', '{n} kartu siap.', { n: cards.length }));
         refreshNotebooks();
       } else {
         showToast('damage', 'AI', data.msg || 'empty');
       }
     } catch {
-      showToast('damage', 'AI Error', 'Could not generate flashcards.');
+      showToast('damage', 'AI Error', tr('learning_gen_flashcards_failed', 'Gagal membuat kartu belajar.'));
     } finally {
       setIsAiLoading(false);
     }
   };
 
   // Generate Quiz
-  const handleGenerateQuiz = async () => {
+  // A04: mengirim DUA counter (mcCount/essayCount) — jumlah PG & essay diatur user,
+  // total gabungan dijaga ≤ 30 di UI dan di server (learning_helper).
+  const handleGenerateQuiz = async (extra: Record<string, unknown> = {}) => {
     if (!activeNotebook) return;
+    const mc = Number(extra.mcCount ?? QUIZ_DEFAULT_MC) || 0;
+    const essay = Number(extra.essayCount ?? QUIZ_DEFAULT_ESSAY) || 0;
+    const total = mc + essay;
+    if (total > QUIZ_TOTAL_MAX) {
+      showToast('damage', tr('learning_quiz_count_title', 'Jumlah soal kuis'),
+        tr('learning_quiz_total_over', 'Total melebihi 30 soal — kurangi salah satu.'));
+      return;
+    }
+    if (total <= 0) {
+      showToast('damage', tr('learning_quiz_count_title', 'Jumlah soal kuis'),
+        tr('learning_quiz_total_zero', 'Isi minimal satu jenis soal.'));
+      return;
+    }
     const combined = activeNotebook.sources.map((s) => s.content).join('\n\n') || activeNotebook.description;
     setIsAiLoading(true);
-    showToast('info', 'AI Thinking', 'Generating multiple choice questions...');
+    showToast('info', tr('ai_thinking', 'AI Thinking'),
+      trv('learning_quiz_generating', 'Menyusun {mc} soal PG + {essay} soal essay…', { mc, essay }));
 
     try {
       const data = await studio.generate('quiz', {
         content: combined,
-        topic: activeNotebook.title,
+        topic: studioTopic.trim() || activeNotebook.title,
         notebookId: activeNotebook.id,
-        count: studioCount,
+        count: total,
+        mcCount: mc,
+        essayCount: essay,
+        ...extra,
       });
       const quiz = data.quiz || data.result?.quiz || [];
       if (quiz.length > 0) {
@@ -626,9 +887,13 @@ export const LearningView: React.FC = () => {
           quizzes: quiz.map((q: any, i: number) => ({ id: 'q_' + Date.now() + '_' + i, ...q })),
         });
         setSelectedAnswers({});
-        setQuizSubmitted(false);
+        setQuizReviewed(false);
         setEssayAnswers({});
-        showToast('success', 'Quiz Generated', `Ready for test (${quiz.length} questions).`);
+        setEssayMarks({});
+        setShowModelAnswers(false);
+        try { localStorage.removeItem(quizDraftKey); } catch { /* ignore */ }
+        showToast('success', tr('learning_quiz_ready_title', 'Kuis siap'),
+          trv('learning_quiz_ready_msg', '{n} soal siap dikerjakan.', { n: quiz.length }));
         refreshNotebooks();
       } else {
         showToast('damage', 'AI', data.msg || 'empty');
@@ -641,30 +906,31 @@ export const LearningView: React.FC = () => {
   };
 
   // Generate Podcast Script
-  const handleGeneratePodcast = async () => {
+  const handleGeneratePodcast = async (extra: Record<string, unknown> = {}) => {
     if (!activeNotebook) return;
     const combined = activeNotebook.sources.map((s) => s.content).join('\n\n') || activeNotebook.description;
     setIsAiLoading(true);
-    showToast('info', 'AI Audio Synthesis', 'Writing two-host audio dialogue overview...');
+    showToast('info', tr('learning_gen_audio_title', 'AI Audio Overview'), tr('learning_gen_audio', 'Menulis dialog dua host…'));
 
     try {
       const data = await studio.generate('podcast', {
         content: combined,
-        topic: activeNotebook.title,
+        topic: studioTopic.trim() || activeNotebook.title,
         notebookId: activeNotebook.id,
+        ...extra,
       });
       const dialogue = data.podcast || data.dialogue || data.result?.podcast || [];
       if (dialogue.length > 0) {
         setActiveStudioType('podcast');
         setCurrentLineIndex(0);
         updateNotebook(activeNotebook.id, { podcast: dialogue });
-        showToast('success', 'Deep Dive Ready', '2-Host conversation script generated.');
+        showToast('success', tr('learning_gen_done_title', 'Selesai'), trv('learning_gen_audio_done', '{n} giliran dialog siap.', { n: dialogue.length }));
         refreshNotebooks();
       } else {
         showToast('damage', 'AI', data.msg || 'empty');
       }
     } catch {
-      showToast('damage', 'AI Error', 'Could not generate podcast script.');
+      showToast('damage', 'AI Error', tr('learning_gen_audio_failed', 'Gagal membuat dialog audio.'));
     } finally {
       setIsAiLoading(false);
     }
@@ -685,7 +951,7 @@ export const LearningView: React.FC = () => {
   };
 
 
-  const handleGenerateStudio = async (kind: string) => {
+  const handleGenerateStudio = async (kind: string, extra: Record<string, unknown> = {}) => {
     if (!activeNotebook) return;
     const combined = activeNotebook.sources.map((s) => s.content).join('\n\n') || activeNotebook.description;
     setIsAiLoading(true);
@@ -694,6 +960,7 @@ export const LearningView: React.FC = () => {
         content: combined,
         topic: studioTopic.trim() || activeNotebook.title,
         notebookId: activeNotebook.id,
+        ...extra,
       });
       const payload: any = {};
       if (kind === 'study-guide') payload.studyGuide = data.studyGuide || data.result?.studyGuide || data.raw;
@@ -703,7 +970,7 @@ export const LearningView: React.FC = () => {
       if (kind === 'summary') payload.summary = data.summary || data.result?.summary || data.raw;
       updateNotebook(activeNotebook.id, payload);
       setActiveStudioType(kind as StudioType);
-      showToast('success', 'Studio', kind);
+      showToast('success', tr('learning_gen_done_title', 'Selesai'), trv('learning_gen_done_msg', '{type} siap dipakai.', { type: kind }));
       setSelectedGen(null);
       refreshNotebooks();
     } catch {
@@ -713,215 +980,257 @@ export const LearningView: React.FC = () => {
     }
   };
 
-  // Read speech using browser SpeechSynthesis
-  const speakLine = (text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+  // A08: generasi podcast terbaru + audio tersimpan (agar audio lama tetap bisa diputar
+  // setelah reload tanpa menyusun ulang).
+  const latestPodcastGen = useMemo(
+    () => (activeGenList as any[]).find((g: any) => normalizeArtifactType(g.gtype) === 'podcast') || null,
+    [activeGenList],
+  );
+  useEffect(() => {
+    const saved = latestPodcastGen?.audio;
+    setPodcastAudio(saved ? { ...saved, url: `${apiBase()}${saved.url || ''}` } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNotebook?.id, latestPodcastGen?.id, latestPodcastGen?.audio?.url]);
+
+  // A06: kartu yang isinya SAMA dengan area interaktif = generasi TERBARU tipe itu
+  // (server mengirim `generations` urut terbaru → terlama).
+  const interactiveArtifactId = useMemo(() => {
+    const hit = (activeGenList as any[]).find((g: any) => normalizeArtifactType(g.gtype) === activeStudioType);
+    return hit ? String(hit.id) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGenList, activeStudioType]);
+
+  // A06: daftar artefak = seluruh generasi notebook ini (urut terbaru dari server).
+  const artifacts: ArtifactItem[] = useMemo(
+    () => (activeGenList as any[]).map((g: any) => ({
+      id: String(g.id ?? ''),
+      gtype: String(g.gtype || 'summary'),
+      title: String(g.title || g.topic || ''),
+      createdAt: g.createdAt || '',
+      updatedAt: g.updatedAt || '',
+      content: g.content || '',
+      itemCount: Number(g.itemCount) || 0,
+      words: Number(g.words) || 0,
+      sizeBytes: Number(g.sizeBytes) || 0,
+    })),
+    [activeGenList],
+  );
+
+  // A05: satu pintu masuk dari dialog/quick-generate ke handler per tipe.
+  const dispatchStudioGenerate = (kind: StudioKind, payload: Record<string, unknown>) => {
+    if (kind === 'quiz') return handleGenerateQuiz(payload);
+    if (kind === 'flashcards') return handleGenerateFlashcards(payload);
+    if (kind === 'podcast') return handleGeneratePodcast(payload);
+    return handleGenerateStudio(STUDIO_META[kind].apiKind, payload);
+  };
+
+  // A05: klik dialog "Generate sekarang" — payload sudah diserialisasi oleh dialog.
+  const handleDialogGenerate = (kind: StudioKind, payload: Record<string, unknown>) => {
+    setStudioDialogKind(null);
+    setCfgTick((v) => v + 1);
+    dispatchStudioGenerate(kind, payload);
+  };
+
+  // A05: tombol ⚡ di kartu — generate langsung dengan pengaturan terakhir (power user).
+  const handleQuickGenerate = (kind: StudioKind) => {
+    if (!activeNotebook?.id) return;
+    setCfgTick((v) => v + 1);
+    dispatchStudioGenerate(kind, buildStudioPayload(kind, loadStudioConfig(activeNotebook.id, kind)));
+  };
+
+  // A08: buat / buat-ulang audio podcast dua host.
+  // Dulu pemutar memakai `window.speechSynthesis` TANPA `lang` sehingga suara
+  // Inggris membacakan teks Indonesia; kini audio MP3 nyata dengan suara yang
+  // mengikuti bahasa transkrip + offset per giliran supaya bisa dilompati.
+  const handleGeneratePodcastAudio = async (force = false) => {
+    if (!activeNotebook) return;
+    const bySelected = selectedGen && normalizeArtifactType((selectedGen as any).gtype) === 'podcast'
+      ? selectedGen as any : null;
+    const gen = bySelected || (activeGenList as any[]).find((g: any) => normalizeArtifactType(g.gtype) === 'podcast');
+    if (!gen?.id) {
+      showToast('damage', tr('learning_podcast_generate', 'Buat voice'),
+        tr('learning_no_podcast', 'Buat transkrip Podcast dulu, lalu susun audionya.'));
+      return;
+    }
+    setPodcastBusy(true);
+    try {
+      const r = await studio.podcastAudio(activeNotebook.id, String(gen.id), force);
+      const res = r?.result || r;
+      if (res?.ok === false) {
+        showToast('damage', tr('learning_podcast_audio_failed', 'Gagal membuat audio'),
+          String(res?.msg || '').slice(0, 160));
+        return;
+      }
+      setPodcastAudio({
+        // `apiBase()` penting agar <audio src> tetap benar saat dibuka lewat WebEngine.
+        url: `${apiBase()}${res.url || ''}`,
+        durationSec: res.durationSec || 0,
+        sizeBytes: res.sizeBytes || 0,
+        language: res.language || 'id',
+        engine: res.engine || '',
+        voiceA: res.voiceA || '',
+        voiceB: res.voiceB || '',
+        turns: res.turns || [],
+      });
+      showToast('success', tr('learning_podcast_audio_ready', 'Audio siap'),
+        tr('learning_podcast_audio_ready_detail',
+          'Klik salah satu giliran untuk melompat ke bagian itu.'));
+    } catch (e) {
+      showToast('damage', tr('learning_podcast_audio_failed', 'Gagal membuat audio'),
+        String((e as any)?.message || e));
+    } finally {
+      setPodcastBusy(false);
     }
   };
 
   return (
-    <div id="learning-workspace-view" className="space-y-5">
-      {/* Header (parity _page_header) + api status + api key */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
+    <div id="learning-workspace-view" className="space-y-4">
+      {/* Header halaman (parity _page_header) — ringkas; kontrol notebook kini tinggal di
+          topbar LearningShell (A07) supaya tata letak menyerupai NotebookLM. */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-2xl">📚</div>
+          <div className="w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xl">📚</div>
           <div>
-            <h1 className="text-xl font-bold text-slate-100">{tr('ai_learning_workspace', 'AI Learning Workspace')}</h1>
-            <p className="text-xs text-slate-400">{tr('sources_chat_studio_in_one_grounded_learning_wor', 'Sources + Chat + Studio in one grounded learning workspace.')}</p>
+            <h1 className="text-lg font-bold text-slate-100">{tr('ai_learning_workspace', 'AI Learning Workspace')}</h1>
+            <p className="text-[11px] text-slate-400">{tr('sources_chat_studio_in_one_grounded_learning_wor', 'Sources + Chat + Studio in one grounded learning workspace.')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs px-2 py-1 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20 font-semibold">{tr('ai', 'AI')}</span>
+          <span className="ct-nlm-chip ct-nlm-num">{tr('ai', 'AI')}</span>
           {/* Parity _manage_api_key */}
           <button
             onClick={() => { const k = window.prompt(tr('learning_api_key_label', 'Gemini API key'), geminiKey); if (k !== null && k !== geminiKey) { setGeminiKey(k); studio.setGeminiKey(k).then(() => showToast('success', 'Gemini', 'saved')).catch((e) => showToast('damage', String(e), '')); } }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl border border-slate-700"
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-bold rounded-xl border border-slate-700"
           >
             <KeyRound className="w-3.5 h-3.5" /><span>{tr('learning_api_btn', 'API Key')}</span>
           </button>
-          <button onClick={() => setShowNewNbModal(true)} className="flex items-center gap-2 px-3.5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl">
-            <Plus className="w-4 h-4" /><span>{tr('learning_new_notebook_title', 'New Notebook')}</span>
+          <button onClick={() => setShowNewNbModal(true)} className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold rounded-xl">
+            <Plus className="w-3.5 h-3.5" /><span>{tr('learning_new_notebook_title', 'New Notebook')}</span>
           </button>
         </div>
       </div>
 
       {activeNotebook ? (
-        <>
-          {/* Notebook toolbar (parity _build toolbar: combo + new/rename/delete + toggle panels) */}
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400 font-semibold px-1">{tr('learning_notebook_label', 'Notebook')}:</span>
-            <select
-              value={activeNotebook.id}
-              onChange={(e) => setActiveNotebookId(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 min-w-[180px] flex-1"
-            >
-              {notebooks.map((nb) => <option key={nb.id} value={nb.id}>{nb.icon || '📚'} {nb.title}</option>)}
-            </select>
-            <button onClick={() => setShowNewNbModal(true)} className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1"><Plus className="w-3.5 h-3.5" />{tr('learning_new_notebook', 'Baru')}</button>
-            <button onClick={() => { setRenameTitle(activeNotebook.title); setRenaming(true); }} className="ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5" title={tr('learning_rename_title', 'Ubah judul notebook')}><Pencil className="w-3.5 h-3.5" /></button>
-            <button onClick={() => { if (notebooks.length > 1 && window.confirm(tr('learning_delete_confirm', 'Hapus notebook ini?'))) deleteNotebook(activeNotebook.id); }} className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-700/40 border border-slate-700" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
-            <div className="ml-auto flex items-center gap-1">
-              <button onClick={() => setShowSources((v) => !v)} className={`px-3 py-1.5 rounded-lg border font-semibold ${showSources ? 'bg-violet-600/20 border-violet-500/50 text-violet-200' : 'bg-slate-800 border-slate-700 text-slate-400'} transition-colors`}>{tr('learning_sources_panel', 'Sumber')}</button>
-              <button onClick={() => setShowStudio((v) => !v)} className={`px-3 py-1.5 rounded-lg border font-semibold ${showStudio ? 'bg-violet-600/20 border-violet-500/50 text-violet-200' : 'bg-slate-800 border-slate-700 text-slate-400'} transition-colors`}>{tr('learning_studio_panel', 'Studio')}</button>
-            </div>
-          </div>
-
-          {/* Compact nav (mobile, parity learningCompactNav: slide antar 3 tab) */}
-          <div className="lg:hidden flex gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
-            {(['sources', 'chat', 'studio'] as const).map((k) => (
-              <button key={k} onClick={() => switchPanel(k)} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${compactPanel === k ? 'bg-violet-600 text-white' : 'text-slate-400'}`}>
-                {k === 'sources' ? tr('learning_sources_panel', 'Sumber') : k === 'chat' ? tr('learning_chat_panel', 'Chat') : tr('learning_studio_panel', 'Studio')}
-              </button>
-            ))}
-          </div>
-
-          {/* P56: slider antar 3 slide — geser slider / panah / swipe di layar sempit */}
-          <div className="lg:hidden flex items-center gap-2 pb-1">
-            <button type="button" onClick={() => gotoPanel(panelIdx - 1)} disabled={panelIdx === 0} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm font-bold disabled:opacity-30">‹</button>
-            <input
-              type="range" min={1} max={3} step={1} value={panelIdx + 1}
-              onChange={(e) => gotoPanel(Number(e.target.value) - 1)}
-              className="flex-1 accent-violet-500 h-1.5 bg-slate-800 rounded-lg"
-              aria-label={tr('panel_slider_aria', 'Pemilih panel')}
+        <LearningShell
+          view={view}
+          onView={setView}
+          tr={trq}
+          rail={
+            <NotebookRail
+              // A15: ikon notebook diteruskan apa adanya ke rail kiri (kini tersimpan di server).
+              notebooks={notebooks.map((nb) => ({ id: nb.id, title: nb.title, icon: nb.icon }))}
+              activeId={activeNotebook.id}
+              expanded={false}
+              onToggleExpanded={() => undefined}
+              onSelect={(id) => setActiveNotebookId(id)}
+              onCreate={() => setShowNewNbModal(true)}
+              onRename={openRenameDialog}
+              onDelete={() => { if (notebooks.length > 1 && window.confirm(tr('learning_delete_confirm', 'Hapus notebook ini?'))) deleteNotebook(activeNotebook.id); }}
+              view={view}
+              onView={setView}
+              lang={lang}
+              onLang={handleLanguageChange}
+              tr={trq}
             />
-            <button type="button" onClick={() => gotoPanel(panelIdx + 1)} disabled={panelIdx === 2} className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm font-bold disabled:opacity-30">›</button>
-          </div>
-
-          {/* 3-panel split (parity _splitter: sources | chat | studio).
-              P38: flex + lebar animasi → menutup panel membuat panel tersisa
-              stretch penuh (chat flex-1), dengan transisi slide halus.
-              P56: di layar sempit ketiga panel menjadi SLIDE — track bergeser
-              horizontal (slider/panah/swipe); di lg, `lg:contents` membuat
-              wrapper transparan sehingga layout 3 kolom tidak berubah. */}
-          <div
-            ref={rowRef}
-            className="flex flex-col space-y-4 lg:flex-row lg:space-y-0 items-stretch max-lg:overflow-hidden"
-            style={{ '--src-w': `${panelSizes.src}px`, '--stu-w': `${panelSizes.stu}px` } as React.CSSProperties}
-            onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
-            onTouchEnd={(e) => {
-              if (touchX.current == null) return;
-              const dx = e.changedTouches[0].clientX - touchX.current;
-              if (Math.abs(dx) > 48) gotoPanel(panelIdx + (dx < 0 ? 1 : -1));
-              touchX.current = null;
-            }}
-          >
-            <div
-              className="flex max-lg:transition-transform max-lg:duration-300 max-lg:ease-out lg:contents"
-              style={{ transform: `translateX(-${panelIdx * 100}%)` }}
-            >
-            {/* ── SOURCES PANEL ── */}
-            <div
-              className={`flex w-full max-lg:shrink-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 ${resizing ? 'transition-none' : 'transition-all duration-300'} lg:shrink-0 ${!showSources ? 'lg:w-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[var(--src-w)]'}`}
-            >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_sources_panel', 'Sumber')} <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{activeNotebook.sources?.length || 0}</span></span>
-                  <button onClick={() => setShowNewSourceModal(true)} className="ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5" title={tr('learning_add_source', 'Tambah Sumber')}><Plus className="w-3.5 h-3.5" /></button>
-                </div>
-                {/* Parity _add_source_files + _add_source_paste */}
-                <div className="flex gap-1">
-                  <input ref={sourceFileRef} type="file" accept=".txt,.md,.pdf,.docx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadSource(f); e.target.value = ''; }} />
-                  <button onClick={() => sourceFileRef.current?.click()} disabled={uploadingSource} className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-slate-200 rounded-lg border border-slate-700"><Upload className="w-3.5 h-3.5" />{uploadingSource ? '…' : tr('learning_upload_source', 'Upload')}</button>
-                  <button onClick={() => setShowNewSourceModal(true)} className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-lg border border-slate-700"><Pencil className="w-3.5 h-3.5" />{tr('learning_add_source', 'Tambah')}</button>
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[520px]">
-                  {(!activeNotebook.sources || activeNotebook.sources.length === 0) ? (
-                    <div className="py-8 text-center bg-slate-950/40 border border-slate-800/80 rounded-xl text-slate-500">
-                      <FileText className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                      <p className="text-sm font-medium">{tr('no_sources_yet', 'No sources yet.')}</p>
-                      <p className="text-xs mt-1">{tr('add_a_source_to_begin', 'Add a source to begin.')}</p>
-                    </div>
-                  ) : (
-                    activeNotebook.sources.map((src) => (
-                      <div key={src.id} className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold">{src.type}</span>
-                          <h4 className="font-bold text-sm text-slate-200 truncate flex-1">{src.title}</h4>
-                        </div>
-                        <p className="text-[11px] text-slate-500">{src.wordCount} {tr('words', 'words')}</p>
-                        <div className="flex items-center gap-1 pt-1">
-                          <button onClick={() => handleViewSource(src.id)} className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1 text-[11px]" title={tr('learning_view', 'Lihat')}><Eye className="w-3.5 h-3.5" />{tr('learning_view', 'Lihat')}</button>
-                          <button onClick={() => deleteNotebookSource(activeNotebook.id, src.id)} className="ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <p className="text-[10px] text-slate-500">{activeNotebook.sources?.length || 0} {tr('sources_grounding_the_ai_answers', 'sources · grounding the AI answers')}</p>
-              </div>
-
-            {/* P56 rev: pembatas seret sources↔chat (khusus desktop) */}
-            {showSources && renderPanelDivider('src')}
-
-            {/* ── CHAT PANEL ── */}
-            <div className={`flex w-full max-lg:shrink-0 lg:flex-1 lg:min-w-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 min-h-[520px]`}>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_chat_panel', 'Chat AI')}</span>
-                <div className="flex items-center gap-1 text-xs text-slate-400">
-                  <button onClick={() => setChatFontSize((v) => clampFont(v - 1))} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_decrease', 'A−')}</button>
-                  <span className="px-1 font-bold text-slate-200">{chatFontSize}px</span>
-                  <button onClick={() => setChatFontSize((v) => clampFont(v + 1))} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', 'Font Chat AI')}>{tr('learning_font_increase', 'A+')}</button>
-                  <button onClick={() => {
-                    // P48: bersihkan JUGA history di server — dulu hanya set state
-                    // lokal sehingga chat muncul lagi setelah reload/restart.
-                    studio.clearChat(activeNotebook.id)
-                      .catch(() => undefined)
-                      .finally(() => updateNotebook(activeNotebook.id, { chatHistory: [] }));
-                  }} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_clear_chat', 'Bersihkan chat')}><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              </div>
-
-              <div style={{ fontSize: chatFontSize }} className="flex-1 h-[440px] overflow-y-auto space-y-3 p-4 bg-slate-950/60 rounded-xl border border-slate-800/80">
-                {(!activeNotebook.chatHistory || activeNotebook.chatHistory.length === 0) && (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
-                    <Bot className="w-10 h-10 mb-3 text-violet-400/50" />
-                    <h4 className="font-semibold text-slate-300">{tr('ask_questions_about_your_sources', 'Ask questions about your sources')}</h4>
-                    <p className="text-xs max-w-sm mt-1">{tr('ai_answers_grounded_in_this_notebook_s_sources', "AI answers grounded in this notebook's sources.")}</p>
-                  </div>
-                )}
-                {activeNotebook.chatHistory?.map((msg, idx) => (
-                  <div key={idx} className={`flex gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    {msg.sender === 'ai' && (
-                      <div className="w-8 h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-sm shrink-0 text-violet-300"><Bot className="w-4 h-4" /></div>
-                    )}
-                    <div className={`p-3.5 rounded-2xl max-w-xl text-sm leading-relaxed ${msg.sender === 'user' ? 'bg-violet-600 text-white rounded-br-none' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'}`}>
-                      <div className="prose prose-invert prose-sm"><ReactMarkdown>{msg.text}</ReactMarkdown></div>
-                      <span className="block text-[10px] text-slate-400 mt-1 text-right">{msg.timestamp}</span>
-                    </div>
-                  </div>
-                ))}
-                {isAiLoading && (
-                  <div className="flex items-center gap-2 text-violet-400 text-xs p-2"><Sparkles className="w-4 h-4 animate-spin" /><span>{tr('ai_is_synthesizing', 'AI is synthesizing…')}</span></div>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <textarea
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendChat(); } }}
-                  placeholder={tr('ask_anything_about_this_notebook', 'Ask anything about this notebook…')}
-                  rows={1}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 resize-none"
+          }
+          topbar={
+            /* Topbar: judul notebook bisa langsung diganti (inline) + chip status + aksi. */
+            <div className="ct-nlm-topbar p-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-lg leading-none">{activeNotebook.icon || '📚'}</span>
+                <input
+                  value={nbTitleDraft}
+                  onChange={(e) => setNbTitleDraft(e.target.value)}
+                  onBlur={commitNotebookTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitNotebookTitle(); }
+                    if (e.key === 'Escape') setNbTitleDraft(activeNotebook.title);
+                  }}
+                  className="ct-nlm-title-input text-[15px] flex-1 min-w-[8rem]"
+                  title={tr('learning_rename_notebook', 'Ganti nama notebook')}
                 />
-                <button onClick={handleSendChat} disabled={isAiLoading || !chatInput.trim()} className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl font-semibold text-sm flex items-center gap-1.5"><Send className="w-4 h-4" /></button>
+                <span className="ct-nlm-chip ct-nlm-num">
+                  {trq('learning_topbar_sources', { n: sourceCount }, '{n} sumber')}
+                </span>
+                <span className="ct-nlm-chip is-muted ct-nlm-num">
+                  {sourceWords} {tr('words', 'kata')}
+                </span>
+                <span className="ct-nlm-chip is-ok hidden sm:inline-flex">
+                  {tr('learning_topbar_ready', 'Siap dijawab AI')}
+                </span>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <button
+                    onClick={openRenameDialog}
+                    className="ct-btn ct-btn-secondary ct-btn-sm hidden lg:inline-flex items-center gap-1"
+                    title={tr('learning_rename_notebook', 'Ganti nama notebook')}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />{tr('learning_rename_short', 'Ganti nama')}
+                  </button>
+                  <button
+                    onClick={handleExportStudio}
+                    className="ct-btn ct-btn-success ct-btn-sm flex items-center gap-1"
+                    title={tr('learning_export', 'Ekspor')}
+                  >
+                    <Download className="w-3.5 h-3.5" /><span className="hidden sm:inline">{tr('learning_export_compact', 'Ekspor')}</span>
+                  </button>
+                </div>
               </div>
-              <p className="text-[10px] text-slate-500">{tr('learning_composer_hint', 'Enter untuk kirim · Shift+Enter baris baru')}</p>
             </div>
-
-            {/* P56 rev: pembatas seret chat↔studio (khusus desktop) */}
-            {showStudio && renderPanelDivider('stu')}
-
-            {/* ── STUDIO PANEL ── */}
-            <div
-              className={`flex w-full max-lg:shrink-0 flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3 overflow-hidden min-w-0 ${resizing ? 'transition-none' : 'transition-all duration-300'} lg:shrink-0 ${!showStudio ? 'lg:w-0 lg:p-0 lg:border-0 lg:opacity-0 lg:invisible lg:pointer-events-none' : 'lg:w-[var(--stu-w)]'}`}
-            >
+          }
+          sources={
+            <SourcesRail
+              sources={(activeNotebook.sources || []).map((src) => ({
+                id: String(src.id),
+                title: src.title,
+                type: String((src as any).type || 'text'),
+                wordCount: Number(src.wordCount) || 0,
+                createdAt: (src as any).createdAt,
+              }))}
+              uploading={uploadingSource}
+              usedIds={usedSourceIds}
+              onToggleUsed={toggleSourceUsed}
+              onUpload={handleUploadSource}
+              onAddPaste={() => setShowNewSourceModal(true)}
+              onOpenSource={handleViewSource}
+              onDeleteSource={(id) => deleteNotebookSource(activeNotebook.id, id)}
+              onOpenFull={() => setView('chat')}
+              tr={trq}
+            />
+          }
+          chat={
+            <ChatPanel
+              messages={(activeNotebook.chatHistory || []).map((m: any) => ({
+                sender: m.sender,
+                text: m.text,
+                timestamp: m.timestamp,
+                citations: Array.isArray(m.citations) ? m.citations : [],
+              })) as any}
+              input={chatInput}
+              onInput={setChatInput}
+              onSend={handleSendChat}
+              loading={isAiLoading}
+              font={chatFontSize}
+              onFont={(d) => setChatFontSize((v) => clampFont(v + d))}
+              onClear={() => {
+                // P48: bersihkan JUGA history di server — dulu hanya set state
+                // lokal sehingga chat muncul lagi setelah reload/restart.
+                studio.clearChat(activeNotebook.id)
+                  .catch(() => undefined)
+                  .finally(() => updateNotebook(activeNotebook.id, { chatHistory: [] }));
+              }}
+              onSuggestion={(text) => { setChatInput(''); handleSendChat(text); }}
+              sourcesUsed={usedSourceIds.length}
+              sourcesTotal={(activeNotebook.sources || []).length}
+              onOpenSources={() => setView('sources')}
+              onOpenSource={(sid) => { void handleViewSource(sid); }}
+              tr={trq}
+            />
+          }
+          studio={
+            /* ── STUDIO PANEL (daftar artefak A06 + peluncur 8 generator A05) ── */
+            <section className="ct-nlm-panel flex flex-col p-3 gap-2.5" aria-label={tr('learning_studio_panel', 'Studio')}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{tr('learning_studio_panel', 'Studio')}</span>
+                  <span className="text-[12px] font-black uppercase tracking-wider text-slate-300">{tr('learning_studio_panel', 'Studio')}</span>
                   <span className="text-[10px] text-slate-500">{tr('learning_studio_hint', 'Buat materi dari sumber')}</span>
                 </div>
 
@@ -929,7 +1238,7 @@ export const LearningView: React.FC = () => {
                 <div className="flex items-center gap-1 text-[11px] text-slate-400">
                   <span>{tr('learning_font_studio', 'Font Hasil')}:</span>
                   <button onClick={() => setStudioFontSize((v) => clampFont(v - 1))} className="ct-btn ct-btn-secondary ct-btn-sm">{tr('learning_font_decrease', 'A−')}</button>
-                  <span className="px-1 font-bold text-slate-200">{studioFontSize}px</span>
+                  <span className="px-1 font-bold text-slate-200 ct-nlm-num">{studioFontSize}px</span>
                   <button onClick={() => setStudioFontSize((v) => clampFont(v + 1))} className="ct-btn ct-btn-secondary ct-btn-sm">{tr('learning_font_increase', 'A+')}</button>
                   <button onClick={() => setStudioFontSize(13)} className="ct-btn ct-btn-secondary ct-btn-sm">{tr('learning_font_reset', 'Reset')}</button>
                   <button onClick={handleExportStudio} className="ct-btn ct-btn-success ct-btn-sm ml-auto flex items-center gap-1" title={tr('learning_export', 'Ekspor')}><Download className="w-3.5 h-3.5" /><span>{tr('learning_export_compact', 'Ekspor')}</span></button>
@@ -937,67 +1246,120 @@ export const LearningView: React.FC = () => {
 
                 {/* Topic input */}
                 <input type="text" value={studioTopic} onChange={(e) => setStudioTopic(e.target.value)} placeholder={tr('learning_topic_label', 'Topik (kosongkan = semua):')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200" />
-
-                {/* 8-type generator grid (parity studio_grid) */}
+                {/* 8-type generator grid (parity studio_grid) — A05: klik = BUKA DIALOG
+                    konfigurasi tipe tersebut; tombol ⚡ = generate langsung dengan
+                    pengaturan terakhir (perilaku lama tetap tersedia untuk power user). */}
                 <div className="grid grid-cols-2 gap-2">
-                  {STUDIO_TYPES.map((s) => (
-                    <button
-                      key={s.type}
-                      disabled={isAiLoading}
-                      onClick={() => {
-                        if (s.type === 'flashcards') handleGenerateFlashcards();
-                        else if (s.type === 'quiz') handleGenerateQuiz();
-                        else if (s.type === 'podcast') handleGeneratePodcast();
-                        else handleGenerateStudio(s.type);
-                      }}
-                      className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50 text-left ${activeStudioType === s.type ? 'bg-violet-600/20 border-violet-500/50 text-violet-200' : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-violet-500/40'}`}
-                    >
-                      <span className="text-sm mr-1">{s.icon}</span>{tr(s.labelKey, s.type)}
-                    </button>
-                  ))}
+                  {STUDIO_TYPES.map((s) => {
+                    const k = s.type as StudioKind;
+                    const meta = STUDIO_META[k];
+                    return (
+                      <div
+                        key={s.type}
+                        className={`flex items-stretch rounded-lg border transition-colors overflow-hidden ${activeStudioType === s.type ? 'bg-violet-600/20 border-violet-500/50' : 'bg-slate-800 border-slate-700 hover:border-violet-500/40'}`}
+                      >
+                        <button
+                          disabled={isAiLoading}
+                          onClick={() => { setStudioDialogKind(k); setActiveStudioType(k); }}
+                          className={`flex-1 px-2 py-2 text-xs font-semibold text-left disabled:opacity-50 ${activeStudioType === s.type ? 'text-violet-200' : 'text-slate-300'}`}
+                          title={tr('learning_dialog_open_hint', 'Buka pengaturan untuk tipe ini')}
+                        >
+                          <span className="text-sm mr-1">{s.icon}</span>{tr(s.labelKey, s.type)}
+                        </button>
+                        <button
+                          disabled={isAiLoading}
+                          onClick={() => handleQuickGenerate(k)}
+                          className="px-1.5 border-l border-slate-700/70 text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
+                          title={tr('learning_dialog_quick_hint', '⚡ Langsung generate dengan pengaturan terakhir')}
+                        >
+                          ⚡
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* Count (quiz/flashcards 10–30, parity studio_count_spin) */}
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>{tr('learning_count_label', 'Jumlah (Kuis/Kartu)')}</span>
-                  <NumberInput value={studioCount} onValueChange={setStudioCount} min={10} max={30} integer emptyValue={15} inputClassName="w-16 ml-auto bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-center text-slate-100" />
-                </div>
-                <p className="text-[9px] text-slate-500">{tr('learning_count_hint', 'Dipakai saat membuat Kuis / Flashcard AI (10–30).')}</p>
-
-                {/* Output area (parity studio_output_stack) */}
-                <div style={{ fontSize: studioFontSize }} className="flex-1 overflow-y-auto max-h-[360px] space-y-3">
-                  {activeStudioType === 'flashcards' ? renderFlashcards() : activeStudioType === 'quiz' ? renderQuiz() : activeStudioType === 'podcast' ? renderPodcast() : renderStudioMarkdown()}</div>
-
-                {/* History (parity generation_combo + delete) */}
-                <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                {/* A05: ringkasan pengaturan terakhir tipe aktif + jalan pintas ke dialog.
+                    (Counter PG/Essay & jumlah kartu kini diatur DI DALAM dialog.) */}
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 space-y-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{tr('learning_history', 'Riwayat')} ({activeGenList.length})</span>
-                    {activeGenList.length > 0 && (
-                      <button onClick={() => { if (selectedGen) handleDeleteGeneration(selectedGen.id); }} className="ml-auto ct-btn ct-btn-secondary ct-btn-icon-sm p-1.5 text-slate-400 hover:text-rose-400" title={tr('learning_delete', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
-                    )}
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{tr('learning_dialog_last_settings', 'Pengaturan terakhir')}</span>
+                    <button
+                      onClick={() => setStudioDialogKind(activeStudioKind)}
+                      disabled={isAiLoading}
+                      className="ml-auto text-[10px] font-bold text-violet-300 hover:text-violet-200 disabled:opacity-50"
+                    >
+                      {tr('learning_dialog_edit_settings', 'Ubah pengaturan')}
+                    </button>
                   </div>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                    {activeGenList.length > 0 ? activeGenList.map((g: any) => (
-                      <div key={g.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-[11px] cursor-pointer transition-colors ${selectedGen?.id === g.id ? 'bg-violet-950/40 border-violet-500/40 text-slate-100' : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700'}`} onClick={() => { setSelectedGen(selectedGen?.id === g.id ? null : g); if (g.gtype && (g.gtype as string).includes('flash')) setActiveStudioType('flashcards'); else if (g.gtype === 'mindmap') setActiveStudioType('mindmap'); else if (g.gtype === 'quiz') setActiveStudioType('quiz'); else if ((g.gtype as string).includes('audio') || (g.gtype as string).includes('podcast')) setActiveStudioType('podcast'); else setActiveStudioType((g.gtype as StudioType) || 'summary'); }}>
-                          <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold shrink-0">{g.gtype}</span>
-                          <span className="truncate flex-1">{g.topic || tr('learning_generic_topic', '(topik umum)')}</span>
-                          <span className="text-slate-600 shrink-0">{g.createdAt || ''}</span>
-                        </div>
-                      )) : (
-                        <p className="text-[11px] text-slate-500 text-center py-2">{tr('learning_history_empty', 'Belum ada riwayat.')}</p>
-                      )}
-                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">{lastCfgSummary || '—'}</p>
+                  <p className="text-[9px] text-slate-500">{tr('learning_dialog_quick_hint', '⚡ Langsung generate dengan pengaturan terakhir')}</p>
                 </div>
-            </div>
-            {/* P56: penutup track slider */}
-            </div>
-          </div>
-        </>
+
+                {/* Output area (parity studio_output_stack) — A06: bisa dilipat karena
+                    daftar artefak di bawahnya kini menjadi isi utama panel. */}
+                <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+                  <button
+                    onClick={() => setShowStudioPreview((v) => !v)}
+                    className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-500 font-bold hover:text-slate-300"
+                  >
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showStudioPreview ? '' : '-rotate-90'}`} />
+                    {tr('learning_artifact_interactive', 'Pratinjau interaktif')}
+                    <span className="text-violet-300 normal-case">· {tr(STUDIO_TYPES.find((x) => x.type === activeStudioType)?.labelKey || '', activeStudioType)}</span>
+                  </button>
+                  {selectedGen && (
+                    <button onClick={() => setSelectedGen(null)} className="ml-auto text-[10px] text-slate-500 hover:text-slate-300">
+                      {tr('btn_close', 'Tutup')}
+                    </button>
+                  )}
+                </div>
+                {showStudioPreview && (
+                  <div style={{ fontSize: studioFontSize }} className="overflow-y-auto max-h-[360px] space-y-3">
+                    {activeStudioType === 'flashcards' ? renderFlashcards() : activeStudioType === 'quiz' ? renderQuiz() : activeStudioType === 'podcast' ? renderPodcast() : renderStudioMarkdown()}
+                  </div>
+                )}
+
+                {/* A06: daftar artefak Studio (list ke bawah) — menggantikan riwayat chip kecil.
+                    Kartu: judul · tipe · waktu relatif · jumlah item · ukuran, dengan aksi
+                    Buka / Ganti nama / Ekspor .md / Ekspor .txt / Duplikat / Hapus, plus
+                    pratinjau isi yang terbuka tepat di bawah kartu (satu scroll). */}
+                <div className="pt-2 border-t border-slate-800/80">
+                  <StudioArtifactList
+                    artifacts={artifacts}
+                    activeType={activeStudioType}
+                    activeArtifactId={selectedGen ? String(selectedGen.id) : interactiveArtifactId}
+                    tr={trq}
+                    busy={isAiLoading}
+                    onOpen={handleOpenArtifact}
+                    onRename={handleRenameArtifact}
+                    onDuplicate={handleDuplicateArtifact}
+                    onDelete={handleDeleteArtifact}
+                    onExport={handleExportArtifact}
+                    onSelectType={(t) => setActiveStudioType(normalizeArtifactType(t))}
+                  />
+                </div>
+            </section>
+          }
+        />
       ) : (
-        <div className="p-12 text-center bg-slate-900/50 border border-slate-800 rounded-2xl text-slate-500">
+        <div className="p-12 text-center ct-nlm-panel text-slate-500">
           <BookOpen className="w-12 h-12 mx-auto mb-3 text-slate-600" />
           <p className="text-base font-semibold">{tr('select_or_create_a_notebook', 'Select or create a notebook.')}</p>
         </div>
+      )}
+
+      {/* A05: dialog konfigurasi per tipe Studio */}
+      {studioDialogKind && activeNotebook && (
+        <StudioGenerateDialog
+          kind={studioDialogKind}
+          notebookId={activeNotebook.id}
+          sourcesCount={sourceCount}
+          words={sourceWords}
+          tr={trq}
+          busy={isAiLoading}
+          onClose={() => setStudioDialogKind(null)}
+          onGenerate={(payload) => handleDialogGenerate(studioDialogKind, payload)}
+        />
       )}
 
       {/* Modal: New Notebook */}
@@ -1008,11 +1370,11 @@ export const LearningView: React.FC = () => {
             <div className="space-y-3 text-sm">
               <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_title_label', 'Title')}</label><input type="text" value={newNbTitle} onChange={(e) => setNewNbTitle(e.target.value)} placeholder={tr('learning_nb_title_ph', 'e.g. Physics Dynamics, Machine Learning')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
               <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('description', 'Description')}</label><input type="text" value={newNbDesc} onChange={(e) => setNewNbDesc(e.target.value)} placeholder={tr('learning_nb_desc_ph', 'Short summary of this notebook...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">Emoji Icon</label><div className="flex gap-2">{['📚', '🧠', '🔬', '💻', '📐', '🚀', '📝', '⚡'].map((emoji) => (<button key={emoji} onClick={() => setNewNbIcon(emoji)} className={`text-xl p-2 rounded-lg border ${newNbIcon === emoji ? 'bg-violet-600/30 border-violet-500' : 'bg-slate-950 border-slate-800'}`}>{emoji}</button>))}</div></div>
+              <NotebookIconPicker value={newNbIcon} onChange={setNewNbIcon} label={tr('learning_icon_label', 'Emoji Icon')} />
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setShowNewNbModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
-              <button onClick={() => { if (!newNbTitle.trim()) return; addNotebook(newNbTitle.trim(), newNbDesc.trim(), newNbIcon); setShowNewNbModal(false); setNewNbTitle(''); setNewNbDesc(''); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{tr('create_notebook', 'Create Notebook')}</button>
+              <button onClick={() => { if (!newNbTitle.trim()) return; addNotebook(newNbTitle.trim(), newNbDesc.trim(), newNbIcon); setShowNewNbModal(false); setNewNbTitle(''); setNewNbDesc(''); setNewNbIcon('📚'); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{tr('create_notebook', 'Create Notebook')}</button>
             </div>
           </div>
         </div>
@@ -1024,6 +1386,7 @@ export const LearningView: React.FC = () => {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl">
             <h3 className="font-bold text-lg text-slate-100">{tr('learning_rename_title', 'Judul notebook baru:')}</h3>
             <input type="text" value={renameTitle} onChange={(e) => setRenameTitle(e.target.value)} autoFocus className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" />
+            <NotebookIconPicker value={renameIcon} onChange={setRenameIcon} label={tr('learning_icon_label', 'Emoji Icon')} />
             <div className="flex gap-2 justify-end">
               <button onClick={() => setRenaming(false)} className="px-4 py-2 rounded-xl text-sm text-slate-400 hover:text-slate-200">{tr('msg_cancel', 'Batal')}</button>
               <button onClick={handleRename} className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white">{tr('msg_ok', 'OK')}</button>

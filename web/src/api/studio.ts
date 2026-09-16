@@ -5,12 +5,25 @@ export const studio = {
     apiPost<any>('/api/learning/notebooks', { title, description, icon }),
   deleteNotebook: (id: string) => apiPost<any>(`/api/learning/notebooks/${id}/delete`, {}),
   listNotebooks: () => apiGet<any>('/api/learning/notebooks'),
-  renameNotebook: (id: string, title: string) =>
-    apiPost<any>(`/api/learning/notebooks/${id}/rename`, { title }),
+  // A15: `icon` opsional — ikut dikirim supaya emoji notebook benar-benar tersimpan.
+  renameNotebook: (id: string, title: string, icon?: string) =>
+    apiPost<any>(`/api/learning/notebooks/${id}/rename`, icon ? { title, icon } : { title }),
   generateNotebook: (notebookId: string, type: string, topic = '') =>
     apiPost<any>('/api/learning/generate', { notebookId, type, topic }),
   deleteGeneration: (notebookId: string, generationId: string) =>
     apiPost<any>('/api/learning/generations/delete', { notebookId, generationId }),
+  // A06: daftar artefak Studio — ganti nama & duplikat (rename/duplicate) dan ekspor.
+  // Ekspor dilakukan dua langkah: server menyiapkan berkas (staged) → UI mengunduhnya
+  // lewat `/api/system/download-file?id=…` (jalur unduhan terverifikasi A03.5).
+  renameGeneration: (notebookId: string, generationId: string, title: string) =>
+    apiPost<any>('/api/learning/generations/rename', { notebookId, generationId, title }),
+  duplicateGeneration: (notebookId: string, generationId: string) =>
+    apiPost<any>('/api/learning/generations/duplicate', { notebookId, generationId }),
+  exportGeneration: (notebookId: string, generationId: string, format: 'md' | 'txt' = 'md') =>
+    apiGet<any>(
+      `/api/learning/generations/export?notebookId=${encodeURIComponent(notebookId)}` +
+      `&generationId=${encodeURIComponent(generationId)}&format=${format}`,
+    ),
   uploadLearningSource: async (notebookId: string, file: File) => {
     // Parity LearningPage._add_source_files: upload mentah lalu server ekstrak.
     const up = await apiUploadFile<any>('learning_source', file);
@@ -24,8 +37,15 @@ export const studio = {
     apiPost<any>(`/api/learning/notebooks/${notebookId}/sources`, { title, content, type }),
   deleteSource: (notebookId: string, sourceId: string) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/sources/${sourceId}/delete`, {}),
-  chat: (notebookId: string, text: string) =>
-    apiPost<any>(`/api/learning/notebooks/${notebookId}/chat`, { text }),
+  // A08: `sourceIds` = sumber terpilih (grounding) — kosong berarti pakai semua sumber.
+  chat: (notebookId: string, text: string, sourceIds?: string[]) =>
+    apiPost<any>(`/api/learning/notebooks/${notebookId}/chat`, { text, sourceIds: sourceIds || [] }),
+  // A08: bangun audio podcast dua host (MP3) + offset tiap giliran untuk pemutar interaktif.
+  podcastAudio: (notebookId: string, generationId: string, force = false) =>
+    apiPost<any>('/api/learning/podcast/audio', { notebookId, generationId, force }),
+  // URL <audio> — menyajikan MP3 dengan HTTP Range supaya bisa di-seek.
+  podcastAudioUrl: (notebookId: string, generationId: string) =>
+    `/api/learning/podcast/audio?notebook=${encodeURIComponent(notebookId)}&id=${encodeURIComponent(generationId)}`,
   // P48: bersihkan history chat notebook di server (db.clear_learning_chats).
   clearChat: (notebookId: string) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/chat/clear`, {}),
@@ -34,10 +54,14 @@ export const studio = {
   createPlaylist: (name: string) => apiPost<any>('/api/music/playlists', { name }),
   updateLove: (updates: Record<string, unknown>) => apiPost<any>('/api/love/profile', updates),
   loveCoupleTracking: () => apiGet<any>('/api/love/couple-tracking'),
-  addMemory: (title: string, date: string, description: string, emoji?: string) =>
-    apiPost<any>('/api/love/memories', { title, date, description, emoji }),
+  // A10: kenangan membawa emoji pilihan, tag, favorit & tautan foto galeri.
+  addMemory: (payload: { title: string; date: string; description?: string; emoji?: string;
+    tags?: string; isFavorite?: boolean; photoId?: string }) =>
+    apiPost<any>('/api/love/memories', payload),
   toggleBucket: (id: string) => apiPost<any>(`/api/love/bucket/${id}/toggle`, {}),
-  addBucket: (title: string) => apiPost<any>('/api/love/bucket', { title }),
+  // A10: bucket list membawa kategori, target tanggal, catatan & prioritas.
+  addBucket: (payload: { title: string; category?: string; targetDate?: string;
+    notes?: string; priority?: number }) => apiPost<any>('/api/love/bucket', payload),
   sendChat: (text: string, otherId?: string) =>
     apiPost<any>('/api/social/messages', { text, otherId }),
   sendGuild: (text: string) => apiPost<any>('/api/guild/messages', { text }),
@@ -123,6 +147,14 @@ export const studio = {
   deleteLoveCycle: (id: string) => apiPost<any>(`/api/love/cycles/${id}/delete`, {}),
   deleteLoveEvent: (id: string) => apiPost<any>(`/api/love/events/${id}/delete`, {}),
   deleteLoveBucket: (id: string) => apiPost<any>(`/api/love/bucket/${id}/delete`, {}),
+  // A10: kenangan bisa diedit & difavoritkan; bucket list bisa diedit dan
+  // item yang tercapai dipromosikan menjadi kenangan (satu klik).
+  loveMemoryUpdate: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/love/memories/${id}/update`, body),
+  loveMemoryFavorite: (id: string) => apiPost<any>(`/api/love/memories/${id}/favorite`, {}),
+  loveBucketUpdate: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/love/bucket/${id}/update`, body),
+  loveBucketPromote: (id: string) => apiPost<any>(`/api/love/bucket/${id}/promote-to-memory`, {}),
   lovePromptFavorite: (promptKey: string) => apiPost<any>('/api/love/prompt-favorite', { promptKey }),
   createLoveAlbum: (body: { name: string; scope?: string }) => apiPost<any>('/api/love/albums', body),
   renameLoveAlbum: (id: string, name: string) => apiPost<any>(`/api/love/albums/${id}/rename`, { name }),
@@ -133,6 +165,11 @@ export const studio = {
     apiPost<any>(`/api/love/albums/${albumId}/photo-move`, { photoId, sourceAlbumId }),
   loveAlbumRemovePhoto: (albumId: string, photoId: string) =>
     apiPost<any>(`/api/love/albums/${albumId}/photo-remove`, { photoId }),
+  // A11: sampul album + aksi massal galeri (hapus / visibilitas / pindah album).
+  loveAlbumCover: (albumId: string, photoId?: string) =>
+    apiPost<any>(`/api/love/albums/${albumId}/cover`, photoId ? { photoId } : {}),
+  lovePhotosBulk: (body: { action: string; ids: string[]; albumId?: string; visibility?: string }) =>
+    apiPost<any>('/api/love/photos/bulk', body),
   // Fetch a Love Space photo as a Blob (with auth) and return an object URL so
   // <img> can render it without exposing the session token in a plain URL.
   lovePhotoImage: (id: string): Promise<string> => {
@@ -149,8 +186,20 @@ export const studio = {
   loveCheckin: (body: Record<string, unknown>) => apiPost<any>('/api/love/checkin', body),
   lovePhoto: (path: string) => apiPost<any>('/api/love/photo', { path }),
   loveEvent: (body: Record<string, unknown>) => apiPost<any>('/api/love/events', body),
+  // A09: edit acara (dulu hanya bisa hapus) + daftar acara/hari istimewa yang akan datang.
+  loveEventUpdate: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/love/events/${id}/update`, body),
+  loveEventsUpcoming: (days = 90) => apiGet<any>(`/api/love/events/upcoming?days=${days}`),
+  // A12: pengingat dari hari istimewa Love Space. `<id>` = id acara ATAU kunci
+  // profil (my_birthdate / partner_birthdate / start_date) → repeat_type 'yearly'.
+  loveEventReminder: (id: string, body: Record<string, unknown> = {}) =>
+    apiPost<any>(`/api/love/events/${encodeURIComponent(id)}/create-reminder`, body),
   loveWeekly: (body: Record<string, unknown>) => apiPost<any>('/api/love/weekly', body),
   loveCycle: (body: Record<string, unknown>) => apiPost<any>('/api/love/cycle', body),
+  // A11: edit riwayat siklus + pengingat H-n dari prediksi siklus berikutnya.
+  loveCycleUpdate: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/love/cycles/${id}/update`, body),
+  loveCycleReminder: (body: Record<string, unknown>) => apiPost<any>('/api/love/cycles/create-reminder', body),
   lovePrompt: (body: Record<string, unknown>) => apiPost<any>('/api/love/prompt', body),
   setGeminiKey: (apiKey: string) => apiPost<any>('/api/learning/gemini-key', { apiKey }),
   friends: () => apiGet<any>('/api/friends'),
@@ -169,15 +218,37 @@ export const studio = {
   addPlaylistTrack: (playlistId: string | number, path: string) =>
     apiPost<any>('/api/music/playlist-track', { playlistId, path }),
   // Lyrics (LRCLIB get/search multi-varian + lyrics.ovh + embedded) — parity _LyricsFetcher PyQt
-  musicLyrics: (artist: string, title: string, path = '', opts?: { key?: string; duration?: number; refresh?: boolean }) =>
+  // A02: + album (akurasi versi) & prefer (indeks kandidat pilihan user).
+  musicLyrics: (artist: string, title: string, path = '', opts?: { key?: string; duration?: number; refresh?: boolean; album?: string; prefer?: number }) =>
     apiGet<any>(`/api/music/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&path=${encodeURIComponent(path)}` +
-      `${opts?.key ? `&key=${encodeURIComponent(opts.key)}` : ''}${opts?.duration ? `&duration=${opts.duration}` : ''}${opts?.refresh ? '&refresh=1' : ''}`),
+      `${opts?.key ? `&key=${encodeURIComponent(opts.key)}` : ''}${opts?.duration ? `&duration=${opts.duration}` : ''}` +
+      `${opts?.album ? `&album=${encodeURIComponent(opts.album)}` : ''}${opts?.refresh ? '&refresh=1' : ''}` +
+      `${opts?.prefer !== undefined ? `&prefer=${opts.prefer}` : ''}`),
+  // A02: daftar kandidat lirik (album/durasi/versi) — user memilih sumber yang benar.
+  musicLyricsCandidates: (opts: { artist?: string; title?: string; album?: string; duration?: number; path?: string; limit?: number }) =>
+    apiGet<any>(`/api/music/lyrics-candidates?artist=${encodeURIComponent(opts.artist || '')}` +
+      `&title=${encodeURIComponent(opts.title || '')}&album=${encodeURIComponent(opts.album || '')}` +
+      `&path=${encodeURIComponent(opts.path || '')}${opts.duration ? `&duration=${opts.duration}` : ''}` +
+      `${opts.limit ? `&limit=${opts.limit}` : ''}`),
+  // A02: simpan kandidat pilihan user (source "user-pick", tidak tertimpa pencarian web).
+  musicLyricsApply: (payload: { key: string; artist?: string; title?: string; plain?: string; synced?: string }) =>
+    apiPost<any>('/api/music/lyrics-apply', payload),
+  // A02: metadata batch (title/artist/album/duration) untuk trek di luar batas listing library.
+  musicTrackMeta: (paths: string[]) =>
+    apiGet<any>(`/api/music/track-meta?paths=${paths.map((p) => encodeURIComponent(p)).join('|')}`),
   // P58: lirik tersimpan per track — simpan / hapus / import manual / offset.
   musicLyricsSave: (payload: { key: string; title?: string; artist?: string; source?: string; plain?: string; synced?: string; offsetMs?: number }) =>
     apiPost<any>('/api/music/lyrics-save', payload),
   musicLyricsDelete: (key: string) => apiPost<any>('/api/music/lyrics-delete', { key }),
-  musicLyricsImport: (payload: { key: string; title?: string; artist?: string; content: string }) =>
+  // A03: import manual — server mengembalikan report validasi (format/baris/peringatan).
+  musicLyricsImport: (payload: { key: string; title?: string; artist?: string; content: string; duration?: number; offsetMs?: number }) =>
     apiPost<any>('/api/music/lyrics-import', payload),
+  // A03: cek file SEBELUM disimpan (bukan toast buta) → laporan baris/peringatan.
+  musicLyricsValidate: (payload: { key?: string; content: string; duration?: number }) =>
+    apiPost<any>('/api/music/lyrics-validate', payload),
+  // A03.5: unduhan template/ekspor lirik kini lewat helper kanonik di client.ts
+  // (downloadApiFile) — lihat LyricsImportDialog. Blob tidak dipakai lagi karena
+  // Qt WebEngine membuang unduhan blob tanpa handler downloadRequested.
   musicLyricsOffset: (key: string, offsetMs: number) => apiPost<any>('/api/music/lyrics-offset', { key, offsetMs }),
   // P59: icon playlist khusus — emoji via JSON, foto via upload target playlist_icon.
   musicPlaylistIcon: (playlistId: string | number, icon: string) =>

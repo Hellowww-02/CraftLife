@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
@@ -21,173 +21,113 @@ import {
   Eye,
   EyeOff,
   Calendar,
+  CalendarDays,
+  MapPin,
+  Bell,
+  Repeat,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Sparkles,
+  ListChecks,
+  StickyNote,
+  Image as ImageIcon,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  SlidersHorizontal,
 } from 'lucide-react';
+import LoveEventDialog, { EVENT_CATEGORIES, LoveEventForm } from '../love/LoveEventDialog';
+import LoveMemoryDialog, { LoveMemoryForm } from '../love/LoveMemoryDialog';
+import LoveBucketDialog, { LoveBucketForm } from '../love/LoveBucketDialog';
+// A11: tab connection/cycle/gallery dipindah ke panel tersendiri + helper galeri
+// (PhotoThumb/Modal/ZoomableViewer) dibagikan lewat `love/galleryParts`.
+import { LoveConnectionPanel } from '../love/LoveConnectionPanel';
+import { LoveCyclePanel } from '../love/LoveCyclePanel';
+import { LoveGalleryPanel } from '../love/LoveGalleryPanel';
+// A12: tab overview = dashboard pasangan (hero hari bersama, hari istimewa,
+// cincin skor kedekatan, statistik, aksi cepat) + pemilih pengingat tahunan.
+import { LoveOverviewPanel } from '../love/LoveOverviewPanel';
+import type { UpcomingItem } from '../love/overviewUtils';
+import { Modal, PhotoThumb, ZoomableViewer } from '../love/galleryParts';
+import { badgeKind, groupEvents } from '../love/eventUtils';
+import {
+  bucketCategoryIcon,
+  bucketProgressText,
+  bucketStats as computeBucketStats,
+  filterBucket,
+  filterMemories,
+  memoryFacets,
+  normalizeTags,
+  tagsToInput,
+  targetBadge,
+  type BucketFilter,
+  type MemorySort,
+} from '../love/memoryUtils';
 
-/** Thumbnail for a Love Space photo; fetches the authed image URL once. */
-const PhotoThumb: React.FC<{ photo: any; onClick?: () => void; selected?: boolean; selectMode?: boolean }> = ({ photo, onClick, selected, selectMode }) => {
-  const [url, setUrl] = useState('');
-  useEffect(() => {
-    let alive = true;
-    studio.lovePhotoImage(photo.id).then((u) => { if (alive) setUrl(u); }).catch(() => setUrl(''));
-    return () => { alive = false; };
-  }, [photo.id]);
-  return (
-    <div
-      onClick={onClick}
-      className={`cursor-pointer group relative overflow-hidden rounded-lg border aspect-video bg-slate-950 transition-colors ${
-        selected ? 'border-rose-500 ring-2 ring-rose-500/50' : 'border-slate-800 hover:border-rose-500/40'
-      }`}
-    >
-      {url ? (
-        <img src={url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center text-slate-600 text-3xl">🖼️</div>
-      )}
-      {photo.caption && (
-        <span className="absolute bottom-0 inset-x-0 px-2 py-1 text-[10px] text-white bg-black/60 truncate">{photo.caption}</span>
-      )}
-      {selectMode && (
-        <span className="absolute top-1 left-1 p-1 rounded bg-black/60 text-rose-300">
-          {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-        </span>
-      )}
-    </div>
-  );
-};
+/* A11: PhotoThumb / ViewerImage / ZoomableViewer / Modal kini di `love/galleryParts.tsx`
+   (dipakai bersama tab galeri & sisa dialog di berkas ini). */
 
-/** Full-size viewer image (lightbox). */
-const ViewerImage: React.FC<{ photo: any }> = ({ photo }) => {
-  const [url, setUrl] = useState('');
-  useEffect(() => {
-    let alive = true;
-    if (photo?.id) studio.lovePhotoImage(photo.id).then((u) => { if (alive) setUrl(u); }).catch(() => setUrl(''));
-    return () => { alive = false; };
-  }, [photo?.id]);
-  if (!url) return <div className="w-full h-full flex items-center justify-center text-slate-600 text-4xl">🖼️</div>;
-  return <img src={url} alt="" className="w-full h-full object-contain" />;
-};
-
-/** Photo viewer with zoom in/out/reset + pan-drag — parity `_GalleryViewerDialog`
- * (zoom ×1.25, clamp 0.25..4.0, persen label, drag-to-pan via scrollable area). */
-const ZoomableViewer: React.FC<{ photo: any; t: (k: string, fb: string) => string }> = ({ photo, t }) => {
-  const [url, setUrl] = useState('');
-  const [zoom, setZoom] = useState(1.0);
-  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  useEffect(() => {
-    let alive = true;
-    if (photo?.id) studio.lovePhotoImage(photo.id).then((u) => { if (alive) setUrl(u); }).catch(() => setUrl(''));
-    return () => { alive = false; setZoom(1); setPos({ x: 0, y: 0 }); };
-  }, [photo?.id]);
-  const clamp = (z: number) => Math.min(4.0, Math.max(0.25, z));
-  const zoomIn = () => setZoom((z) => clamp(z * 1.25));
-  const zoomOut = () => setZoom((z) => clamp(z / 1.25));
-  const zoomReset = () => { setZoom(1); setPos({ x: 0, y: 0 }); };
-  const onMouseDown = (e: React.MouseEvent) => { setDrag({ x: e.clientX - pos.x, y: e.clientY - pos.y }); };
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (drag) setPos({ x: e.clientX - drag.x, y: e.clientY - drag.y });
-  };
-  const onMouseUp = () => setDrag(null);
-  return (
-    <div className="space-y-2">
-      {/* Toolbar (parity zoom bar) */}
-      <div className="flex items-center gap-1.5">
-        <button type="button" onClick={zoomOut} title={t('love_gallery_zoom_out_tip', 'Perkecil')}
-          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200">➖</button>
-        <button type="button" onClick={zoomIn} title={t('love_gallery_zoom_in_tip', 'Perbesar')}
-          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200">➕</button>
-        <button type="button" onClick={zoomReset} title={t('love_gallery_zoom_reset_tip', 'Reset zoom')}
-          className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200">🔄</button>
-        <span className="text-[11px] text-slate-500 px-1">{Math.round(zoom * 100)}%</span>
-      </div>
-      <div className="rounded-xl overflow-hidden bg-slate-950 max-h-[55vh] flex items-center justify-center cursor-grab active:cursor-grabbing">
-        {url ? (
-          <div className="overflow-auto w-full h-full max-h-[55vh]" style={{ cursor: 'grab' }}>
-            <img
-              src={url} alt=""
-              draggable={false}
-              className="select-none object-contain transition-transform"
-              style={{
-                transform: `translate(${pos.x}px, ${pos.y}px) scale(${zoom})`,
-                transition: drag ? 'none' : 'transform 0.15s ease-out',
-                transformOrigin: 'center',
-              }}
-              onMouseDown={onMouseDown}
-              onMouseMove={onMouseMove}
-              onMouseUp={onMouseUp}
-              onMouseLeave={onMouseUp}
-            />
-          </div>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-600 text-4xl">🖼️</div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const Modal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }> = ({ title, onClose, children, wide }) => (
-  <div className="ct-backdrop fixed inset-0 z-[120] flex items-center justify-center p-4" onClick={onClose}>
-    <div
-      className={`ct-dialog w-full ${wide ? 'max-w-3xl' : 'max-w-md'} p-5 space-y-3 max-h-[90vh] overflow-y-auto`}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-sm text-slate-200">{title}</h3>
-        <button onClick={onClose} className="ct-act"><X className="w-4 h-4" /></button>
-      </div>
-      {children}
-    </div>
-  </div>
-);
-
-/** Interpolasi {var} — parity tr(key, **vars) PyQt. */
 const trv = (key: string, vars: Record<string, string | number>, fb: string): string =>
   Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), t(key, fb));
 
 const MOODS: Array<[number, string]> = [[1, '😞'], [2, '😕'], [3, '😐'], [4, '🙂'], [5, '🥰']];
-/** Bank prompt Connection — parity LovePage.PROMPTS (key, category, trKey). */
-const PROMPTS: Array<[string, string, string]> = [
-  ['connection_seen', 'connection', 'love_prompt_connection_seen'],
-  ['connection_safe', 'connection', 'love_prompt_connection_safe'],
-  ['connection_listen', 'connection', 'love_prompt_connection_listen'],
-  ['connection_closer', 'connection', 'love_prompt_connection_closer'],
-  ['appreciation_small', 'appreciation', 'love_prompt_appreciation_small'],
-  ['appreciation_quality', 'appreciation', 'love_prompt_appreciation_quality'],
-  ['appreciation_memory', 'appreciation', 'love_prompt_appreciation_memory'],
-  ['appreciation_growth', 'appreciation', 'love_prompt_appreciation_growth'],
-  ['support_stress', 'support', 'love_prompt_support_stress'],
-  ['support_request', 'support', 'love_prompt_support_request'],
-  ['support_energy', 'support', 'love_prompt_support_energy'],
-  ['support_team', 'support', 'love_prompt_support_team'],
-  ['future_year', 'future', 'love_prompt_future_year'],
-  ['future_home', 'future', 'love_prompt_future_home'],
-  ['future_skill', 'future', 'love_prompt_future_skill'],
-  ['future_priority', 'future', 'love_prompt_future_priority'],
-  ['fun_date', 'fun', 'love_prompt_fun_date'],
-  ['fun_laugh', 'fun', 'love_prompt_fun_laugh'],
-  ['fun_adventure', 'fun', 'love_prompt_fun_adventure'],
-  ['fun_switch', 'fun', 'love_prompt_fun_switch'],
-];
+/* A11: bank PROMPTS kini di `love/connectionUtils.ts` (dipakai panel connection). */
 
 type TabId = 'overview' | 'connection' | 'cycle' | 'memories' | 'gallery' | 'plans';
 
+const LOVE_TABS: TabId[] = ['overview', 'connection', 'cycle', 'memories', 'gallery', 'plans'];
+
+/**
+ * Sub-tab awal Love Space. Mendukung tautan langsung (deep-link) `?loveTab=plans`
+ * — pola yang sama dengan `?login=1` di App.tsx — sehingga halaman bisa dibuka
+ * langsung ke bagian yang dituju (dan memudahkan pengujian render).
+ */
+function initialLoveTab(): TabId {
+  if (typeof window === 'undefined') return 'overview';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = String(params.get('loveTab') || params.get('love_tab') || '').toLowerCase();
+    if ((LOVE_TABS as string[]).includes(wanted)) return wanted as TabId;
+  } catch { /* lingkungan tanpa URLSearchParams — pakai default */ }
+  return 'overview';
+}
+
 const inputCls = 'ct-input w-full px-2 py-1.5 rounded-lg text-slate-200 text-xs';
+/** Label cadangan filter Bucket List (nilai i18n `love_bucket_filter_*` tidak memuat {n}). */
+const BUCKET_FILTER_FALLBACK: Record<BucketFilter, string> = {
+  all: 'Semua', open: 'Belum', done: 'Selesai', late: 'Terlewat',
+};
 const btnRose = 'ct-btn ct-btn-rose ct-btn-sm';
 const btnGhost = 'ct-btn ct-btn-secondary ct-btn-sm';
 const btnDanger = 'ct-btn ct-btn-danger ct-btn-sm';
 
-export const LoveSpaceView: React.FC = () => {
+/**
+ * Love Space. `onNavigate` opsional dipakai aksi cepat tab overview (A12) untuk
+ * melompat ke halaman lain — mis. "Lihat pengingat" → halaman Reminders.
+ */
+export const LoveSpaceView: React.FC<{ onNavigate?: (view: string) => void }> = ({ onNavigate }) => {
   const {
     user,
     loveSpace,
     updateLoveSpace,
     loveCheckin,
     loveEvent,
+    updateLoveEvent,
     loveWeekly,
     loveCycle,
+    addLoveCycle,
+    updateLoveCycle,
+    loveCycleReminder,
+    loveEventReminder,
+    loveAlbumCover,
+    lovePhotosBulk,
     updateLovePhotoMeta,
     addLoveMemory,
+    updateLoveMemory,
+    loveMemoryFavorite,
+    updateLoveBucket,
+    promoteLoveBucket,
     refreshLoveSpace,
     deleteLoveMemory,
     deleteLovePrompt,
@@ -209,81 +149,66 @@ export const LoveSpaceView: React.FC = () => {
     nowDate,
   } = useGame();
 
-  const [tab, setTab] = useState<TabId>('overview');
+  const [tab, setTab] = useState<TabId>(initialLoveTab);
 
-  // ── Overview / check-in ─────────────────────────────────────────────
-  const todayCheckin = (loveSpace.checkins || []).find((c) => c.date === today);
-  const [myMood, setMyMood] = useState(todayCheckin?.myMood || 3);
-  const [partnerMood, setPartnerMood] = useState(todayCheckin?.partnerMood || 3);
-  const [connScore, setConnScore] = useState(todayCheckin?.connectionScore || 4);
-  const [checkNote, setCheckNote] = useState('');
+  // ── Overview (A12) ──────────────────────────────────────────────────
+  // Form check-in + riwayatnya kini tinggal di `LoveOverviewPanel` (state mood
+  // dipindah ke sana), jadi yang tersisa di sini adalah data hari istimewa:
+  // `GET /api/love/events/upcoming?days=365` (acara `yearly` + ulang tahun &
+  // hari jadi dari profil, 29 Feb sudah diamankan server).
+  const [upcoming, setUpcoming] = useState<UpcomingItem[]>([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(false);
 
-  // ── Connection / prompts ────────────────────────────────────────────
-  const [promptCategory, setPromptCategory] = useState('all');
-  const [currentPrompt, setCurrentPrompt] = useState<[string, string, string] | null>(null);
-  const [myAnswer, setMyAnswer] = useState('');
-  const [partnerAnswer, setPartnerAnswer] = useState('');
+  const loadUpcoming = useCallback(() => {
+    setUpcomingLoading(true);
+    studio.loveEventsUpcoming(365)
+      .then((res: any) => {
+        const rows = res?.items || res?.result?.items || res?.events || [];
+        setUpcoming(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => setUpcoming([]))
+      .finally(() => setUpcomingLoading(false));
+  }, []);
 
-  const promptPool = useMemo(() => {
-    if (promptCategory === 'all') return PROMPTS;
-    if (promptCategory === 'favorites') return PROMPTS.filter((p) => (loveSpace.promptFavorites || []).includes(p[0]));
-    return PROMPTS.filter((p) => p[1] === promptCategory);
-  }, [promptCategory, loveSpace.promptFavorites]);
+  useEffect(() => { loadUpcoming(); }, [loadUpcoming]);
 
-  const nextPrompt = () => {
-    if (!promptPool.length) { setCurrentPrompt(null); return; }
-    const alternatives = promptPool.filter((p) => !currentPrompt || p[0] !== currentPrompt[0]);
-    const pick = (alternatives.length ? alternatives : promptPool)[Math.floor(Math.random() * (alternatives.length ? alternatives.length : promptPool.length))];
-    setCurrentPrompt(pick);
-    setMyAnswer(''); setPartnerAnswer('');
-  };
-  useEffect(() => { if (!currentPrompt && tab === 'connection') nextPrompt(); /* eslint-disable-next-line */ }, [tab, promptCategory]);
-
-  // ── Weekly review ───────────────────────────────────────────────────
-  const weekStartInit = () => {
-    const d = nowDate() ?? new Date();
-    const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-  const [weekDate, setWeekDate] = useState(weekStartInit());
-  const [revAppr, setRevAppr] = useState('');
-  const [revWins, setRevWins] = useState('');
-  const [revSupport, setRevSupport] = useState('');
-  const [revIntent, setRevIntent] = useState('');
-
-  // ── Cycle ───────────────────────────────────────────────────────────
-  const cs = loveSpace.cycleSettings || { trackedPerson: 'partner', lastPeriodStart: '', cycleLength: 28, periodLength: 5 };
-  const [cycPerson, setCycPerson] = useState<'self' | 'partner'>(cs.trackedPerson);
-  const [cycStart, setCycStart] = useState(cs.lastPeriodStart || today);
-  const [cycLen, setCycLen] = useState(cs.cycleLength);
-  const [perLen, setPerLen] = useState(cs.periodLength);
-  useEffect(() => {
-    setCycPerson(cs.trackedPerson); setCycStart(cs.lastPeriodStart || today);
-    setCycLen(cs.cycleLength); setPerLen(cs.periodLength);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loveSpace.cycleSettings?.lastPeriodStart, loveSpace.cycleSettings?.cycleLength]);
+  // A11: state & handler prompt/riwayat/review mingguan kini milik
+  // `LoveConnectionPanel`, begitu pula pengaturan + riwayat siklus milik
+  // `LoveCyclePanel` (dulu keduanya menumpuk di komponen ini).
 
   // ── Memories ────────────────────────────────────────────────────────
-  const [showAddMemModal, setShowAddMemModal] = useState(false);
-  const [newMemTitle, setNewMemTitle] = useState('');
-  const [newMemDate, setNewMemDate] = useState(today);
-  const [newMemDesc, setNewMemDesc] = useState('');
+  // A10 — tab memories: dialog Tambah/Edit (emoji, tag, favorit, tautan foto) +
+  // toolbar pencarian/filter tahun/filter tag/hanya favorit/urutan. State lama
+  // (`showAddMemModal` + 3 field terpisah) digantikan dialog yang sama untuk
+  // mode tambah & edit, karena kenangan dulu tidak bisa diedit sama sekali.
+  const [memDialog, setMemDialog] = useState<{ mode: 'add' | 'edit'; initial: Partial<LoveMemoryForm> | null; nonce: number } | null>(null);
+  const [memSaving, setMemSaving] = useState(false);
+  const [memSearch, setMemSearch] = useState('');
+  const [memYear, setMemYear] = useState<string>('');
+  const [memTag, setMemTag] = useState<string>('');
+  const [memOnlyFav, setMemOnlyFav] = useState(false);
+  const [memSort, setMemSort] = useState<MemorySort>('newest');
 
   // ── Plans ───────────────────────────────────────────────────────────
-  const [evTitle, setEvTitle] = useState('');
-  const [evDate, setEvDate] = useState(today);
-  const [evCategory, setEvCategory] = useState('date');
-  const [evNotes, setEvNotes] = useState('');
-  const [bucketTitle, setBucketTitle] = useState('');
+  // A09 — tab plans: dialog Tambah/Edit acara + pencarian/filter + kelompok waktu.
+  // (Sebelumnya ada state `evTitle/evDate/evCategory/evNotes`, tetapi `evNotes` tidak
+  //  pernah terhubung ke input mana pun → catatan mustahil diisi. Kini semuanya lewat dialog.)
+  const [evDialog, setEvDialog] = useState<{ mode: 'add' | 'edit'; initial: Partial<LoveEventForm> | null; nonce: number } | null>(null);
+  const [evSaving, setEvSaving] = useState(false);
+  const [evSearch, setEvSearch] = useState('');
+  const [evCat, setEvCat] = useState<string>('all');
+  const [evOnlySpecial, setEvOnlySpecial] = useState(false);
+  const [evShowPast, setEvShowPast] = useState(false);
+  // A10 — Bucket List: tambah cepat (parity perilaku lama) + dialog lengkap
+  // (kategori, target tanggal, catatan, prioritas) + filter & promosi ke kenangan.
+  const [bucketQuick, setBucketQuick] = useState('');
+  const [bucketDialog, setBucketDialog] = useState<{ mode: 'add' | 'edit'; initial: Partial<LoveBucketForm> | null; nonce: number } | null>(null);
+  const [bucketSaving, setBucketSaving] = useState(false);
+  const [bucketFilter, setBucketFilter] = useState<BucketFilter>('all');
+  const [bucketSearch, setBucketSearch] = useState('');
 
-  // ── Gallery ─────────────────────────────────────────────────────────
-  const [gFilter, setGFilter] = useState<'all' | 'shared' | 'private'>('all');
-  const [gAlbum, setGAlbum] = useState<string>('');
-  const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [viewer, setViewer] = useState<any>(null);
-  const [albumFor, setAlbumFor] = useState<any>(null); // photo being assigned
-  const [albumTarget, setAlbumTarget] = useState('');
+  // A11: state galeri (filter, album, mode pilih, lightbox, sampul) kini milik
+  // `LoveGalleryPanel`; di sini hanya tersisa alur unggah foto (antrean + dialog).
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<File[]>([]);
   const [uploadIdx, setUploadIdx] = useState(-1);
@@ -388,22 +313,6 @@ export const LoveSpaceView: React.FC = () => {
     return trv('love_health_sync', { gender: genderLabel, age: hp.age }, '');
   }, [hp.gender, hp.age]);
 
-  const albums = loveSpace.albums || [];
-  const myPhotosOwn = (ph: any) => !ph.ownerUserId || ph.ownerUserId === String((user as any)?.id || '');
-
-  const filteredPhotos = useMemo(() => {
-    const all = loveSpace.photos || [];
-    let out = all;
-    if (gFilter !== 'all') out = out.filter((p) => (p.visibility || 'private') === gFilter);
-    if (gAlbum) {
-      const alb = albums.find((a) => a.id === gAlbum);
-      if (alb) out = out.filter((p) => alb.photoIds.includes(String(p.id)));
-    }
-    return out;
-  }, [loveSpace.photos, gFilter, gAlbum, albums]);
-
-  const albumOf = (pid: string) => albums.find((a) => a.photoIds.includes(String(pid)));
-
   // ── Upload flow (parity _upload_gallery_photo + _GalleryPhotoDialog) ──
   const UPLOAD_MAX = 8 * 1024 * 1024;
   const onPickFiles = (files: FileList | null) => {
@@ -442,18 +351,312 @@ export const LoveSpaceView: React.FC = () => {
     }
   };
 
-  const bulkDelete = () => {
-    if (!selected.size) return;
-    if (!window.confirm(t('love_gallery_delete_confirm', 'Hapus foto terpilih?'))) return;
-    selected.forEach((pid) => deleteLovePhoto(pid));
-    setSelected(new Set()); setSelectMode(false);
+  // A11: aksi massal memakai satu endpoint `/api/love/photos/bulk` (dulu klien
+  // memanggil hapus/ubah-visibilitas satu per satu sehingga rawan setengah jalan).
+  const galleryBulk = (payload: { action: 'delete' | 'visibility' | 'move'; ids: string[]; albumId?: string; visibility?: string }) => {
+    if (!payload.ids.length) {
+      showToast('info', t('msg_error', 'Error'), t('love_gallery_none_selected', 'Pilih foto dulu.'));
+      return;
+    }
+    lovePhotosBulk(payload);
+    showToast('success', t('berhasil_title', 'Berhasil'), payload.action === 'delete'
+      ? t('love_gallery_bulk_deleted', 'Foto terpilih dihapus.')
+      : payload.action === 'move'
+        ? t('love_gallery_bulk_moved', 'Foto terpilih dipindahkan ke album.')
+        : t('love_gallery_bulk_visibility', 'Visibilitas foto terpilih diperbarui.'));
   };
-  const bulkVis = (vis: 'private' | 'shared') => {
-    selected.forEach((pid) => {
-      const ph = (loveSpace.photos || []).find((p) => String(p.id) === String(pid));
-      if (ph && myPhotosOwn(ph)) updateLovePhotoMeta(pid, { caption: ph.caption, photoDate: ph.photoDate, visibility: vis });
+
+  // ══════════════════ A09: turunan data tab plans ══════════════════
+  /** Label hitung mundur yang ramah ("Hari ini!", "Besok!", "12 hari lagi"). */
+  const evCountdown = (days: number | null) => {
+    if (days === null) return '';
+    if (days === 0) return t('love_event_today', 'Hari ini!');
+    if (days === 1) return t('love_event_tomorrow', 'Besok!');
+    if (days < 0) return trv('love_event_days_ago', { n: Math.abs(days) }, `${Math.abs(days)} hari lalu`);
+    return trv('love_event_in_days', { n: days }, `${days} hari lagi`);
+  };
+  const evBadge = (days: number | null) => {
+    if (days === null) return '—';
+    const kind = badgeKind(days);
+    if (kind === 'today') return t('love_event_today', 'Hari ini!');
+    if (kind === 'past') return `+${Math.abs(days)}`;
+    return `H-${days}`;
+  };
+  const evCategoryMeta = (id: string) =>
+    EVENT_CATEGORIES.find((c) => c.id === id) || { id: 'date' as const, icon: '💕' };
+
+  // A09: pengelompokan/search/filter dihitung modul murni `love/eventUtils.ts`
+  // (dipakai bersama dialog & bisa diuji tanpa DOM).
+  const evData = useMemo(
+    () => groupEvents(loveSpace.events || [], { query: evSearch, category: evCat, onlySpecial: evOnlySpecial }, today),
+    [loveSpace.events, evSearch, evCat, evOnlySpecial, today],
+  );
+
+  /** Hari istimewa terdekat — dari server bila ada (sudah termasuk ulang tahun/anniversary
+   *  dari profil), dengan cadangan perhitungan lokal agar UI tetap hidup offline. */
+  const specialChips: any[] = useMemo(() => {
+    const fromServer = (loveSpace as any).specialDays;
+    if (Array.isArray(fromServer) && fromServer.length) return fromServer.slice(0, 4);
+    return evData.upcoming.filter((e: any) => e.isSpecial).slice(0, 4).map((e: any) => ({
+      id: `local-${e.id}`,
+      title: e.title,
+      icon: e.icon || evCategoryMeta(e.category).icon,
+      nextDate: e.nextDate,
+      daysUntil: e.daysUntil,
+    }));
+  }, [loveSpace, evData]);
+
+  const openEventDialog = (ev?: any) => {
+    // `nonce` membuat dialog selalu di-mount ulang saat dibuka → nilai awal selalu segar
+    // (tidak menyisakan isian dialog sebelumnya).
+    const nonce = Date.now();
+    if (!ev) {
+      setEvDialog({ mode: 'add', initial: { date: today, category: 'date' }, nonce });
+      return;
+    }
+    setEvDialog({
+      mode: 'edit',
+      nonce,
+      initial: {
+        id: String(ev.id),
+        title: ev.title || '',
+        date: ev.date || today,
+        category: ev.category || 'date',
+        icon: ev.icon || '',
+        location: ev.location || '',
+        notes: ev.notes || '',
+        isSpecial: !!ev.isSpecial,
+        recurring: ev.recurring === 'yearly' ? 'yearly' : 'none',
+        remindDaysBefore: Number(ev.remindDaysBefore || 0),
+      },
     });
-    setSelected(new Set());
+  };
+
+  /** Simpan acara (tambah atau edit) — lalu segarkan snapshot supaya kartu langsung berubah. */
+  const saveEvent = async (data: LoveEventForm) => {
+    const body: Record<string, unknown> = {
+      title: data.title,
+      date: data.date,
+      category: data.category,
+      icon: data.icon,
+      location: data.location,
+      notes: data.notes,
+      isSpecial: data.isSpecial,
+      recurring: data.recurring,
+      remindDaysBefore: data.remindDaysBefore,
+    };
+    setEvSaving(true);
+    try {
+      if (data.id) {
+        await studio.loveEventUpdate(data.id, body);
+        showToast('success', t('love_event_updated', 'Acara diperbarui'), data.title);
+      } else {
+        await studio.loveEvent(body);
+        showToast('success', t('love_event_added', 'Acara ditambahkan'), data.title);
+      }
+      refreshLoveSpace();
+      setEvDialog(null);
+    } catch (e) {
+      showToast('damage', t('msg_error', 'Error'), String((e as any)?.message || e));
+    } finally {
+      setEvSaving(false);
+    }
+  };
+
+  // ══════════════════ A10: turunan data tab memories ══════════════════
+  const memView = useMemo(
+    () => filterMemories(loveSpace.memories || [], {
+      query: memSearch, year: memYear, tag: memTag, onlyFav: memOnlyFav, sort: memSort,
+    }),
+    [loveSpace.memories, memSearch, memYear, memTag, memOnlyFav, memSort],
+  );
+  const memFacets = useMemo(() => memoryFacets(loveSpace.memories || []), [loveSpace.memories]);
+  const memStats = (loveSpace as any).memoryStats || {
+    total: memView.total, favorites: memView.favorites, tagged: 0, withPhoto: memView.withPhoto,
+  };
+  const memPhotoOf = (photoId: string) =>
+    (loveSpace.photos || []).find((p: any) => String(p.id) === String(photoId)) || { id: photoId };
+
+  const openMemoryDialog = (m?: any) => {
+    const nonce = Date.now();
+    if (!m) {
+      setMemDialog({ mode: 'add', nonce, initial: { date: today, emoji: '💖' } });
+      return;
+    }
+    setMemDialog({
+      mode: 'edit',
+      nonce,
+      initial: {
+        id: String(m.id),
+        title: m.title || '',
+        date: (m.date || today).slice(0, 10),
+        description: m.description || '',
+        emoji: m.emoji || '💖',
+        tags: tagsToInput(m.tags || []),
+        isFavorite: !!m.isFavorite,
+        photoId: m.photoId || '',
+      },
+    });
+  };
+
+  /** Simpan kenangan (tambah/edit) lalu segarkan snapshot. */
+  const saveMemory = async (data: LoveMemoryForm) => {
+    const body = {
+      title: data.title,
+      date: data.date,
+      description: data.description,
+      emoji: data.emoji,
+      tags: normalizeTags(data.tags).join(', '),
+      isFavorite: data.isFavorite,
+      photoId: data.photoId || '',
+    };
+    setMemSaving(true);
+    try {
+      if (data.id) {
+        await studio.loveMemoryUpdate(data.id, body);
+        showToast('success', t('love_memory_updated', 'Kenangan diperbarui'), data.title);
+      } else {
+        await studio.addMemory(body);
+        showToast('success', t('love_memory_added', 'Kenangan ditambahkan'), data.title);
+      }
+      refreshLoveSpace();
+      setMemDialog(null);
+    } catch (e) {
+      showToast('damage', t('msg_error', 'Error'), String((e as any)?.message || e));
+    } finally {
+      setMemSaving(false);
+    }
+  };
+
+  // ══════════════════ A10: turunan data bucket list ══════════════════
+  const bucketStat = useMemo(
+    () => computeBucketStats(loveSpace.bucketList || [], today),
+    [loveSpace.bucketList, today],
+  );
+  const bucketView = useMemo(
+    () => filterBucket(loveSpace.bucketList || [], bucketFilter, bucketSearch, today),
+    [loveSpace.bucketList, bucketFilter, bucketSearch, today],
+  );
+  const bucketFilterCount = (id: BucketFilter) =>
+    filterBucket(loveSpace.bucketList || [], id, bucketSearch, today).length;
+  const bucketTargetLabel = (b: any) => {
+    const kind = targetBadge(b.daysToTarget);
+    if (kind === 'none') return '';
+    if (kind === 'overdue') return trv('love_bucket_overdue_days', { n: Math.abs(b.daysToTarget) },
+      `terlewat ${Math.abs(b.daysToTarget)} hari`);
+    if (kind === 'today') return t('love_event_today', 'Hari ini!');
+    return trv('love_bucket_h_days', { n: b.daysToTarget }, `H-${b.daysToTarget}`);
+  };
+
+  const openBucketDialog = (b?: any) => {
+    const nonce = Date.now();
+    if (!b) {
+      setBucketDialog({ mode: 'add', nonce, initial: { category: 'dream' } });
+      return;
+    }
+    setBucketDialog({
+      mode: 'edit',
+      nonce,
+      initial: {
+        id: String(b.id),
+        title: b.title || '',
+        category: b.category || 'dream',
+        targetDate: b.targetDate || '',
+        notes: b.notes || '',
+        priority: Number(b.priority || 0),
+        isCompleted: !!b.isCompleted,
+      },
+    });
+  };
+
+  /** Simpan item bucket (tambah/edit). */
+  const saveBucket = async (data: LoveBucketForm) => {
+    setBucketSaving(true);
+    try {
+      if (data.id) {
+        await studio.loveBucketUpdate(data.id, {
+          title: data.title,
+          category: data.category,
+          targetDate: data.targetDate,
+          notes: data.notes,
+          priority: data.priority,
+          isDone: data.isCompleted,
+        });
+        showToast('success', t('love_bucket_updated', 'Item diperbarui'), data.title);
+      } else {
+        await studio.addBucket({
+          title: data.title,
+          category: data.category,
+          targetDate: data.targetDate,
+          notes: data.notes,
+          priority: data.priority,
+        });
+        showToast('success', t('love_bucket_added', 'Item ditambahkan'), data.title);
+      }
+      refreshLoveSpace();
+      setBucketDialog(null);
+    } catch (e) {
+      showToast('damage', t('msg_error', 'Error'), String((e as any)?.message || e));
+    } finally {
+      setBucketSaving(false);
+    }
+  };
+
+  /** Tambah cepat (judul saja) — perilaku lama dipertahankan. */
+  const quickAddBucket = () => {
+    const title = bucketQuick.trim();
+    if (!title) return;
+    studio.addBucket({ title })
+      .then(() => { refreshLoveSpace(); showToast('success', t('love_bucket_added', 'Item ditambahkan'), title); })
+      .catch((e) => showToast('damage', t('msg_error', 'Error'), String(e?.message || e)));
+    setBucketQuick('');
+  };
+
+  /** Tandai selesai/belum selesai lewat endpoint update (completed_at ikut benar). */
+  const toggleBucketDone = (b: any) => {
+    updateLoveBucket(String(b.id), { isDone: !b.isCompleted });
+  };
+
+  /** Item tercapai → kenangan (satu klik, idempoten). */
+  const promoteBucket = (b: any) => {
+    promoteLoveBucket(String(b.id));
+    showToast('success', t('love_bucket_promoted', 'Ditambahkan ke kenangan'), b.title);
+  };
+
+  /* ── A12: handler tab overview ─────────────────────────────────────── */
+  /** Aksi cepat panel overview → membuka dialog/tab yang tepat. */
+  const quickOverviewAction = (action: 'memory' | 'event' | 'bucket' | 'reminders') => {
+    if (action === 'memory') openMemoryDialog();
+    else if (action === 'event') openEventDialog();
+    else if (action === 'bucket') openBucketDialog();
+    else if (onNavigate) onNavigate('reminders');
+    else showToast('info', t('love_quick_reminders', 'Lihat pengingat'), t('love_open_reminders', 'Buka Reminder'));
+  };
+
+  /**
+   * "Buat pengingat" untuk hari istimewa terdekat, idempoten di server
+   * (`POST /api/love/events/<id>/create-reminder` → `repeat_type='yearly'`).
+   * Pesan dibedakan: baru dibuat vs sudah ada & diperbarui.
+   */
+  const createSpecialReminder = (item: UpcomingItem) => {
+    if (!item?.id) return;
+    const days = Number(item.remindDaysBefore) > 0 ? Number(item.remindDaysBefore) : (item.recurring === 'yearly' ? 7 : 1);
+    loveEventReminder(String(item.id), { daysBefore: days }).then((res: any) => {
+      const r = res?.result || res || {};
+      if (r?.ok === false) {
+        const msg = r.msg === 'love_reminder_no_date' ? t('love_reminder_no_date', 'Hari istimewa ini belum punya tanggal.')
+          : r.msg === 'love_reminder_bad_event' ? t('love_reminder_bad_event', 'Hari istimewa tidak dikenal.')
+          : t('msg_error', 'Gagal');
+        showToast('info', t('msg_error', 'Gagal'), msg);
+        return;
+      }
+      const repeat = r.repeat_type === 'yearly' ? t('love_reminder_repeat_yearly', 'setiap tahun') : t('love_reminder_repeat_once', 'sekali');
+      showToast('success',
+        r.already ? t('love_reminder_exists', 'Pengingat sudah ada') : t('love_reminder_created', 'Pengingat dibuat'),
+        trv('love_reminder_created_detail', { title: r.title || item.title, date: r.reminder_date || '', repeat },
+          `${r.title || item.title} · ${r.reminder_date || ''} (${repeat})`));
+      loadUpcoming();
+    }).catch((e: any) => showToast('info', t('msg_error', 'Gagal'), String(e?.message || e)));
   };
 
   const TABS: Array<{ id: TabId; icon: React.ReactNode }> = [
@@ -464,13 +667,6 @@ export const LoveSpaceView: React.FC = () => {
     { id: 'gallery', icon: <Camera className="w-4 h-4" /> },
     { id: 'plans', icon: <Plus className="w-4 h-4" /> },
   ];
-
-  const miniStat = (label: string, value: React.ReactNode) => (
-    <div className="flex-1 min-w-[120px] p-4 bg-slate-900/70 border border-slate-800 rounded-2xl text-center">
-      <div className="text-xl font-extrabold text-rose-400 font-mono">{value}</div>
-      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mt-1">{label}</div>
-    </div>
-  );
 
   return (
     <div id="love-space-view" className="space-y-6">
@@ -562,642 +758,729 @@ export const LoveSpaceView: React.FC = () => {
         ))}
       </div>
 
-      {/* ═══ TAB: OVERVIEW ═══ */}
+      {/* ═══ TAB: OVERVIEW (A12: dashboard pasangan) ═══ */}
       {tab === 'overview' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-3">
-            {miniStat(t('love_days_together', 'Hari Bersama'), daysTogether)}
-            {miniStat(t('love_next_moment', 'Momen Berikutnya'), nextEvent ? `${nextEvent.title} · ${nextEvent.date}` : t('love_no_upcoming', '—'))}
-            {miniStat(t('love_connection', 'Koneksi'), `${loveSpace.connectionScore}%`)}
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_daily_checkin', 'Check-in Harian')}</h3>
-            <p className="text-xs text-slate-400">
-              {todayCheckin
-                ? trv('love_checkin_today_done', { my: todayCheckin.myMood, partner: todayCheckin.partnerMood, score: todayCheckin.connectionScore, note: todayCheckin.note || '—' }, '✅ Sudah check-in hari ini')
-                : t('love_checkin_today_none', 'Belum check-in hari ini.')}
-            </p>
-            <div className="flex flex-wrap gap-3 items-end text-xs">
-              <label className="space-y-1">
-                <span className="block text-slate-400">{t('love_my_mood', 'Mood-ku')}</span>
-                <select value={myMood} onChange={(e) => setMyMood(Number(e.target.value))} className={inputCls}>
-                  {MOODS.map(([v, ic]) => (<option key={v} value={v}>{ic} {v}/5</option>))}
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="block text-slate-400">{t('love_partner_mood', 'Mood Pasangan')}</span>
-                <select value={partnerMood} onChange={(e) => setPartnerMood(Number(e.target.value))} className={inputCls}>
-                  {MOODS.map(([v, ic]) => (<option key={v} value={v}>{ic} {v}/5</option>))}
-                </select>
-              </label>
-              <label className="space-y-1">
-                <span className="block text-slate-400">{t('love_connection_score', 'Skor Koneksi')}</span>
-                <NumberInput value={connScore} onValueChange={setConnScore} min={1} max={5} integer emptyValue={1} inputClassName={`${inputCls} w-20`} />
-              </label>
-            </div>
-            <input value={checkNote} onChange={(e) => setCheckNote(e.target.value)} className={inputCls} placeholder={t('love_checkin_note_ph', 'Catatan singkat hari ini…')} />
-            <button
-              type="button"
-              onClick={() => {
-                loveCheckin({ myMood, partnerMood, connectionScore: connScore, note: checkNote });
-                showToast('success', t('berhasil_title', 'Berhasil'), t('love_checkin_saved', 'Check-in tersimpan.'));
-                setCheckNote('');
-              }}
-              className={btnRose}
-            >
-              {t('love_save_checkin', 'Simpan Check-in')}
-            </button>
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-2">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_checkin_history', 'Riwayat Check-in')}</h3>
-            <div className="max-h-52 overflow-y-auto space-y-1">
-              {(loveSpace.checkins || []).map((c) => (
-                <div key={c.id} className="text-xs text-slate-300 py-1 border-b border-slate-800/50">
-                  {trv('love_checkin_row', { date: c.date, my: c.myMood, partner: c.partnerMood, score: c.connectionScore, note: c.note || '—' }, `${c.date} · 🙂 ${c.myMood} · 💞 ${c.partnerMood}`)}
-                </div>
-              ))}
-              {!(loveSpace.checkins || []).length && <p className="text-xs text-slate-500">—</p>}
-            </div>
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-2">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_upcoming', 'Akan Datang')}</h3>
-            {futureEvents.length ? futureEvents.slice(0, 5).map((ev) => (
-              <div key={ev.id} className="text-xs text-slate-300 py-1 border-b border-slate-800/50">{ev.date} · {ev.title}</div>
-            )) : <p className="text-xs text-slate-500">{t('love_no_upcoming', 'Belum ada momen terjadwal.')}</p>}
-          </div>
-        </div>
+        <LoveOverviewPanel
+          t={t}
+          trv={trv}
+          loveSpace={loveSpace}
+          today={today}
+          upcoming={upcoming}
+          loadingUpcoming={upcomingLoading}
+          onRefreshUpcoming={loadUpcoming}
+          onCheckin={(p) => loveCheckin(p)}
+          onQuickAction={quickOverviewAction}
+          onEditProfile={() => setShowProfile(true)}
+          onOpenTracking={openTracking}
+          onCreateReminder={createSpecialReminder}
+          showToast={showToast}
+        />
       )}
 
-      {/* ═══ TAB: CONNECTION ═══ */}
+      {/* ═══ TAB: CONNECTION (A11: statistik, tren mood, riwayat, favorit) ═══ */}
       {tab === 'connection' && (
-        <div className="space-y-4">
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-bold text-sm text-slate-200 flex-1">{t('love_connection_prompts', 'Prompt Koneksi')}</h3>
-              <select value={promptCategory} onChange={(e) => setPromptCategory(e.target.value)} className={`${inputCls} w-auto`}>
-                {(['all', 'connection', 'appreciation', 'support', 'future', 'fun', 'favorites'] as const).map((c) => (
-                  <option key={c} value={c}>{t(`love_prompt_${c}`, c)}</option>
-                ))}
-              </select>
-              <button type="button" onClick={nextPrompt} className={btnGhost}><Shuffle className="w-3.5 h-3.5 inline mr-1" />{t('love_prompt_shuffle', 'Acak')}</button>
-              <button
-                type="button"
-                disabled={!currentPrompt}
-                onClick={() => currentPrompt && lovePromptFavorite(currentPrompt[0])}
-                className={btnGhost}
-              >
-                <Star className={`w-3.5 h-3.5 inline mr-1 ${currentPrompt && (loveSpace.promptFavorites || []).includes(currentPrompt[0]) ? 'fill-amber-400 text-amber-400' : ''}`} />
-                {currentPrompt && (loveSpace.promptFavorites || []).includes(currentPrompt[0])
-                  ? t('love_prompt_unfavorite', 'Batal Favorit')
-                  : t('love_prompt_favorite', 'Favorit')}
-              </button>
-            </div>
-            <p className="text-center text-sm text-rose-200 font-semibold py-4">
-              {currentPrompt ? t(currentPrompt[2], currentPrompt[0]) : t('love_prompt_no_favorites', 'Tidak ada prompt pada kategori ini.')}
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">{t('love_prompt_my_reflection', 'Refleksiku')}</label>
-                <textarea value={myAnswer} onChange={(e) => setMyAnswer(e.target.value)} rows={3} className={inputCls} placeholder={t('love_prompt_my_ph', 'Tulis jawabanmu…')} />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">{t('love_prompt_partner_reflection', 'Refleksi Pasangan')}</label>
-                <textarea value={partnerAnswer} onChange={(e) => setPartnerAnswer(e.target.value)} rows={3} className={inputCls} placeholder={t('love_prompt_partner_ph', 'Tulis jawaban pasangan…')} />
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (!currentPrompt) return;
-                if (!myAnswer.trim() && !partnerAnswer.trim()) {
-                  showToast('info', t('msg_error', 'Error'), t('love_prompt_answer_required', 'Isi salah satu jawaban dulu.'));
-                  return;
-                }
-                // Parity _save_prompt_response: simpan answer + partner_answer sekaligus.
-                studio.lovePrompt({
-                  promptKey: currentPrompt[0],
-                  category: currentPrompt[1],
-                  prompt: t(currentPrompt[2], currentPrompt[0]),
-                  answer: myAnswer,
-                  partnerAnswer,
-                }).then((res: any) => {
-                  if (res?.result?.ok === false) showToast('info', t('msg_error', 'Error'), res.result?.msg || '');
-                  refreshLoveSpace();
-                });
-                setMyAnswer(''); setPartnerAnswer('');
-              }}
-              className={btnRose}
-            >
-              {t('love_prompt_save', 'Simpan Jawaban')}
-            </button>
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-2">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_prompt_history', 'Riwayat Jawaban')}</h3>
-            <div className="max-h-48 overflow-y-auto space-y-1">
-              {(loveSpace.promptResponses || []).map((p) => (
-                <div key={p.id} className="flex items-start gap-2 text-xs text-slate-300 py-1 border-b border-slate-800/50">
-                  <div className="flex-1">
-                    <span className="text-slate-500">{p.createdAt ? p.createdAt.split('T')[0] : p.promptKey}</span> · {p.prompt}
-                    {p.answer && <div className="text-slate-400">🙋 {p.answer}</div>}
-                    {p.partnerAnswer && <div className="text-slate-400">💞 {p.partnerAnswer}</div>}
-                  </div>
-                  <button type="button" onClick={() => deleteLovePrompt(p.id)} className="p-1 text-slate-500 hover:text-rose-400" title={t('love_delete_selected', 'Hapus yang Dipilih')}><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-              {!(loveSpace.promptResponses || []).length && <p className="text-xs text-slate-500">{t('love_prompt_empty_history', 'Belum ada jawaban tersimpan.')}</p>}
-            </div>
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-sm text-slate-200 flex-1">{t('love_weekly_review', 'Review Mingguan')}</h3>
-              <label className="text-[11px] text-slate-400">{t('love_week_of', 'Minggu mulai')}</label>
-              <input type="date" value={weekDate} onChange={(e) => setWeekDate(e.target.value)} className={`${inputCls} w-auto`} />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <input value={revAppr} onChange={(e) => setRevAppr(e.target.value)} className={inputCls} placeholder={t('love_review_appreciation_ph', 'Apresiasi minggu ini…')} />
-              <input value={revWins} onChange={(e) => setRevWins(e.target.value)} className={inputCls} placeholder={t('love_review_wins_ph', 'Kemenangan kecil…')} />
-              <input value={revSupport} onChange={(e) => setRevSupport(e.target.value)} className={inputCls} placeholder={t('love_review_support_ph', 'Butuh dukungan di…')} />
-              <input value={revIntent} onChange={(e) => setRevIntent(e.target.value)} className={inputCls} placeholder={t('love_review_intention_ph', 'Niat bersama minggu depan…')} />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (!revAppr.trim() || !revWins.trim()) {
-                  showToast('info', t('msg_error', 'Error'), t('love_review_required', 'Lengkapi apresiasi & kemenangan.'));
-                  return;
-                }
-                loveWeekly({ weekStart: weekDate, appreciation: revAppr, wins: revWins, support: revSupport, intention: revIntent });
-                setRevAppr(''); setRevWins(''); setRevSupport(''); setRevIntent('');
-              }}
-              className={btnRose}
-            >
-              {t('love_review_save', 'Simpan Review')}
-            </button>
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {(loveSpace.weeklyReviews || []).map((w) => (
-                <div key={w.id} className="flex items-start gap-2 text-xs text-slate-300 py-1 border-b border-slate-800/50">
-                  <div className="flex-1">
-                    <span className="text-slate-500">{w.weekStart}</span> — {w.appreciation}
-                    {w.wins && <div className="text-slate-400">🏆 {w.wins}</div>}
-                    {w.support && <div className="text-slate-400">🤝 {w.support}</div>}
-                    {w.intention && <div className="text-slate-400">🎯 {w.intention}</div>}
-                  </div>
-                  <button type="button" onClick={() => deleteLoveWeekly(w.id)} className="p-1 text-slate-500 hover:text-rose-400" title={t('love_delete_selected', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-              {!(loveSpace.weeklyReviews || []).length && <p className="text-xs text-slate-500">{t('love_review_empty_history', 'Belum ada review.')}</p>}
-            </div>
-          </div>
-        </div>
+        <LoveConnectionPanel
+          t={t}
+          trv={trv}
+          loveSpace={loveSpace}
+          today={today}
+          onSaveResponse={(p) => {
+            // Parity _save_prompt_response: simpan jawaban + jawaban pasangan sekaligus.
+            studio.lovePrompt(p as any).then((res: any) => {
+              if (res?.result?.ok === false) showToast('info', t('msg_error', 'Error'), res.result?.msg || '');
+              refreshLoveSpace();
+            }).catch((e) => showToast('info', String(e?.message || e), ''));
+          }}
+          onFavorite={lovePromptFavorite}
+          onDeleteResponse={deleteLovePrompt}
+          onSaveWeekly={(p) => loveWeekly({ weekStart: p.weekStart, appreciation: p.appreciation, wins: p.wins, support: p.support, intention: p.intention })}
+          onDeleteWeekly={deleteLoveWeekly}
+          showToast={showToast}
+        />
       )}
 
-      {/* ═══ TAB: CYCLE ═══ */}
+      {/* ═══ TAB: CYCLE (A11: prediksi + ovulasi/subur + tabel riwayat yang bisa diedit) ═══ */}
       {tab === 'cycle' && (
-        <div className="space-y-4">
-          <div className="p-5 bg-slate-900/70 border border-rose-500/20 rounded-2xl space-y-2">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_cycle_prediction', 'Prediksi Siklus')}</h3>
-            {loveSpace.cyclePrediction ? (
-              <>
-                <p className="text-sm text-rose-300 font-bold">
-                  {trv('love_cycle_range', { start: loveSpace.cyclePrediction.predictedStart, end: loveSpace.cyclePrediction.predictedEnd }, `Perkiraan mulai ${loveSpace.cyclePrediction.predictedStart} hingga ${loveSpace.cyclePrediction.predictedEnd}`)}
-                </p>
-                <p className="text-xs text-slate-400">{trv('love_cycle_days_until', { days: loveSpace.cyclePrediction.daysUntil }, `${loveSpace.cyclePrediction.daysUntil} hari dari hari ini`)}</p>
-              </>
-            ) : (
-              <p className="text-sm text-slate-300 font-bold">{t('love_cycle_no_data', 'Belum cukup data untuk prediksi.')}</p>
-            )}
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="space-y-1 text-xs">
-                <span className="block text-slate-400">{t('love_cycle_for', 'Siklus untuk')}</span>
-                <select value={cycPerson} onChange={(e) => setCycPerson(e.target.value as 'self' | 'partner')} className={inputCls}>
-                  <option value="partner">{loveSpace.partnerName || 'Partner'}</option>
-                  <option value="self">{t('love_myself', 'Diriku')}</option>
-                </select>
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="block text-slate-400">{t('love_last_period', 'Periode terakhir')}</span>
-                <input type="date" value={cycStart} onChange={(e) => setCycStart(e.target.value)} className={inputCls} />
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="block text-slate-400">{t('love_cycle_length', 'Panjang siklus')}</span>
-                <NumberInput value={cycLen} onValueChange={setCycLen} min={20} max={45} integer emptyValue={28} inputClassName={inputCls} />
-              </label>
-              <label className="space-y-1 text-xs">
-                <span className="block text-slate-400">{t('love_period_length', 'Lama periode')}</span>
-                <NumberInput value={perLen} onValueChange={setPerLen} min={2} max={10} integer emptyValue={5} inputClassName={inputCls} />
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => loveCycle({ settings: { trackedPerson: cycPerson, lastPeriodStart: cycStart, cycleLength: cycLen, periodLength: perLen } })}
-                className={btnRose}
-              >
-                {t('love_save_cycle', 'Simpan Pengaturan Siklus')}
-              </button>
-              <button
-                type="button"
-                onClick={() => loveCycle({ startDate: today, notes: '' })}
-                className={btnGhost}
-              >
-                {t('love_log_cycle', 'Catat Periode Hari Ini')}
-              </button>
-            </div>
-          </div>
-
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-2">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_cycle_history', 'Riwayat Siklus')}</h3>
-            <div className="max-h-44 overflow-y-auto space-y-1">
-              {(loveSpace.cycles || []).map((c) => (
-                <div key={c.id} className="flex items-center gap-2 text-xs text-slate-300 py-1 border-b border-slate-800/50">
-                  <span className="flex-1">
-                    {t('love_period_start', 'Mulai')} {c.startDate}{c.endDate ? ` → ${t('love_period_end', 'Selesai')} ${c.endDate}` : ''}{c.notes ? ` · ${c.notes}` : ''}
-                  </span>
-                  <button type="button" onClick={() => deleteLoveCycle(c.id)} className="p-1 text-slate-500 hover:text-rose-400" title={t('love_delete_selected', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-              {!(loveSpace.cycles || []).length && <p className="text-xs text-slate-500">—</p>}
-            </div>
-          </div>
-          <p className="text-[10px] text-slate-500">{t('love_cycle_disclaimer', 'Prediksi hanya perkiraan — bukan pengganti saran medis.')}</p>
-        </div>
+        <LoveCyclePanel
+          t={t}
+          trv={trv}
+          loveSpace={loveSpace}
+          today={today}
+          onSaveSettings={(s) => loveCycle({ settings: s })}
+          onLogToday={() => addLoveCycle({ startDate: today, notes: '' })}
+          onAddCycle={(p) => addLoveCycle(p)}
+          onUpdateCycle={(id, p) => updateLoveCycle(id, p)}
+          onDeleteCycle={deleteLoveCycle}
+          onReminder={(daysBefore) => {
+            loveCycleReminder(daysBefore, t('love_cycle_reminder_title', 'Pengingat siklus'));
+            showToast('success', t('berhasil_title', 'Berhasil'), trv('love_cycle_reminder_toast', { n: daysBefore }, `Pengingat H-${daysBefore} dibuat.`));
+          }}
+          showToast={showToast}
+        />
       )}
 
-      {/* ═══ TAB: MEMORIES ═══ */}
+      {/* ═══ TAB: MEMORIES (A10: timeline + toolbar + edit/favorit/foto) ═══ */}
       {tab === 'memories' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-200">{t('love_memories_title', 'Kenangan Berdua')}</h3>
-            <button type="button" onClick={() => setShowAddMemModal(true)} className={btnRose}><Plus className="w-3.5 h-3.5 inline mr-1" />{t('love_add_memory', 'Tambah Kenangan')}</button>
+        <div className="space-y-4" data-testid="love-memories-tab">
+          {/* ── Kepala: judul, hitungan, tombol tambah ── */}
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-bold text-sm text-slate-200 flex-1">{t('love_memories_title', 'Kenangan Berdua')}</h3>
+            <span className="text-[11px] text-slate-500" data-testid="love-memory-count">
+              {trv('love_memory_count', { n: memView.matched, total: memView.total },
+                `${memView.matched} dari ${memView.total} kenangan`)}
+            </span>
+            <button type="button" onClick={() => openMemoryDialog()} className={btnRose} data-testid="love-memory-add">
+              <Plus className="w-3.5 h-3.5 inline mr-1" />{t('love_add_memory', 'Tambah Kenangan')}
+            </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {(loveSpace.memories || []).map((m) => (
-              <div key={m.id} className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="font-bold text-sm text-slate-200">{m.emoji || '💖'} {m.title}</div>
-                    <div className="text-[11px] text-slate-500">{m.date}</div>
-                  </div>
-                  <button type="button" onClick={() => deleteLoveMemory(m.id)} className="p-1 text-slate-500 hover:text-rose-400" title={t('love_delete_selected', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
+
+          {/* ── Statistik ringkas ── */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {([
+              ['love_memory_stat_total', 'Total kenangan', memStats.total, '💖'],
+              ['love_memory_stat_fav', 'Favorit', memStats.favorites, '⭐'],
+              ['love_memory_stat_tagged', 'Bertag', memStats.tagged, '🏷️'],
+              ['love_memory_stat_photo', 'Berfoto', memStats.withPhoto, '🖼️'],
+            ] as Array<[string, string, number, string]>).map(([key, fb, value, icon]) => (
+              <div key={key} className="p-3 bg-slate-900/70 border border-slate-800 rounded-2xl flex items-center gap-2">
+                <span className="text-base">{icon}</span>
+                <div>
+                  <div className="text-sm font-extrabold text-rose-300 font-mono">{value}</div>
+                  <div className="text-[10px] text-slate-500">{t(key, fb)}</div>
                 </div>
-                {m.description && <p className="text-xs text-slate-400">{m.description}</p>}
               </div>
             ))}
           </div>
-          {!(loveSpace.memories || []).length && <p className="text-xs text-slate-500">—</p>}
+
+          {/* ── Toolbar: cari, tahun, tag, urutan, hanya favorit ── */}
+          <div className="flex flex-wrap items-center gap-2 p-3 bg-slate-900/60 border border-slate-800 rounded-2xl">
+            <div className="relative flex-1 min-w-[170px]">
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" />
+              <input
+                value={memSearch}
+                onChange={(e) => setMemSearch(e.target.value)}
+                className={`${inputCls} pl-7`}
+                placeholder={t('love_memory_search_ph', 'Cari kenangan, catatan, atau tag…')}
+              />
+            </div>
+            <select value={memYear} onChange={(e) => setMemYear(e.target.value)} className={`${inputCls} w-auto`}
+              title={t('love_memory_filter_year', 'Tahun')} data-testid="love-memory-year">
+              <option value="">{t('love_memory_year_all', 'Semua tahun')}</option>
+              {memFacets.years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select value={memTag} onChange={(e) => setMemTag(e.target.value)} className={`${inputCls} w-auto`}
+              title={t('love_memory_tags', 'Tag')} data-testid="love-memory-tag">
+              <option value="">{t('love_memory_tag_all', 'Semua tag')}</option>
+              {memFacets.tags.map((tg) => (
+                <option key={tg.tag} value={tg.tag}>#{tg.tag} ({tg.count})</option>
+              ))}
+            </select>
+            <select value={memSort} onChange={(e) => setMemSort(e.target.value as MemorySort)} className={`${inputCls} w-auto`}
+              title={t('love_memory_sort', 'Urutan')} data-testid="love-memory-sort">
+              <option value="newest">{t('love_memory_sort_newest', 'Terbaru')}</option>
+              <option value="oldest">{t('love_memory_sort_oldest', 'Terlama')}</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setMemOnlyFav((v) => !v)}
+              data-testid="love-memory-only-fav"
+              className={`ct-btn ct-btn-sm ${memOnlyFav ? 'ct-btn-rose' : 'ct-btn-secondary'}`}
+            >
+              <Star className={`w-3.5 h-3.5 inline mr-1 ${memOnlyFav ? 'text-amber-200' : ''}`} />
+              {t('love_memory_only_fav', 'Hanya favorit')}
+            </button>
+          </div>
+
+          {/* ── Timeline kenangan ── */}
+          <div className="space-y-2">
+            {memView.items.map((m) => (
+              <div key={m.id} data-testid="love-memory-card" className="flex gap-3">
+                <div className="flex flex-col items-center pt-1">
+                  <span className="w-10 h-10 rounded-2xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-lg">
+                    {m.emoji || '💖'}
+                  </span>
+                  <span className="flex-1 w-px bg-slate-800 min-h-[12px]" />
+                </div>
+                <div className="flex-1 min-w-0 p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
+                        {m.isFavorite && <Star className="w-3.5 h-3.5 text-amber-300 fill-amber-300" data-testid="love-memory-star" />}
+                        <span className="truncate">{m.title}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-2 mt-0.5">
+                        <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{m.date || '—'}</span>
+                        {m.photoId && (
+                          <span className="flex items-center gap-1 text-rose-300/80">
+                            <ImageIcon className="w-3 h-3" />{t('love_memory_has_photo', 'Ada foto')}
+                          </span>
+                        )}
+                        {m.updatedAt && m.updatedAt.slice(0, 10) !== m.date && (
+                          <span className="text-slate-600">
+                            {trv('love_memory_edited_at', { date: m.updatedAt.slice(0, 10) }, `diubah ${m.updatedAt.slice(0, 10)}`)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => loveMemoryFavorite(String(m.id))}
+                        data-testid="love-memory-fav-btn"
+                        title={t('love_memory_favorite', 'Tandai favorit')}
+                        className={`p-1 ${m.isFavorite ? 'text-amber-300' : 'text-slate-500 hover:text-amber-300'}`}
+                      >
+                        <Star className={`w-3.5 h-3.5 ${m.isFavorite ? 'fill-amber-300' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openMemoryDialog(m)}
+                        data-testid="love-memory-edit"
+                        title={t('love_memory_edit_title', 'Edit kenangan')}
+                        className="p-1 text-slate-500 hover:text-rose-300"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(t('love_memory_delete_confirm', 'Hapus kenangan ini?'))) return;
+                          deleteLoveMemory(String(m.id));
+                        }}
+                        className="p-1 text-slate-500 hover:text-rose-400"
+                        title={t('love_delete_selected', 'Hapus')}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {m.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1" data-testid="love-memory-tags">
+                      {m.tags.map((tg) => (
+                        <button
+                          key={tg}
+                          type="button"
+                          onClick={() => setMemTag(tg)}
+                          className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-200 text-[10px] border border-rose-500/25 hover:bg-rose-500/20"
+                        >#{tg}</button>
+                      ))}
+                    </div>
+                  )}
+
+                  {m.description && (
+                    <p className="text-xs text-slate-400 whitespace-pre-line line-clamp-4">{m.description}</p>
+                  )}
+
+                  {m.photoId && (
+                    <div className="w-full max-w-[280px]">
+                      <PhotoThumb photo={memPhotoOf(m.photoId)} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {memView.total === 0 && (
+            <p className="text-xs text-slate-500" data-testid="love-memory-empty">
+              {t('love_memory_empty', 'Belum ada kenangan. Simpan momen pertama kalian di sini.')}
+            </p>
+          )}
+          {memView.total > 0 && memView.matched === 0 && (
+            <p className="text-xs text-slate-500" data-testid="love-memory-no-match">
+              {t('love_memory_no_match', 'Tidak ada kenangan yang cocok dengan filter ini.')}
+            </p>
+          )}
         </div>
       )}
 
-      {/* ═══ TAB: GALLERY (parity _build_gallery_tab) ═══ */}
+      {/* ═══ TAB: GALLERY (A11: sampul album, aksi massal, lightbox keyboard) ═══ */}
       {tab === 'gallery' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-bold text-sm text-slate-200 flex-1">{t('love_gallery_title', 'Galeri')}</h3>
-            <select value={gFilter} onChange={(e) => setGFilter(e.target.value as any)} className={`${inputCls} w-auto`}>
-              <option value="all">{t('love_gallery_all', 'Semua')}</option>
-              <option value="shared">{t('love_gallery_shared', 'Shared')}</option>
-              <option value="private">{t('love_gallery_private', 'Private')}</option>
-            </select>
-            <button type="button" onClick={() => fileRef.current?.click()} className={btnRose}>
-              <Camera className="w-3.5 h-3.5 inline mr-1" />{t('love_gallery_upload', 'Unggah Foto')}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" multiple title={t('love_gallery_pick_multi', 'Pilih Foto')} className="hidden" onChange={(e) => { onPickFiles(e.target.files); e.target.value = ''; }} />
-            <button
-              type="button"
-              onClick={() => { setSelectMode((s) => !s); setSelected(new Set()); }}
-              className={selectMode ? btnRose : btnGhost}
-            >
-              <Images className="w-3.5 h-3.5 inline mr-1" />{t('love_gallery_select', 'Pilih')}
-            </button>
-          </div>
-
-          {/* Album bar (parity love_album_* toolbar) */}
-          <div className="ct-panel flex flex-wrap items-center gap-2 p-3 rounded-2xl">
-            <span className="text-[11px] text-slate-400 font-bold">{t('love_album_title', 'Album')}</span>
-            <select value={gAlbum} onChange={(e) => setGAlbum(e.target.value)} className={`${inputCls} w-auto`}>
-              <option value="">{t('love_album_all', 'Semua Album')}</option>
-              {albums.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} · {a.scope === 'shared' ? t('love_album_shared', 'Shared') : t('love_album_personal', 'Personal')}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className={btnGhost}
-              onClick={() => {
-                const name = window.prompt(t('love_album_name_ph', 'Nama album…'))?.trim();
-                if (!name) { showToast('info', t('msg_error', 'Error'), t('love_album_err_name', 'Nama album wajib diisi.')); return; }
-                const scope = coupleActive && window.confirm(t('love_album_scope_label', 'Shared ke pasangan? OK=shared, Cancel=personal')) ? 'shared' : 'personal';
-                createLoveAlbum(name, scope);
-                showToast('success', t('berhasil_title', 'Berhasil'), trv('love_album_created', { name }, 'Album dibuat.'));
-              }}
-            >{t('love_album_new', 'Baru')}</button>
-            <button
-              type="button"
-              disabled={!gAlbum}
-              className={btnGhost}
-              onClick={() => {
-                const cur = albums.find((a) => a.id === gAlbum);
-                const name = window.prompt(t('love_album_rename', 'Ubah nama album'), cur?.name || '')?.trim();
-                if (!name || !cur) return;
-                renameLoveAlbum(cur.id, name);
-              }}
-            >{t('love_album_rename', 'Ganti Nama')}</button>
-            <button
-              type="button"
-              disabled={!gAlbum}
-              className={btnDanger}
-              onClick={() => {
-                const cur = albums.find((a) => a.id === gAlbum);
-                if (!cur) return;
-                if (!window.confirm(trv('love_album_delete_confirm', { name: cur.name }, `Hapus album "${cur.name}"?`))) return;
-                deleteLoveAlbum(cur.id);
-                setGAlbum('');
-              }}
-            >{t('love_album_delete', 'Hapus Album')}</button>
-          </div>
-
-          {/* Bulk bar (parity select mode) */}
-          {selectMode && (
-            <div className="flex flex-wrap items-center gap-2 p-3 bg-rose-950/30 border border-rose-500/20 rounded-2xl">
-              <span className="text-xs text-rose-300 font-bold flex-1">{trv('love_gallery_selected_count', { n: selected.size }, `${selected.size} foto dipilih`)}</span>
-              <button
-                type="button"
-                className={btnGhost}
-                onClick={() => {
-                  const own = filteredPhotos.filter(myPhotosOwn).map((p) => String(p.id));
-                  const allSel = own.length > 0 && own.every((id) => selected.has(id));
-                  setSelected(allSel ? new Set() : new Set(own));
-                }}
-              >{selected.size && filteredPhotos.filter(myPhotosOwn).every((p) => selected.has(String(p.id))) ? t('love_gallery_deselect_all', 'Batal Pilih Semua') : t('love_gallery_select_all', 'Pilih Semua')}</button>
-              <button type="button" className={btnDanger} onClick={bulkDelete}>{t('love_gallery_bulk_delete', 'Hapus Terpilih')}</button>
-              <button type="button" className={btnGhost} onClick={() => bulkVis('private')}>{t('love_gallery_bulk_private', 'Jadikan Private')}</button>
-              <button type="button" className={btnGhost} onClick={() => bulkVis('shared')} title={coupleActive ? '' : t('love_album_shared_need_couple', 'Butuh couple aktif')}>{t('love_gallery_bulk_shared', 'Jadikan Shared')}</button>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
-            <span>{trv('love_gallery_count', { n: filteredPhotos.length, total: (loveSpace.photos || []).length }, `${filteredPhotos.length} foto`)}</span>
-            <span className="italic">{t('love_gallery_privacy_hint', 'Foto private hanya kamu yang lihat.')}</span>
-          </div>
-
-          {filteredPhotos.length ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {filteredPhotos.map((ph) => {
-                const pid = String(ph.id);
-                const own = myPhotosOwn(ph);
-                const inAlbum = albumOf(pid);
-                return (
-                  <div key={pid} className="space-y-1">
-                    <PhotoThumb
-                      photo={ph}
-                      selectMode={selectMode}
-                      selected={selected.has(pid)}
-                      onClick={() => {
-                        if (selectMode) {
-                          if (!own) return;
-                          setSelected((s) => { const n = new Set(s); n.has(pid) ? n.delete(pid) : n.add(pid); return n; });
-                        } else setViewer(ph);
-                      }}
-                    />
-                    <div className="flex items-center justify-between px-0.5">
-                      <span className="text-[10px] text-slate-500 truncate">
-                        {trv('love_gallery_meta', { date: ph.photoDate || (ph.createdAt || '').split('T')[0] || '—', uploader: ph.uploaderName || '—' }, ph.photoDate || '')}
-                        {inAlbum ? ` · 📁 ${inAlbum.name}` : ''}
-                      </span>
-                      <span className={`text-[10px] font-bold ${ph.visibility === 'shared' ? 'text-rose-400' : 'text-slate-500'}`}>
-                        {ph.visibility === 'shared' ? '💞' : '🔒'}
-                      </span>
-                    </div>
-                    {own && !selectMode && (
-                      <div className="flex items-center gap-1 px-0.5">
-                        <button
-                          type="button"
-                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-                          title={t('love_gallery_toggle_tip', 'Ubah visibilitas')}
-                          onClick={() => updateLovePhotoMeta(pid, { caption: ph.caption, photoDate: ph.photoDate, visibility: ph.visibility === 'shared' ? 'private' : 'shared' })}
-                        >{ph.visibility === 'shared' ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}</button>
-                        <button type="button" className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300" title={t('love_gallery_edit', 'Edit')} onClick={() => setViewer(ph)}><Pencil className="w-3 h-3" /></button>
-                        <button
-                          type="button"
-                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-                          title={t('love_album_title', 'Album')}
-                          onClick={() => { setAlbumFor(ph); setAlbumTarget(albumOf(pid)?.id || albums[0]?.id || ''); }}
-                        ><FolderOpen className="w-3 h-3" /></button>
-                        <button
-                          type="button"
-                          className="ct-act text-rose-300"
-                          title={t('love_delete', 'Hapus')}
-                          onClick={() => { if (window.confirm(t('love_gallery_delete_confirm', 'Hapus foto ini?'))) deleteLovePhoto(pid); }}
-                        ><Trash2 className="w-3 h-3" /></button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="p-8 text-center text-xs text-slate-500 bg-slate-900/50 border border-slate-800 rounded-2xl">{t('love_gallery_empty', 'Belum ada foto. Unggah momen pertama kalian!')}</div>
-          )}
-        </div>
+        <LoveGalleryPanel
+          t={t}
+          trv={trv}
+          photos={loveSpace.photos || []}
+          albums={loveSpace.albums || []}
+          userId={String((user as any)?.id || '')}
+          coupleActive={!!loveSpace.coupleActive}
+          today={today}
+          onPickFiles={onPickFiles}
+          onDeletePhoto={deleteLovePhoto}
+          onPhotoMeta={updateLovePhotoMeta}
+          onBulk={galleryBulk}
+          onCreateAlbum={createLoveAlbum}
+          onRenameAlbum={renameLoveAlbum}
+          onDeleteAlbum={deleteLoveAlbum}
+          onAlbumPhoto={(albumId, photoId, mode) => {
+            if (mode === 'remove') loveAlbumRemovePhoto(albumId, photoId);
+            else if (mode === 'move') loveAlbumMovePhoto(albumId, photoId, null);
+            else loveAlbumAddPhoto(albumId, photoId);
+          }}
+          onAlbumCover={(albumId, photoId) => {
+            loveAlbumCover(albumId, photoId);
+            showToast('success', t('berhasil_title', 'Berhasil'), t('love_gallery_cover_saved', 'Sampul album diperbarui.'));
+          }}
+          showToast={showToast}
+        />
       )}
 
       {/* ═══ TAB: PLANS (events + bucket list) ═══ */}
       {tab === 'plans' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-200">{t('love_events', 'Acara Berdua')}</h3>
+        <div className="space-y-4">
+          {/* Hari istimewa terdekat — termasuk ulang tahun/anniversary dari profil */}
+          {specialChips.length > 0 && (
+            <div className="p-4 bg-gradient-to-r from-rose-900/30 via-slate-900/60 to-slate-900/70 border border-rose-500/25 rounded-2xl">
+              <div className="flex items-center gap-2 mb-2.5">
+                <Star className="w-4 h-4 text-amber-300" />
+                <h3 className="text-[11px] font-black uppercase tracking-wider text-rose-200">
+                  {t('love_event_special_upcoming', 'Hari istimewa terdekat')}
+                </h3>
+                <span className="text-[10px] text-slate-500">
+                  {trv('love_event_special_count', { n: (loveSpace as any).specialDays?.length || specialChips.length },
+                    `${(loveSpace as any).specialDays?.length || specialChips.length} hari istimewa dalam 90 hari`)}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {specialChips.map((it) => (
+                  <div
+                    key={String(it.id)}
+                    data-testid="love-special-chip"
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800"
+                  >
+                    <span className="text-lg leading-none">{it.icon || '⭐'}</span>
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-bold text-slate-200 truncate max-w-[11rem]">{it.title}</span>
+                      <span className="block text-[10px] text-slate-400 tabular-nums">
+                        {it.nextDate} · {evCountdown(it.daysUntil)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <input value={evTitle} onChange={(e) => setEvTitle(e.target.value)} className={`${inputCls} flex-1 min-w-[120px]`} placeholder={t('love_title_label', 'Judul')} />
-              <input type="date" value={evDate} onChange={(e) => setEvDate(e.target.value)} className={`${inputCls} w-auto`} />
-              <select value={evCategory} onChange={(e) => setEvCategory(e.target.value)} className={`${inputCls} w-auto`}>
-                {(['date', 'gift', 'milestone', 'dream'] as const).map((c) => (<option key={c} value={c}>{t(`love_category_${c}`, c)}</option>))}
-              </select>
-              <button
-                type="button"
-                className={btnRose}
-                onClick={() => {
-                  if (!evTitle.trim()) return;
-                  loveEvent({ title: evTitle, date: evDate, category: evCategory, notes: evNotes });
-                  setEvTitle(''); setEvNotes('');
-                }}
-              >{t('love_add', 'Tambah')}</button>
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-1">
-              {[...(loveSpace.events || [])].sort((a, b) => a.date.localeCompare(b.date)).map((ev) => (
-                <div key={ev.id} className="flex items-center gap-2 text-xs text-slate-300 py-1 border-b border-slate-800/50">
-                  <span className="flex-1"><span className="text-slate-500">{ev.date}</span> · {ev.title} <span className="text-slate-500">({t(`love_category_${ev.category || 'date'}`, ev.category || 'date')})</span>{ev.notes ? ` · ${ev.notes}` : ''}</span>
-                  <button type="button" onClick={() => deleteLoveEvent(ev.id)} className="p-1 text-slate-500 hover:text-rose-400" title={t('love_delete_selected', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-              ))}
-              {!(loveSpace.events || []).length && <p className="text-xs text-slate-500">—</p>}
-            </div>
-          </div>
+          )}
 
-          <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-200">{t('love_bucket_list', 'Bucket List')}</h3>
-            </div>
-            <div className="flex gap-2">
-              <input value={bucketTitle} onChange={(e) => setBucketTitle(e.target.value)} className={`${inputCls} flex-1`} placeholder={t('love_title_label', 'Judul')} />
-              <button
-                type="button"
-                className={btnRose}
-                onClick={() => {
-                  if (!bucketTitle.trim()) return;
-                  studio.addBucket(bucketTitle).then(() => refreshLoveSpace());
-                  setBucketTitle('');
-                }}
-              >{t('love_add', 'Tambah')}</button>
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-1">
-              {(loveSpace.bucketList || []).map((b) => (
-                <div key={b.id} className="flex items-center gap-2 text-xs text-slate-300 py-1 border-b border-slate-800/50">
-                  <input
-                    type="checkbox"
-                    checked={!!b.isCompleted}
-                    onChange={() => toggleLoveBucketItem(b.id)}
-                    className="accent-rose-500"
-                  />
-                  <span className={`flex-1 ${b.isCompleted ? 'line-through text-slate-500' : ''}`}>
-                    {b.title}{b.completedDate ? ` · ✅ ${b.completedDate.split(' ')[0]}` : ''}
-                  </span>
-                  <button type="button" onClick={() => deleteLoveBucket(b.id)} className="p-1 text-slate-500 hover:text-rose-400" title={t('love_delete_selected', 'Hapus')}><Trash2 className="w-3.5 h-3.5" /></button>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* ── Acara berdua ── */}
+            <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+                  <CalendarDays className="w-4 h-4 text-rose-400" />
+                  {t('love_events', 'Acara Berdua')}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 ct-nlm-num">{evData.total}</span>
+                </h3>
+                <button type="button" className={btnRose} onClick={() => openEventDialog()}>
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  {t('love_event_add_title', 'Tambah acara')}
+                </button>
+              </div>
+
+              {/* Toolbar: pencarian + filter kategori + hanya hari istimewa */}
+              {(loveSpace.events || []).length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="relative flex-1 min-w-[9rem]">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      value={evSearch}
+                      onChange={(e) => setEvSearch(e.target.value)}
+                      className={`${inputCls} pl-7`}
+                      placeholder={t('love_event_search_ph', 'Cari acara, lokasi, atau catatan…')}
+                    />
+                  </div>
+                  <select value={evCat} onChange={(e) => setEvCat(e.target.value)} className={`${inputCls} w-auto`}>
+                    <option value="all">{t('love_event_filter_all', 'Semua kategori')}</option>
+                    {EVENT_CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.id}>{c.icon} {t(`love_category_${c.id}`, c.id)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setEvOnlySpecial((v) => !v)}
+                    className={`ct-btn ct-btn-sm ${evOnlySpecial ? 'ct-btn-rose' : 'ct-btn-secondary'}`}
+                    title={t('love_event_only_special', 'Hanya hari istimewa')}
+                  >
+                    <Star className="w-3.5 h-3.5 mr-1" />
+                    {evData.specialCount}
+                  </button>
                 </div>
-              ))}
-              {!(loveSpace.bucketList || []).length && <p className="text-xs text-slate-500">—</p>}
+              )}
+
+              {/* Akan datang */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <Sparkles className="w-3 h-3 text-rose-300" />
+                  {t('love_event_upcoming', 'Akan datang')}
+                  <span className="ct-nlm-num">{evData.upcoming.length}</span>
+                </div>
+                {evData.upcoming.map((ev: any) => (
+                  <div
+                    key={ev.id}
+                    data-testid="love-event-card"
+                    className="rounded-xl border border-slate-800 bg-slate-950/50 p-2.5 space-y-1"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-base leading-none shrink-0">
+                        {ev.icon || evCategoryMeta(ev.category).icon}
+                      </span>
+                      <button type="button" onClick={() => openEventDialog(ev)} className="min-w-0 flex-1 text-left">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-slate-100 truncate">{ev.title}</span>
+                          {ev.isSpecial && <Star className="w-3 h-3 text-amber-300 shrink-0" />}
+                          {ev.recurring === 'yearly' && <Repeat className="w-3 h-3 text-rose-300 shrink-0" />}
+                        </span>
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
+                          <span className="tabular-nums">
+                            {ev.date}
+                            {ev.recurring === 'yearly' && ev.nextDate ? ` → ${ev.nextDate}` : ''}
+                          </span>
+                          <span className="px-1.5 rounded bg-slate-800/80 text-slate-300">
+                            {t(`love_category_${ev.category || 'date'}`, ev.category || 'date')}
+                          </span>
+                          {ev.location && (
+                            <span className="flex items-center gap-0.5 truncate max-w-[9rem]">
+                              <MapPin className="w-3 h-3" />{ev.location}
+                            </span>
+                          )}
+                          {ev.remindDaysBefore > 0 && (
+                            <span className="flex items-center gap-0.5 text-amber-300/90">
+                              <Bell className="w-3 h-3" />
+                              {trv('love_event_remind_short', { n: ev.remindDaysBefore }, `H-${ev.remindDaysBefore}`)}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                      <span className={`shrink-0 text-[10px] font-black px-2 py-1 rounded-lg tabular-nums ${ev.daysUntil <= 1 ? 'bg-rose-500/25 text-rose-200' : 'bg-slate-800 text-slate-300'}`}>
+                        {evBadge(ev.daysUntil)}
+                      </span>
+                      <span className="shrink-0 flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openEventDialog(ev)}
+                          className="p-1 text-slate-500 hover:text-rose-300"
+                          title={t('love_event_edit_title', 'Edit acara')}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(t('love_delete_selected', 'Hapus'))) deleteLoveEvent(ev.id);
+                          }}
+                          className="p-1 text-slate-500 hover:text-rose-400"
+                          title={t('love_delete_selected', 'Hapus')}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    </div>
+                    {ev.notes && (
+                      <p className="text-[10px] text-slate-400 leading-relaxed pl-10 whitespace-pre-wrap">{ev.notes}</p>
+                    )}
+                  </div>
+                ))}
+                {!evData.upcoming.length && (
+                  <p className="text-xs text-slate-500 py-2">
+                    {evData.total === 0
+                      ? t('love_event_empty', 'Belum ada acara. Tambahkan kencan, hadiah, atau hari istimewa.')
+                      : t('love_event_no_match', 'Tidak ada acara yang cocok dengan filter ini.')}
+                  </p>
+                )}
+              </div>
+
+              {/* Sudah lewat (kolaps) */}
+              {evData.past.length > 0 && (
+                <div className="space-y-1.5 pt-1 border-t border-slate-800/60">
+                  <button
+                    type="button"
+                    onClick={() => setEvShowPast((v) => !v)}
+                    className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 w-full"
+                  >
+                    {evShowPast ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    {t('love_event_past', 'Sudah lewat')}
+                    <span className="ct-nlm-num">{evData.past.length}</span>
+                  </button>
+                  {evShowPast && evData.past.map((ev: any) => (
+                    <div
+                      key={ev.id}
+                      data-testid="love-event-card-past"
+                      className="rounded-xl border border-slate-800/60 bg-slate-950/30 p-2 text-[11px] text-slate-400 flex items-start gap-2"
+                    >
+                      <span className="text-sm leading-none shrink-0">{ev.icon || evCategoryMeta(ev.category).icon}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-300 truncate">{ev.title}</span>
+                          {ev.isSpecial && <Star className="w-3 h-3 text-amber-300/80" />}
+                        </span>
+                        <span className="text-[10px] text-slate-500 tabular-nums">
+                          {ev.date} · {evCountdown(ev.daysUntil)}
+                          {ev.location ? ` · ${ev.location}` : ''}
+                        </span>
+                        {ev.notes && <span className="block text-[10px] text-slate-500 truncate">{ev.notes}</span>}
+                      </span>
+                      <span className="shrink-0 flex items-center gap-0.5">
+                        <button type="button" onClick={() => openEventDialog(ev)} className="p-1 hover:text-rose-300" title={t('love_event_edit_title', 'Edit acara')}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { if (window.confirm(t('love_delete_selected', 'Hapus'))) deleteLoveEvent(ev.id); }}
+                          className="p-1 hover:text-rose-400"
+                          title={t('love_delete_selected', 'Hapus')}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Bucket List (A10: progres, kategori, target, catatan, prioritas, promosi) ── */}
+            <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3" data-testid="love-bucket-panel">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-bold text-sm text-slate-200 flex items-center gap-1.5">
+                  <ListChecks className="w-4 h-4 text-rose-400" />{t('love_bucket_list', 'Bucket List')}
+                </h3>
+                <span className="text-[11px] text-slate-500 flex-1" data-testid="love-bucket-progress-text">
+                  {bucketProgressText(bucketStat, (key, vars, fb) => trv(key, vars || {}, fb || key))}
+                </span>
+                <button type="button" onClick={() => openBucketDialog()} className={btnGhost} data-testid="love-bucket-add-detail">
+                  <Plus className="w-3.5 h-3.5 inline mr-1" />{t('love_bucket_add', 'Tambah lengkap')}
+                </button>
+              </div>
+
+              {/* Progres */}
+              <div className="h-2 rounded-full bg-slate-800 overflow-hidden" data-testid="love-bucket-progress">
+                <div className="h-full bg-gradient-to-r from-rose-500 to-amber-400 transition-all" style={{ width: `${bucketStat.percent}%` }} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="px-2 py-0.5 rounded-full bg-slate-800/70 text-slate-300">
+                  {trv('love_bucket_stat_total', { n: bucketStat.total }, `${bucketStat.total} total`)}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-200 border border-emerald-500/20">
+                  {trv('love_bucket_stat_done', { n: bucketStat.done }, `${bucketStat.done} selesai`)}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-800/70 text-slate-300">
+                  {trv('love_bucket_stat_open', { n: bucketStat.open }, `${bucketStat.open} belum`)}
+                </span>
+                {bucketStat.overdue > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-200 border border-amber-500/25 flex items-center gap-1" data-testid="love-bucket-overdue-stat">
+                    <AlertTriangle className="w-3 h-3" />
+                    {trv('love_bucket_stat_overdue', { n: bucketStat.overdue }, `${bucketStat.overdue} lewat target`)}
+                  </span>
+                )}
+                <span className="text-slate-600 font-mono">{bucketStat.percent}%</span>
+              </div>
+
+              {/* Tambah cepat + pencarian */}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={bucketQuick}
+                  onChange={(e) => setBucketQuick(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') quickAddBucket(); }}
+                  className={`${inputCls} flex-1 min-w-[150px]`}
+                  placeholder={t('love_bucket_quick_ph', 'Tambah cepat: tulis impian, tekan Enter')}
+                />
+                <button type="button" className={btnRose} onClick={quickAddBucket} data-testid="love-bucket-quick-add">
+                  {t('love_add', 'Tambah')}
+                </button>
+                <div className="relative w-full md:w-48">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={bucketSearch}
+                    onChange={(e) => setBucketSearch(e.target.value)}
+                    className={`${inputCls} pl-7`}
+                    placeholder={t('love_bucket_search_ph', 'Cari item…')}
+                  />
+                </div>
+              </div>
+
+              {/* Filter */}
+              <div className="flex flex-wrap gap-1.5">
+                {(['all', 'open', 'done', 'late'] as BucketFilter[]).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setBucketFilter(f)}
+                    data-testid={`love-bucket-filter-${f}`}
+                    className={`ct-btn ct-btn-sm ${bucketFilter === f ? 'ct-btn-rose' : 'ct-btn-secondary'}`}
+                  >
+                    {t(`love_bucket_filter_${f}`, BUCKET_FILTER_FALLBACK[f])}
+                    <span className="ml-1 font-mono opacity-70">{bucketFilterCount(f)}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Daftar item */}
+              <div className="max-h-[430px] overflow-y-auto space-y-2 pr-0.5">
+                {bucketView.map((b) => (
+                  <div
+                    key={b.id}
+                    data-testid="love-bucket-card"
+                    className={`p-3 rounded-xl border space-y-2 ${
+                      b.isCompleted ? 'border-emerald-500/25 bg-emerald-500/5'
+                        : b.isOverdue ? 'border-amber-500/30 bg-amber-500/5'
+                          : 'border-slate-800 bg-slate-950/40'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleBucketDone(b)}
+                        data-testid="love-bucket-check"
+                        title={b.isCompleted
+                          ? t('love_bucket_mark_open', 'Tandai belum tercapai')
+                          : t('love_bucket_mark_done', 'Tandai sudah tercapai')}
+                        className={`mt-0.5 ${b.isCompleted ? 'text-emerald-300' : 'text-slate-500 hover:text-rose-300'}`}
+                      >
+                        {b.isCompleted ? <CheckCircle2 className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-xs font-bold ${b.isCompleted ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                          <span className="mr-1">{bucketCategoryIcon(b.category)}</span>{b.title}
+                          {b.priority > 0 && (
+                            <span className="ml-1 text-amber-300" data-testid="love-bucket-priority-stars"
+                              title={trv('love_bucket_priority_n', { n: b.priority }, `Prioritas ${b.priority}`)}>
+                              {'⭐'.repeat(b.priority)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5 text-[10px]">
+                          <span className="text-slate-500">{t(`love_bucket_category_${b.category}`, b.category)}</span>
+                          {b.targetDate && (
+                            <span
+                              data-testid="love-bucket-target"
+                              className={`flex items-center gap-1 ${b.isOverdue ? 'text-amber-300' : 'text-slate-400'}`}
+                            >
+                              <Clock className="w-3 h-3" />{b.targetDate}
+                              {bucketTargetLabel(b) ? ` · ${bucketTargetLabel(b)}` : ''}
+                            </span>
+                          )}
+                          {b.completedDate && (
+                            <span className="text-emerald-300/80">
+                              ✅ {String(b.completedDate).split(' ')[0]}
+                            </span>
+                          )}
+                          {b.promotedMemoryId && (
+                            <span className="text-rose-300/80 flex items-center gap-1" data-testid="love-bucket-promoted">
+                              <StickyNote className="w-3 h-3" />{t('love_bucket_is_memory', 'Sudah jadi kenangan')}
+                            </span>
+                          )}
+                        </div>
+                        {b.notes && <p className="text-[11px] text-slate-400 mt-1 whitespace-pre-line">{b.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {b.isCompleted && !b.promotedMemoryId && (
+                          <button
+                            type="button"
+                            onClick={() => promoteBucket(b)}
+                            data-testid="love-bucket-promote"
+                            title={t('love_bucket_promote', 'Simpan jadi kenangan')}
+                            className="ct-btn ct-btn-sm ct-btn-rose"
+                          >
+                            <StickyNote className="w-3 h-3 inline mr-1" />
+                            {t('love_bucket_promote_short', 'Jadi kenangan')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openBucketDialog(b)}
+                          data-testid="love-bucket-edit"
+                          title={t('love_bucket_edit_title', 'Edit item bucket list')}
+                          className="p-1 text-slate-500 hover:text-rose-300"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm(t('love_bucket_delete_confirm', 'Hapus item ini?'))) return;
+                            deleteLoveBucket(String(b.id));
+                          }}
+                          className="p-1 text-slate-500 hover:text-rose-400"
+                          title={t('love_delete_selected', 'Hapus')}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!(loveSpace.bucketList || []).length && (
+                  <p className="text-xs text-slate-500" data-testid="love-bucket-empty">
+                    {t('love_bucket_empty', 'Belum ada rencana. Tulis impian pertama kalian di atas.')}
+                  </p>
+                )}
+                {(loveSpace.bucketList || []).length > 0 && bucketView.length === 0 && (
+                  <p className="text-xs text-slate-500" data-testid="love-bucket-no-match">
+                    {t('love_bucket_no_match', 'Tidak ada item yang cocok dengan filter ini.')}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Add Memory Modal ── */}
-      {showAddMemModal && (
-        <Modal title={t('love_add_memory', 'Tambah Kenangan')} onClose={() => setShowAddMemModal(false)}>
-          <input value={newMemTitle} onChange={(e) => setNewMemTitle(e.target.value)} className={inputCls} placeholder={t('love_title_label', 'Judul kenangan')} />
-          <input type="date" value={newMemDate} onChange={(e) => setNewMemDate(e.target.value)} className={inputCls} />
-          <textarea value={newMemDesc} onChange={(e) => setNewMemDesc(e.target.value)} rows={3} className={inputCls} placeholder="…" />
-          <div className="flex justify-end gap-2">
-            <button type="button" className={btnGhost} onClick={() => setShowAddMemModal(false)}>{t('msg_cancel', 'Batal')}</button>
-            <button
-              type="button"
-              className={btnRose}
-              onClick={() => {
-                if (!newMemTitle.trim()) { showToast('info', t('msg_error', 'Error'), t('love_title_label', 'Judul')); return; }
-                addLoveMemory(newMemTitle, newMemDate, newMemDesc, '💖');
-                setShowAddMemModal(false); setNewMemTitle(''); setNewMemDesc('');
-              }}
-            >{t('msg_ok', 'OK')}</button>
-          </div>
-        </Modal>
-      )}
+      {/* ── Dialog Tambah/Edit Acara (A09) ── */}
+      <LoveEventDialog
+        key={evDialog ? `${evDialog.mode}-${evDialog.initial?.id || 'new'}-${evDialog.nonce}` : 'closed'}
+        open={!!evDialog}
+        mode={evDialog?.mode || 'add'}
+        initial={evDialog?.initial || null}
+        saving={evSaving}
+        today={today}
+        onClose={() => setEvDialog(null)}
+        onSave={saveEvent}
+        tr={(key, vars, fb) => {
+          // i18n `t()` butuh fallback berupa string; dialog boleh memanggil tanpa fallback.
+          const base = t(key, fb || key);
+          if (!vars) return base;
+          return Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), base);
+        }}
+      />
 
-      {/* ── Photo lightbox + edit (parity _GalleryViewerDialog/_GalleryEditDialog) ── */}
-      {viewer && (
-        <Modal title={viewer.caption || t('love_gallery_untitled', 'Foto')} onClose={() => setViewer(null)} wide>
-          <ZoomableViewer photo={viewer} t={t} />
-          {myPhotosOwn(viewer) && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input
-                defaultValue={viewer.caption || ''}
-                onBlur={(e) => updateLovePhotoMeta(viewer.id, { caption: e.target.value, photoDate: viewer.photoDate, visibility: viewer.visibility })}
-                className={inputCls}
-                placeholder={t('love_gallery_meta', 'Keterangan')}
-              />
-              <input
-                type="date"
-                defaultValue={viewer.photoDate || ''}
-                onBlur={(e) => updateLovePhotoMeta(viewer.id, { caption: viewer.caption, photoDate: e.target.value, visibility: viewer.visibility })}
-                className={inputCls}
-              />
-              <select
-                value={viewer.visibility}
-                onChange={(e) => updateLovePhotoMeta(viewer.id, { caption: viewer.caption, photoDate: viewer.photoDate, visibility: e.target.value })}
-                className={inputCls}
-              >
-                <option value="private">🔒 {t('love_gallery_private', 'Private')}</option>
-                <option value="shared">💞 {t('love_gallery_shared', 'Shared')}</option>
-              </select>
-            </div>
-          )}
-          <div className="flex justify-between items-center">
-            <span className="text-[11px] text-slate-500">
-              {trv('love_gallery_meta', { date: viewer.photoDate || '—', uploader: viewer.uploaderName || '—' }, '')}
-            </span>
-            {myPhotosOwn(viewer) && (
-              <button
-                type="button"
-                className={btnDanger}
-                onClick={() => {
-                  if (!window.confirm(t('love_gallery_delete_confirm', 'Hapus foto ini?'))) return;
-                  deleteLovePhoto(viewer.id);
-                  setViewer(null);
-                }}
-              >{t('love_delete', 'Hapus')}</button>
-            )}
-          </div>
-        </Modal>
-      )}
+      {/* ── Dialog Tambah/Edit Kenangan (A10: emoji, tag, favorit, tautan foto) ── */}
+      <LoveMemoryDialog
+        key={memDialog ? `${memDialog.mode}-${memDialog.initial?.id || 'new'}-${memDialog.nonce}` : 'closed'}
+        open={!!memDialog}
+        mode={memDialog?.mode || 'add'}
+        initial={memDialog?.initial || null}
+        photos={(loveSpace.photos || []).map((ph: any) => ({
+          id: String(ph.id), caption: ph.caption || '', photoDate: ph.photoDate || '',
+        }))}
+        saving={memSaving}
+        today={today}
+        onClose={() => setMemDialog(null)}
+        onSave={saveMemory}
+        tr={(key, vars, fb) => {
+          const base = t(key, fb || key);
+          if (!vars) return base;
+          return Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), base);
+        }}
+      />
 
-      {/* ── Album assign modal (parity _open_photo_menu/_photo_to_album) ── */}
-      {albumFor && (
-        <Modal title={t('love_album_choose', 'Pilih Album')} onClose={() => setAlbumFor(null)}>
-          {albums.length ? (
-            <>
-              <select value={albumTarget} onChange={(e) => setAlbumTarget(e.target.value)} className={inputCls}>
-                {albums.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} · {a.scope === 'shared' ? t('love_album_shared', 'Shared') : t('love_album_personal', 'Personal')}</option>
-                ))}
-              </select>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  className={btnRose}
-                  onClick={() => {
-                    if (albumTarget) loveAlbumAddPhoto(albumTarget, String(albumFor.id));
-                    showToast('success', t('berhasil_title', 'Berhasil'), t('love_album_copied', 'Foto disalin ke album.'));
-                    setAlbumFor(null);
-                  }}
-                >{t('love_album_copy_to', 'Salin ke Album')}</button>
-                <button
-                  type="button"
-                  className={btnGhost}
-                  onClick={() => {
-                    if (albumTarget) loveAlbumMovePhoto(albumTarget, String(albumFor.id), albumOf(String(albumFor.id))?.id || null);
-                    showToast('success', t('berhasil_title', 'Berhasil'), t('love_album_moved', 'Foto dipindah ke album.'));
-                    setAlbumFor(null);
-                  }}
-                >{t('love_album_move_to', 'Pindah ke Album')}</button>
-                {albumOf(String(albumFor.id)) && (
-                  <button
-                    type="button"
-                    className={btnDanger}
-                    onClick={() => {
-                      const cur = albumOf(String(albumFor.id));
-                      if (cur) loveAlbumRemovePhoto(cur.id, String(albumFor.id));
-                      showToast('success', t('berhasil_title', 'Berhasil'), t('love_album_removed', 'Foto dikeluarkan dari album.'));
-                      setAlbumFor(null);
-                    }}
-                  >{t('love_album_remove', 'Keluarkan dari Album')}</button>
-                )}
-              </div>
-            </>
-          ) : (
-            <p className="text-xs text-slate-500">{t('love_album_no_albums', 'Belum ada album.')}</p>
-          )}
-        </Modal>
-      )}
+      {/* ── Dialog Tambah/Edit Item Bucket List (A10: kategori, target, prioritas) ── */}
+      <LoveBucketDialog
+        key={bucketDialog ? `${bucketDialog.mode}-${bucketDialog.initial?.id || 'new'}-${bucketDialog.nonce}` : 'closed'}
+        open={!!bucketDialog}
+        mode={bucketDialog?.mode || 'add'}
+        initial={bucketDialog?.initial || null}
+        saving={bucketSaving}
+        today={today}
+        onClose={() => setBucketDialog(null)}
+        onSave={saveBucket}
+        tr={(key, vars, fb) => {
+          const base = t(key, fb || key);
+          if (!vars) return base;
+          return Object.entries(vars).reduce((acc, [k, v]) => acc.split(`{${k}}`).join(String(v)), base);
+        }}
+      />
+
+      {/* A11: lightbox + dialog "pilih album" kini dirender `LoveGalleryPanel`
+          (navigasi ← → / Esc, tombol Simpan keterangan, simpan ke album). */}
 
       {/* ── Upload metadata dialog per file (parity _GalleryPhotoDialog) ── */}
       {uploadIdx >= 0 && uploadQueue[uploadIdx] && (

@@ -264,12 +264,22 @@ interface GameContextType {
   refreshNotebooks: () => void;
   addNotebookSource: (notebookId: string, title: string, content: string, type?: 'text' | 'doc' | 'pdf' | 'url') => void;
   deleteNotebookSource: (notebookId: string, sourceId: string) => void;
-  addNotebookChat: (notebookId: string, text: string, sender: 'user' | 'ai') => void;
+  addNotebookChat: (notebookId: string, text: string, sender: 'user' | 'ai', citations?: any[]) => void;
 
   // Love Space
   loveSpace: LoveSpaceData;
   updateLoveSpace: (updates: Partial<LoveSpaceData>) => void;
-  addLoveMemory: (title: string, date: string, description: string, emoji: string) => void;
+  /** A10: kenangan kini membawa emoji pilihan, tag, favorit & tautan foto galeri. */
+  addLoveMemory: (payload: { title: string; date: string; description?: string; emoji?: string;
+    tags?: string; isFavorite?: boolean; photoId?: string }) => void;
+  /** A10: edit kenangan (dulu hanya tambah + hapus). */
+  updateLoveMemory: (id: string, body: Record<string, unknown>) => void;
+  /** A10: bintang favorit kenangan (toggle). */
+  loveMemoryFavorite: (id: string) => void;
+  /** A10: edit item bucket list (kategori/target/catatan/prioritas/selesai). */
+  updateLoveBucket: (id: string, body: Record<string, unknown>) => void;
+  /** A10: item bucket tercapai → kenangan (satu klik). */
+  promoteLoveBucket: (id: string) => void;
   toggleLoveBucketItem: (id: string) => void;
   answerLovePrompt: (promptId: string, answer: string) => void;
 
@@ -289,8 +299,23 @@ interface GameContextType {
   loveCheckin: (body: Record<string, unknown>) => void;
   lovePhoto: (path: string) => void;
   loveEvent: (body: Record<string, unknown>) => void;
+  /** A09: perbarui acara Love Space (tab plans) lalu segarkan snapshot. */
+  updateLoveEvent: (id: string, body: Record<string, unknown>) => void;
   loveWeekly: (body: Record<string, unknown>) => void;
   loveCycle: (body: Record<string, unknown>) => void;
+  /** A11: catat siklus baru (mulai/selesai/catatan) + segarkan tabel riwayat. */
+  addLoveCycle: (body: Record<string, unknown>) => void;
+  /** A11: edit riwayat siklus (mulai/selesai/catatan). */
+  updateLoveCycle: (id: string, body: Record<string, unknown>) => void;
+  /** A11: buat pengingat H-n dari prediksi siklus berikutnya (idempoten). */
+  loveCycleReminder: (daysBefore: number, title?: string) => void;
+  /**
+   * A12: buat/perbarui pengingat dari hari istimewa Love Space.
+   * `<id>` = id acara atau kunci profil (`my_birthdate`, `partner_birthdate`,
+   * `start_date`). Idempoten lewat `source_ref`; acara tahunan otomatis
+   * memakai `repeat_type='yearly'`.
+   */
+  loveEventReminder: (id: string, body?: { daysBefore?: number; time?: string }) => Promise<any>;
   // LovePage parity ops (P5)
   refreshLoveSpace: () => void;
   deleteLoveMemory: (id: string) => void;
@@ -307,6 +332,10 @@ interface GameContextType {
   loveAlbumAddPhoto: (albumId: string, photoId: string) => void;
   loveAlbumMovePhoto: (albumId: string, photoId: string, sourceAlbumId?: string | null) => void;
   loveAlbumRemovePhoto: (albumId: string, photoId: string) => void;
+  /** A11: sampul album ('' / undefined = hapus sampul). */
+  loveAlbumCover: (albumId: string, photoId?: string) => void;
+  /** A11: aksi massal galeri dalam satu panggilan. */
+  lovePhotosBulk: (payload: { action: 'delete' | 'visibility' | 'move'; ids: string[]; albumId?: string; visibility?: string }) => void;
   refreshSocial: () => void;
   guild: GuildData;
   attackGuildBoss: (action?: 'light' | 'heavy' | 'block' | 'ultimate') => void;
@@ -317,8 +346,8 @@ interface GameContextType {
   reminders: ReminderItem[];
   // Parity ReminderDialog._save — payload penuh (title, description, datetime
   // "YYYY-MM-DD HH:mm:ss", repeat, repeatDays, soundType, soundFile).
-  addReminder: (payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => void;
-  editReminder: (id: string, payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => void;
+  addReminder: (payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'yearly' | 'custom'; repeatDays?: string; repeatUntil?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => void;
+  editReminder: (id: string, payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'yearly' | 'custom'; repeatDays?: string; repeatUntil?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => void;
   dismissReminderAlarm: () => void;
   toggleReminder: (id: string) => void;
   deleteReminder: (id: string) => void;
@@ -1481,13 +1510,15 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Sekarang fungsi ini murni append LOKAL (optimistic, bentuk sama dengan
   // _nb_map: {sender, text, timestamp}) untuk sender 'user' MAUPUN 'ai';
   // pemanggilan API tinggal SATU dan dimiliki LearningView.handleSendChat.
-  const addNotebookChat = useCallback((notebookId: string, text: string, sender: 'user' | 'ai') => {
+  // A08: `citations` opsional — chip sitasi ikut tampil pada pesan AI yang baru dibuat
+  // (server tetap sumber kebenarannya; refreshNotebooks akan menyamakan keduanya).
+  const addNotebookChat = useCallback((notebookId: string, text: string, sender: 'user' | 'ai', citations?: any[]) => {
     setNotebooks((prev) => prev.map((nb) => {
       if (nb.id !== notebookId) return nb;
       const history = Array.isArray(nb.chatHistory) ? nb.chatHistory : [];
       return {
         ...nb,
-        chatHistory: [...history, { sender, text, timestamp: new Date().toISOString() }],
+        chatHistory: [...history, { sender, text, citations: citations || [], timestamp: new Date().toISOString() }],
       };
     }));
   }, [])
@@ -1506,8 +1537,9 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       .catch(notifyApiErr);
   }, [applyLive, setLoveSpace, notifyApiErr])
 
-  const addLoveMemory = useCallback((title: string, date: string, description: string, emoji: string) => {
-    studio.addMemory(title, date, description, emoji).then((res) => applyLive(res)).catch(notifyApiErr);
+  const addLoveMemory = useCallback((payload: { title: string; date: string; description?: string;
+    emoji?: string; tags?: string; isFavorite?: boolean; photoId?: string }) => {
+    studio.addMemory(payload).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const toggleLoveBucketItem = useCallback((id: string) => {
@@ -1619,7 +1651,59 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const deleteLoveEvent = useCallback((id: string) => loveOp(studio.deleteLoveEvent(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
   const deleteLoveBucket = useCallback((id: string) => loveOp(studio.deleteLoveBucket(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
   const deleteLovePhoto = useCallback((id: string) => loveOp(studio.deleteLovePhoto(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  // A09: edit acara Love Space (tab plans). Endpoint mengembalikan {ok, eventId}, jadi
+  // snapshot disegarkan supaya kartu langsung memakai data server (catatan/ikon/lokasi/
+  // Special Day/pengingat berubah tanpa reload). Diletakkan setelah `refreshLoveSpace`
+  // karena hook itu dideklarasikan di bawah blok loveEvent/loveWeekly.
+  const updateLoveEvent = useCallback((id: string, body: Record<string, unknown>) => {
+    studio.loveEventUpdate(id, body)
+      .then(() => refreshLoveSpace())
+      .catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [refreshLoveSpace, showToast]);
+
+  // A10: edit/favorit kenangan + edit/promote bucket list. Semua menyegarkan snapshot
+  // supaya kartu memakai data server (tag/emoji/target/progres langsung berubah).
+  const updateLoveMemory = useCallback((id: string, body: Record<string, unknown>) => {
+    studio.loveMemoryUpdate(id, body)
+      .then(() => refreshLoveSpace())
+      .catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [refreshLoveSpace, showToast]);
+  const loveMemoryFavorite = useCallback((id: string) => {
+    studio.loveMemoryFavorite(id)
+      .then(() => refreshLoveSpace())
+      .catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [refreshLoveSpace, showToast]);
+  const updateLoveBucket = useCallback((id: string, body: Record<string, unknown>) => {
+    studio.loveBucketUpdate(id, body)
+      .then(() => refreshLoveSpace())
+      .catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [refreshLoveSpace, showToast]);
+  const promoteLoveBucket = useCallback((id: string) => {
+    studio.loveBucketPromote(id)
+      .then(() => refreshLoveSpace())
+      .catch((e) => showToast('info', String(e?.message || e), ''));
+  }, [refreshLoveSpace, showToast]);
+
   const lovePromptFavorite = useCallback((promptKey: string) => loveOp(studio.lovePromptFavorite(promptKey).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  // A11: siklus bisa diedit, pengingat dari prediksi, sampul album, dan aksi massal
+  // galeri. Semua menutup dengan refreshLoveSpace() supaya tabel/chip album/prediksi
+  // memakai data server terbaru (bukan tebakan klien).
+/** A11: catat siklus baru (periode hari ini / tambah manual) + segarkan snapshot. */
+  const addLoveCycle = useCallback((body: Record<string, unknown>) => loveOp(studio.loveCycle(body).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const updateLoveCycle = useCallback((id: string, body: Record<string, unknown>) => loveOp(studio.loveCycleUpdate(id, body).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const loveCycleReminder = useCallback((daysBefore: number, title?: string) => loveOp(studio.loveCycleReminder({ daysBefore, title }).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const loveAlbumCover = useCallback((albumId: string, photoId?: string) => loveOp(studio.loveAlbumCover(albumId, photoId).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  const lovePhotosBulk = useCallback((payload: { action: 'delete' | 'visibility' | 'move'; ids: string[]; albumId?: string; visibility?: string }) =>
+    loveOp(studio.lovePhotosBulk(payload as any).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
+  // A12: pengingat dari hari istimewa. Dipanggil setelah `refreshLoveSpace`
+  // (dideklarasikan di atas) supaya tidak kena TDZ; hasilnya dipakai panel
+  // overview untuk memutuskan toast "dibuat" vs "sudah ada — diperbarui".
+  const loveEventReminder = useCallback(
+    (id: string, body: { daysBefore?: number; time?: string } = {}) =>
+      studio.loveEventReminder(id, body as Record<string, unknown>)
+        .then((r) => { refreshLoveSpace(); return r; })
+        .catch((e) => { showToast('info', String(e?.message || e), ''); return { ok: false, result: { ok: false, msg: String(e?.message || e) } }; }),
+    [refreshLoveSpace, showToast]);
   const createLoveAlbum = useCallback((name: string, scope: string) => loveOp(studio.createLoveAlbum({ name, scope }).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
   const renameLoveAlbum = useCallback((id: string, name: string) => loveOp(studio.renameLoveAlbum(id, name).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
   const deleteLoveAlbum = useCallback((id: string) => loveOp(studio.deleteLoveAlbum(id).then((r) => { refreshLoveSpace(); return r; })), [loveOp, refreshLoveSpace]);
@@ -1636,10 +1720,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive])
 
   // Calendar Reminders
-  const addReminder = useCallback((payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => {
+  const addReminder = useCallback((payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'yearly' | 'custom'; repeatDays?: string; repeatUntil?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => {
     life.addReminder(payload).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
-  const editReminder = useCallback((id: string, payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'custom'; repeatDays?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => {
+  const editReminder = useCallback((id: string, payload: { title: string; description?: string; reminderDatetime: string; repeat?: 'none' | 'daily' | 'weekly' | 'yearly' | 'custom'; repeatDays?: string; repeatUntil?: string; soundType?: 'default' | 'beep1' | 'beep2' | 'custom'; soundFile?: string }) => {
     life.updateReminder(id, payload).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
@@ -1930,6 +2014,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loveSpace,
         updateLoveSpace,
         addLoveMemory,
+        updateLoveMemory,
+        loveMemoryFavorite,
+        updateLoveBucket,
+        promoteLoveBucket,
         toggleLoveBucketItem,
         answerLovePrompt,
         friends,
@@ -1957,11 +2045,18 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loveAlbumAddPhoto,
         loveAlbumMovePhoto,
         loveAlbumRemovePhoto,
+        loveAlbumCover,
+        lovePhotosBulk,
+        addLoveCycle,
+        updateLoveCycle,
+        loveCycleReminder,
+        loveEventReminder,
         friendRequests,
         sendPvpChallenge,
         loveCheckin,
         lovePhoto,
         loveEvent,
+        updateLoveEvent,
         loveWeekly,
         loveCycle,
         refreshSocial,

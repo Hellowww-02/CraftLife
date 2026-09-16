@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
-import { apiBase } from '../../api/client';
+import { downloadApiFile, downloadTargetInfo } from '../../api/client';
 import { DEFAULT_FOODS } from '../../data/gameData';
 import { t } from '../../i18n';
 import { Salad, Droplets, Plus, Trash2, Search, LineChart as LineIcon, ChefHat, X, Download, ChevronLeft, ChevronRight, Activity } from 'lucide-react';
@@ -228,20 +228,20 @@ export const HealthFoodView: React.FC = () => {
   useEffect(() => { loadRecipes(); }, [loadRecipes]);
 
   // ── Export (parity _export_nutrition) ──
+  // A03.5: unduhan lewat jalur ATTACHMENT server (nama berkas dari Content-Disposition)
+  // — sebelumnya memakai fetch + blob + a.click() tanpa anchor di DOM sehingga
+  // Qt WebEngine membuang unduhannya tanpa pesan (berkas tidak pernah muncul).
   const doExport = async (fmt: 'csv' | 'xlsx' | 'docx' | 'pdf') => {
     try {
-      const resp = await fetch(`${apiBase()}/api/nutrition/export?format=${fmt}&days=30`, { credentials: 'include' });
-      if (!resp.ok) throw new Error(String(resp.status));
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `craftlife_nutrition.${fmt}`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const ok = downloadApiFile(`/api/nutrition/export?format=${fmt}&days=30`, `craftlife_nutrition.${fmt}`);
+      if (!ok) throw new Error(t('export_failed', 'Ekspor gagal: {error}').replace('{error}', 'download_blocked'));
       setExportOpen(false);
+      const info = await downloadTargetInfo();
+      showToast('success', t('food_export', 'Ekspor Nutrisi'),
+        t('download_started_msg', 'Menyimpan ke: {dir}').replace('{dir}',
+          info.dir || t('download_folder_default', 'folder unduhan CraftLife')));
     } catch (e: any) {
-      showToast('info', String(e?.message || e), '');
+      showToast('info', t('export_failed', 'Ekspor gagal: {error}').replace('{error}', String(e?.message || e)), '');
     }
   };
 

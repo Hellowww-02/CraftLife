@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
-import { apiGet, apiPost } from '../../api/client';
+import { apiGet, apiPost, saveFileToComputer, downloadTargetInfo, openDownloadsFolder } from '../../api/client';
 import {
   cloudConflict,
   cloudDevices,
@@ -17,7 +17,7 @@ import {
   type CloudStatus,
 } from '../../api/cloud';
 import { t } from '../../i18n';
-import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Cloud, RefreshCw, LogOut, Smartphone, Palette, Database, RefreshCcw } from 'lucide-react';
+import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Cloud, RefreshCw, LogOut, Smartphone, Palette, Database, RefreshCcw, FolderOpen } from 'lucide-react';
 
 // ===== Parity SettingsPage: panel admin (debug cheats, gated is_admin) =====
 const AdminDebugPanel: React.FC = () => {
@@ -254,14 +254,17 @@ export const SettingsView: React.FC = () => {
     try {
       const res = await apiGet<any>('/api/tracker/export');
       const payload = res?.tracker ?? res;
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `craftlife_tracker_${today}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('success', t('export_success', 'Data tracker diekspor!'), '');
+      // A03.5: berkas dititipkan ke server lalu diunduh sebagai attachment HTTP
+      // (jalur yang pasti tersimpan di komputer + nama berkas benar).
+      await saveFileToComputer({
+        name: `craftlife_tracker_${today}.json`,
+        mime: 'application/json',
+        text: JSON.stringify(payload, null, 2),
+      });
+      const info = await downloadTargetInfo();
+      showToast('success', t('export_success', 'Data tracker diekspor!'),
+        t('download_started_msg', 'Menyimpan ke: {dir}').replace('{dir}',
+          info.dir || t('download_folder_default', 'folder unduhan CraftLife')));
     } catch (err: any) {
       showToast('info', t('export_failed', 'Ekspor gagal: {error}').replace('{error}', String(err?.message || err)), '');
     }
@@ -685,6 +688,20 @@ export const SettingsView: React.FC = () => {
           >
             <Download className="w-4 h-4 text-sky-400" />
             <span>{t('settings_export_tracker', 'Ekspor Tracker (JSON)')}</span>
+          </button>
+
+          {/* A03.5: buka folder unduhan (sesuai permintaan: ekspor harus jelas ke mana) */}
+          <button
+            onClick={async () => {
+              const okOpen = await openDownloadsFolder();
+              const info = await downloadTargetInfo();
+              showToast(okOpen ? 'success' : 'info', t('download_open_folder', 'Buka folder unduhan'),
+                okOpen ? info.dir : t('download_open_failed', 'Folder tidak bisa dibuka otomatis: {dir}').replace('{dir}', info.dir));
+            }}
+            className="ct-btn ct-btn-secondary ct-btn-sm w-full sm:w-auto flex items-center justify-center gap-2"
+          >
+            <FolderOpen className="w-4 h-4 text-amber-400" />
+            <span>{t('download_open_folder', 'Buka folder unduhan')}</span>
           </button>
 
           <label className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center justify-center gap-2 cursor-pointer transition-colors">

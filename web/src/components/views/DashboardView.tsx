@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { nextSpecialFromProfile } from '../love/overviewUtils';
 import { useGame } from '../../context/GameContext';
 import { rpg } from '../../api/rpg';
 import { life } from '../../api/life';
@@ -45,7 +46,19 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
     if (onNavigate) onNavigate(tab);
     if (setActiveTab) setActiveTab(tab);
   };
-  const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest, dailyTaskCounts, nowDate } = useGame();
+  const { user, lang, habits, dailies, quests, sportLogs, mealLogs, waterLog, activeBoss, activeBossHp, triggerHabit, toggleDaily, toggleQuest, dailyTaskCounts, nowDate, loveSpace } = useGame();
+  // A12: chip hari istimewa — satu baris di bawah hero. Dihitung dari data yang
+  // sudah ada di snapshot `loveSpace` (acara `yearly` + hari jadi + ulang tahun
+  // profil), jadi Home tidak menambah satu pun panggilan API.
+  const nextSpecial = useMemo(() => nextSpecialFromProfile({
+    events: loveSpace?.events as any,
+    startDate: loveSpace?.startDate || loveSpace?.anniversaryDate,
+    myBirthdate: loveSpace?.myBirthdate,
+    partnerBirthdate: loveSpace?.partnerBirthdate,
+    myName: loveSpace?.myName,
+    partnerName: loveSpace?.partnerName,
+  }, nowDate() ?? undefined, t), [loveSpace, nowDate]);
+
   const [widgetsOpen, setWidgetsOpen] = useState(false);
   const [wrappedOpen, setWrappedOpen] = useState(false);
 
@@ -169,6 +182,26 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
           </div>
         </div>
       </div>
+
+      {/* A12: chip hari istimewa (satu baris, tanpa mengubah tata letak lain) */}
+      {nextSpecial && (
+        <button
+          type="button"
+          onClick={() => navigate('love' as any)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-left transition-colors ct-press"
+          data-testid="dash-next-special"
+        >
+          <span className="shrink-0">{nextSpecial.icon || '💞'}</span>
+          <span className="flex-1 min-w-0 text-[11px] sm:text-xs text-rose-200 font-semibold truncate">
+            {Number(nextSpecial.daysUntil) <= 0
+              ? t('dash_next_special_today', 'Hari istimewa hari ini: {title}').replace('{title}', nextSpecial.title)
+              : t('dash_next_special', 'Hari istimewa: {title} ({days} hari lagi)')
+                .replace('{title}', nextSpecial.title)
+                .replace('{days}', String(nextSpecial.daysUntil))}
+          </span>
+          <span className="text-[10px] text-rose-300/80 font-mono shrink-0">{nextSpecial.nextDate?.slice(5)}</span>
+        </button>
+      )}
 
       {/* P3 parity: rank card → stat cards (4×2) — Python `/api/dashboard/summary` */}
       <DashboardRankCard summary={summary} />

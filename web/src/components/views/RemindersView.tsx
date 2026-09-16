@@ -19,11 +19,29 @@ interface ReminderForm {
   description: string;
   date: string; // yyyy-mm-dd
   time: string; // HH:mm
-  repeat: 'none' | 'daily' | 'weekly' | 'custom';
+  // A12: 'yearly' — ulang tahun / anniversary (dibuat dari Love Space, bisa juga manual).
+  repeat: 'none' | 'daily' | 'weekly' | 'yearly' | 'custom';
   repeatDays: Set<number>; // 0=Sen .. 6=Min sama dengan indeks checkbox PyQt
   sound: 'default' | 'beep1' | 'beep2' | 'custom';
   soundFile: string; // path relatif media, mis. reminder_sounds/x.mp3
   soundFileLabel: string; // basename utk tampilan (parity sound_file_label)
+  repeatUntil: string; // A12: batas akhir pengulangan (yyyy-mm-dd, kosong = tanpa batas)
+}
+
+/** A12: label pengulangan untuk badge di daftar reminder (diekspor utk pengujian). */
+export function repeatLabel(r: ReminderItem): string {
+  switch (r.repeat) {
+    case 'daily': return tr('reminders_repeat_daily');
+    case 'weekly': return tr('reminders_repeat_weekly');
+    case 'yearly': return tr('reminders_badge_yearly', { date: String(r.datetime || '').slice(5, 10) });
+    case 'custom': return tr('reminders_repeat_custom');
+    default: return '';
+  }
+}
+
+/** A12: penanda pengingat yang lahir dari Love Space (`source_ref`). */
+export function isLoveReminder(r: ReminderItem): boolean {
+  return String(r.sourceRef || '').startsWith('love_');
 }
 
 const DAY_SHORT_KEYS = [
@@ -42,7 +60,7 @@ function emptyForm(now: Date): ReminderForm {
   return {
     title: '', description: '', date: fmtDate(now), time: fmtTime(now),
     repeat: 'none', repeatDays: new Set<number>(),
-    sound: 'default', soundFile: '', soundFileLabel: '',
+    sound: 'default', soundFile: '', soundFileLabel: '', repeatUntil: '',
   };
 }
 
@@ -68,9 +86,7 @@ export const RemindersView: React.FC = () => {
   const refresh = () => { /* snapshot auto-refresh; no-op visual */ };
 
   const openAdd = () => { setEditReset(); setForm(emptyForm(now)); setFormOpen({ mode: 'add' }); };
-  const openEdit = () => {
-    const r = reminders.find((x) => x.id === selectedId);
-    if (!r) return;
+  const openEditOf = (r: ReminderItem) => {
     setEditReset();
     // Parity _load_data
     const dt = (r.datetime || '').replace('T', ' ');
@@ -80,8 +96,15 @@ export const RemindersView: React.FC = () => {
       date: dt.slice(0, 10) || fmtDate(now), time: dt.slice(11, 16) || fmtTime(now),
       repeat: r.repeat, repeatDays: new Set(dayParts.filter((n) => !isNaN(n))),
       sound: r.sound, soundFile: r.soundFile || '', soundFileLabel: r.soundFile ? r.soundFile.split('/').pop() || '' : '',
+      repeatUntil: r.repeatUntil || '',
     });
     setFormOpen({ mode: 'edit', rem: r });
+  };
+  const openEdit = () => {
+    const r = reminders.find((x) => x.id === selectedId);
+    if (!r) return;
+    setSelectedId(r.id);
+    openEditOf(r);
   };
   const setEditReset = () => { setErr(null); };
 
@@ -126,6 +149,7 @@ export const RemindersView: React.FC = () => {
         reminderDatetime: `${form.date} ${form.time}:00`,
         repeat: form.repeat,
         repeatDays,
+        repeatUntil: form.repeat === 'custom' ? '' : form.repeatUntil,
         soundType: form.sound,
         soundFile: form.sound === 'custom' ? form.soundFile : undefined,
       };
@@ -219,7 +243,38 @@ export const RemindersView: React.FC = () => {
                 <span className="text-sm font-bold text-slate-100 truncate block">{r.title}</span>
                 <span className="ct-rem-time text-[11px] text-slate-400 font-mono">{timeStr}</span>
               </span>
-              {r.triggered && <span className="text-emerald-400 text-sm shrink-0">✅</span>}
+              <span className="flex items-center gap-1.5 shrink-0">
+                {repeatLabel(r) && (
+                  r.repeat === 'yearly' ? (
+                    // A13: pengingat tahunan (ulang tahun/anniversary) bisa langsung
+                    // dibuka & disesuaikan dari badge-nya — dulu hanya label pasif.
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); openEditOf(r); }}
+                      title={tr('reminders_edit_title')}
+                      className="text-[9px] px-1.5 py-0.5 rounded-full border font-bold uppercase tracking-wide bg-rose-500/15 text-rose-300 border-rose-500/30 hover:bg-rose-500/25 transition-colors"
+                      data-testid="reminder-repeat-badge"
+                      data-repeat="yearly"
+                    >
+                      {repeatLabel(r)}
+                    </button>
+                  ) : (
+                    <span
+                      className="text-[9px] px-1.5 py-0.5 rounded-full border font-bold uppercase tracking-wide bg-slate-800/80 text-slate-400 border-slate-700"
+                      data-testid="reminder-repeat-badge"
+                    >
+                      {repeatLabel(r)}
+                    </span>
+                  )
+                )}
+                {isLoveReminder(r) && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-300/80 border border-rose-500/20"
+                    data-testid="reminder-source-badge">
+                    💞
+                  </span>
+                )}
+                {r.triggered && <span className="text-emerald-400 text-sm">✅</span>}
+              </span>
             </button>
           );
         })}
@@ -291,9 +346,22 @@ export const RemindersView: React.FC = () => {
                 <option value="none">{tr('reminders_repeat_none')}</option>
                 <option value="daily">{tr('reminders_repeat_daily')}</option>
                 <option value="weekly">{tr('reminders_repeat_weekly')}</option>
+                <option value="yearly">{tr('reminders_repeat_yearly')}</option>
                 <option value="custom">{tr('reminders_repeat_custom')}</option>
               </select>
+              {form.repeat === 'yearly' && (
+                <span className="block text-[10px] text-slate-500">{tr('reminders_repeat_yearly_hint')}</span>
+              )}
             </label>
+            {form.repeat !== 'none' && form.repeat !== 'custom' && (
+              <label className="block space-y-1" data-testid="reminders-repeat-until">
+                <span className="text-[11px] uppercase tracking-wider text-slate-500">{tr('reminders_repeat_until_label')}</span>
+                <input type="date" value={form.repeatUntil}
+                  onChange={(e) => setForm((p) => ({ ...p, repeatUntil: e.target.value }))}
+                  className="ct-input w-full px-3 py-2 rounded-xl text-sm text-slate-100" />
+                <span className="block text-[10px] text-slate-500">{tr('reminders_repeat_until_hint')}</span>
+              </label>
+            )}
             {form.repeat === 'custom' && (
               <div className="flex flex-wrap gap-2">
                 {DAY_SHORT_KEYS.map((key, i) => {

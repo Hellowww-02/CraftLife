@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
-import { apiGetBlob } from '../../api/client';
+import { downloadApiFile, downloadTargetInfo } from '../../api/client';
 import { t } from '../../i18n';
 import { fmtChatTime } from '../../utils/serverTime';
 import { Send } from 'lucide-react';
@@ -187,19 +187,16 @@ export const FriendsView: React.FC = () => {
 
   const doDownloadAttachment = (att: any) => {
     if (!att?.id) return;
-    apiGetBlob(`/api/friends/attachments/${att.id}/download`, att.originalFilename || 'attachment')
-      .then(({ blob, name }) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1500);
-        showToast('success', tr('chat_attachment_saved'), '');
-      })
-      .catch(() => showToast('info', tr('chat_attachment_not_cached'), ''));
+    // A03.5: unduhan langsung dari endpoint attachment (server menentukan nama berkas).
+    const ok = downloadApiFile(`/api/friends/attachments/${att.id}/download`,
+      att.originalFilename || 'attachment');
+    if (!ok) { showToast('info', tr('chat_attachment_not_cached'), ''); return; }
+    downloadTargetInfo()
+      .then((info) => showToast('success', tr('chat_attachment_saved'),
+        tr('download_saved_msg', {
+          path: info.lastPath || info.dir || tr('download_folder_default'),
+        })))
+      .catch(() => showToast('success', tr('chat_attachment_saved'), ''));
   };
 
   const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
