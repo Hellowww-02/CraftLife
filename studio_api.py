@@ -17,6 +17,44 @@ _LEGACY_STUDIO_TYPE = {
 }
 
 
+# ── A06: metadata artefak Studio untuk daftar artefak (list ke bawah) ────────
+_TEXT_STUDIO_TYPES = ("summary", "faq", "timeline", "study_guide")
+
+
+def _artifact_meta(gen_type: str, content: str) -> dict:
+    """Hitung jumlah item / jumlah kata / ukuran byte dari isi generasi.
+
+    Dipakai kartu artefak di UI: quiz → "15 soal", flashcards → "20 kartu",
+    audio-overview → "18 giliran", tipe teks → "340 kata". Semua defensif:
+    isi yang rusak / bukan JSON tetap menghasilkan kartu yang tampil wajar.
+    """
+    raw = content or ""
+    size = len(raw.encode("utf-8", "ignore"))
+    gtype = (gen_type or "").lower()
+    item_count = 0
+    words = 0
+    try:
+        if gtype == "quiz":
+            data = json.loads(_strip_json_fence(raw))
+            qs = data.get("questions") if isinstance(data, dict) else data
+            item_count = len(qs or []) if isinstance(qs, list) else 0
+        elif gtype == "flashcards":
+            data = json.loads(_strip_json_fence(raw))
+            arr = data if isinstance(data, list) else (data.get("cards") or data.get("flashcards") or [])
+            item_count = len(arr or [])
+        elif gtype == "audio_overview":
+            item_count = len([ln for ln in raw.splitlines() if ln.strip()])
+        else:
+            words = len(raw.split())
+    except Exception:
+        # Bukan JSON yang valid → tetap laporkan ukuran teksnya.
+        words = len(raw.split())
+        item_count = 0
+    if gtype in _TEXT_STUDIO_TYPES:
+        item_count = 0
+    return {"itemCount": item_count, "words": words, "sizeBytes": size}
+
+
 def _nb_map(row: dict, uid: int) -> dict:
     nid = row.get("id")
     try:
@@ -48,6 +86,9 @@ def _nb_map(row: dict, uid: int) -> dict:
                 "sender": "ai" if (c.get("role") == "assistant" or c.get("role") == "model") else "user",
                 "text": c.get("content") or c.get("text") or "",
                 "timestamp": c.get("created_at") or "",
+                # A08: sitasi tersimpan ikut dikirim supaya chip sitasi tetap ada
+                # setelah reload/restart (bukan hanya saat balasan baru datang).
+                "citations": _parse_citations(c.get("citations")),
             }
             for c in chats
         ],
@@ -83,19 +124,40 @@ def _nb_map(row: dict, uid: int) -> dict:
             except Exception:
                 pass
         elif typ == "quiz" and not out["quizzes"]:
+            # A04: JANGAN buang `type`/`modelAnswer`. Dulu keduanya dibuang sehingga
+            # soal esai — setelah refresh dari server — datang sebagai {options: [],
+            # correctAnswerIndex: 0} tanpa penanda = tidak ada textarea untuk mengetik
+            # (bug fatal "soal essay tidak bisa dijawab"). Kini lengkap + tahan banting:
+            # bila field `type` tidak ada, soal dengan `model_answer`/tanpa opsi
+            # tetap dikenali sebagai esai.
             try:
                 data = json.loads(raw) if isinstance(raw, str) else raw
                 qs = data.get("questions") if isinstance(data, dict) else data
-                out["quizzes"] = [
-                    {
-                        "id": str(i),
+                mapped = []
+                for i, q in enumerate(qs or []):
+                    if not isinstance(q, dict):
+                        continue
+                    options = q.get("options")
+                    options = options if isinstance(options, list) else []
+                    model_answer = q.get("model_answer") or q.get("modelAnswer") or ""
+                    qtype = str(q.get("type") or "").strip().lower()
+                    if qtype not in ("mc", "essay"):
+                        qtype = "essay" if (model_answer and not options) else "mc"
+                    try:
+                        answer_idx = int(q.get("answer") if q.get("answer") is not None
+                                         else (q.get("correctAnswerIndex") or 0))
+                    except (TypeError, ValueError):
+                        answer_idx = 0
+                    mapped.append({
+                        "id": f"g{g.get('id')}_{i}",
+                        "type": qtype,
                         "question": q.get("q") or q.get("question") or "",
-                        "options": q.get("options") or [],
-                        "correctAnswerIndex": int(q.get("answer") or q.get("correctAnswerIndex") or 0),
+                        "options": options,
+                        "correctAnswerIndex": answer_idx,
                         "explanation": q.get("explain") or q.get("explanation") or "",
-                    }
-                    for i, q in enumerate(qs or [])
-                ]
+                        "modelAnswer": model_answer,
+                    })
+                out["quizzes"] = mapped
             except Exception:
                 pass
         elif typ in ("audio_overview", "podcast") and not out["podcast"]:
@@ -126,16 +188,60 @@ def _nb_map(row: dict, uid: int) -> dict:
             {
                 "id": str(g.get("id") or ""),
                 "gtype": _LEGACY_STUDIO_TYPE.get((g.get("type") or "").lower(), (g.get("type") or "").lower()),
+                # A06: `title` & `topic` sama-sama dikirim — UI kartu artefak memakai
+                # `title` (bisa diganti user), `topic` dipertahankan untuk kompatibilitas
+                # riwayat lama (LearningView sebelumnya membaca `topic`).
+                "title": g.get("title") or "",
                 "topic": g.get("title") or "",
                 "fileName": g.get("title") or "",
                 "createdAt": g.get("created_at") or "",
+                "updatedAt": g.get("updated_at") or g.get("created_at") or "",
                 "content": g.get("content") or "",
+                **_artifact_meta(g.get("type") or "", g.get("content") or ""),
+                # A08: pemutar podcast tahu audio sudah siap (tanpa perlu POST ulang).
+                "audio": podcast_audio_info(nid, g.get("id"))
+                if (g.get("type") or "").lower() in ("audio_overview", "podcast") else None,
             }
             for g in gens
         ]
     except Exception:
         out["generations"] = []
     return out
+
+
+def _love_days_to(iso):
+    """Selisih hari `iso` − hari ini (negatif = sudah lewat); None bila tak lengkap."""
+    try:
+        from datetime import date as _d
+        y, m, d = (int(x) for x in str(iso)[:10].split("-"))
+        return (_d(y, m, d) - _d.today()).days
+    except Exception:
+        return None
+
+
+def _love_memory_cloud_payload(row: dict) -> dict:
+    """Field kenangan yang dikenal server cloud (dipakai add/update/favorit)."""
+    return {
+        "title": row.get("title") or "",
+        "memory_date": row.get("memory_date") or "",
+        "notes": row.get("notes") or "",
+        "emoji": row.get("emoji") or "",
+        "tags": row.get("tags") or "",
+        "is_favorite": int(row.get("is_favorite") or 0),
+    }
+
+
+def _love_bucket_cloud_payload(row: dict) -> dict:
+    """Field item bucket list yang dikenal server cloud."""
+    return {
+        "title": row.get("title") or "",
+        "category": row.get("category") or "dream",
+        "target_date": row.get("target_date") or "",
+        "notes": row.get("notes") or "",
+        "priority": int(row.get("priority") or 0),
+        "is_done": 1 if row.get("is_done") else 0,
+        "completed_at": row.get("completed_at") or "",
+    }
 
 
 def _love_map(uid: int) -> dict:
@@ -146,13 +252,19 @@ def _love_map(uid: int) -> dict:
         prof = {}
     memories = []
     try:
+        # A10: emoji, tag, favorit, tautan foto & jejak ubah ikut dikirim (dulu emoji
+        # selalu "💖" dan sisa field tidak ada di payload sama sekali).
         memories = [
             {
                 "id": str(m.get("id")),
                 "title": m.get("title") or "",
                 "date": m.get("memory_date") or m.get("date") or "",
                 "description": m.get("notes") or "",
-                "emoji": "💖",
+                "emoji": m.get("emoji") or "💖",
+                "tags": db.love_memory_tags(m.get("tags")),
+                "isFavorite": bool(m.get("is_favorite")),
+                "photoId": str(m.get("photo_id")) if m.get("photo_id") else "",
+                "updatedAt": m.get("updated_at") or "",
             }
             for m in (db.get_relationship_memories(uid) or [])
         ]
@@ -160,15 +272,25 @@ def _love_map(uid: int) -> dict:
         pass
     bucket = []
     try:
-        bucket = [
-            {
-                "id": str(b.get("id")),
-                "title": b.get("title") or "",
-                "isCompleted": bool(b.get("done") or b.get("is_done")),
-                "completedDate": b.get("completed_at"),
-            }
-            for b in (db.get_relationship_bucket_items(uid) or [])
-        ]
+        # A10: kategori, target tanggal (dengan hitung mundur & penanda terlewat),
+        # catatan, prioritas, dan penanda "sudah jadi kenangan".
+        for _b in (db.get_relationship_bucket_items(uid) or []):
+            _done = bool(_b.get("done") or _b.get("is_done"))
+            _days = _love_days_to(_b.get("target_date"))
+            bucket.append({
+                "id": str(_b.get("id")),
+                "title": _b.get("title") or "",
+                "isCompleted": _done,
+                "completedDate": _b.get("completed_at"),
+                "category": _b.get("category") or "dream",
+                "targetDate": _b.get("target_date") or "",
+                "daysToTarget": _days,
+                "isOverdue": bool(_days is not None and _days < 0 and not _done),
+                "notes": _b.get("notes") or "",
+                "priority": int(_b.get("priority") or 0),
+                "promotedMemoryId": str(_b.get("promoted_memory_id")) if _b.get("promoted_memory_id") else "",
+                "updatedAt": _b.get("updated_at") or "",
+            })
     except Exception:
         pass
     data = {
@@ -202,6 +324,32 @@ def _love_map(uid: int) -> dict:
             for ph in (db.get_love_space_photo_meta(uid) or [])
         ],
     }
+    # A10: faset untuk toolbar tab memories (filter tahun & tag) + statistik bucket.
+    try:
+        _years = sorted({str(m.get("date") or "")[:4] for m in memories if str(m.get("date") or "")[:4].isdigit()},
+                        reverse=True)
+        _tag_counts = {}
+        for _m in memories:
+            for _tag in (_m.get("tags") or []):
+                _tag_counts[_tag] = _tag_counts.get(_tag, 0) + 1
+        data["memoryYears"] = _years
+        data["memoryTags"] = [{"tag": k, "count": v}
+                              for k, v in sorted(_tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+        data["memoryStats"] = {
+            "total": len(memories),
+            "favorites": sum(1 for _m in memories if _m.get("isFavorite")),
+            "tagged": sum(1 for _m in memories if _m.get("tags")),
+            "withPhoto": sum(1 for _m in memories if _m.get("photoId")),
+        }
+    except Exception:
+        data["memoryYears"] = []
+        data["memoryTags"] = []
+        data["memoryStats"] = {"total": len(memories), "favorites": 0, "tagged": 0, "withPhoto": 0}
+    try:
+        data["bucketStats"] = db.get_relationship_bucket_stats(uid)
+    except Exception:
+        data["bucketStats"] = {"total": len(bucket), "done": 0, "open": len(bucket),
+                               "overdue": 0, "dueSoon": 0, "percent": 0, "targeted": 0}
     try:
         data["events"] = [
             {
@@ -210,9 +358,20 @@ def _love_map(uid: int) -> dict:
                 "date": ev.get("event_date") or "",
                 "category": ev.get("category") or "date",
                 "notes": ev.get("notes") or "",
+                # A09: ikon, lokasi, Special Day, pengulangan tahunan & pengingat.
+                "icon": ev.get("icon") or "",
+                "location": ev.get("location") or "",
+                "isSpecial": bool(ev.get("is_special")),
+                "recurring": ev.get("recurring") or "none",
+                "remindDaysBefore": int(ev.get("remind_days_before") or 0),
+                "updatedAt": ev.get("updated_at") or "",
             }
             for ev in (db.get_relationship_events(uid) or [])
         ]
+        # A09: hitung mundur + hari istimewa dari profil (ulang tahun/anniversary)
+        # dihitung di server supaya klien tidak perlu tahu soal tanggal 29 Feb dll.
+        data["upcomingEvents"] = db.upcoming_relationship_events(uid, 90) or []
+        data["specialDays"] = [it for it in data["upcomingEvents"] if it.get("isSpecial")]
         data["weeklyReviews"] = [
             {
                 "id": str(w.get("id")),
@@ -224,12 +383,16 @@ def _love_map(uid: int) -> dict:
             }
             for w in (db.get_relationship_weekly_reviews(uid) or [])
         ]
+        # A11: panjang hari tiap siklus (dihitung server supaya UI bisa
+        # menampilkan tabel riwayat + rata-rata tanpa logika tanggal di klien).
         data["cycles"] = [
             {
                 "id": str(c.get("id")),
                 "startDate": c.get("start_date") or "",
                 "endDate": c.get("end_date") or "",
                 "notes": c.get("notes") or "",
+                "lengthDays": c.get("length_days"),
+                "updatedAt": c.get("updated_at") or "",
             }
             for c in (db.get_menstrual_cycles(uid) or [])
         ]
@@ -271,15 +434,27 @@ def _love_map(uid: int) -> dict:
     except Exception:
         data["promptFavorites"] = []
     try:
-        data["albums"] = [
-            {
+        # A11: album membawa sampul (cover_photo_id), jumlah foto & tanggal buat
+        # supaya toolbar galeri bisa menampilkan chip album yang benar-benar
+        # informatif (dulu hanya nama + scope).
+        _albums = []
+        for a in (db.get_love_albums(uid) or []):
+            _ids = [str(x) for x in (db.get_love_album_photo_ids(uid, a.get("id")) or [])]
+            _cover = str(a.get("cover_photo_id") or "")
+            if _cover and _cover not in _ids:
+                # Sampul menunjuk foto yang sudah dihapus → jangan tampilkan hantu.
+                _cover = ""
+            _albums.append({
                 "id": str(a.get("id")),
                 "name": a.get("name") or "",
                 "scope": a.get("scope") or "personal",
-                "photoIds": [str(x) for x in (db.get_love_album_photo_ids(uid, a.get("id")) or [])],
-            }
-            for a in (db.get_love_albums(uid) or [])
-        ]
+                "photoIds": _ids,
+                "photoCount": len(_ids),
+                "coverPhotoId": _cover or (_ids[0] if _ids else ""),
+                "hasCover": bool(a.get("cover_photo_id")),
+                "createdAt": a.get("created_at") or "",
+            })
+        data["albums"] = _albums
     except Exception:
         data["albums"] = []
     try:
@@ -992,10 +1167,171 @@ def _load_chat_payload(uid: int, fid: int, limit: int) -> dict:
     return {"ok": True, "cloudMode": False, "messages": msgs}
 
 
+# ── A06: ekspor artefak Studio (.md / .txt) ─────────────────────────────────
+_STUDIO_TITLES = {
+    "quiz": "Quiz", "flashcards": "Flashcards", "audio_overview": "Audio Overview",
+    "mind_map": "Mind Map", "study_guide": "Study Guide", "faq": "FAQ",
+    "timeline": "Timeline", "summary": "Summary",
+}
+
+
+def _artifact_plain(gtype: str, title: str, content: str) -> str:
+    """Versi teks polos (tanpa Markdown) untuk ekspor .txt."""
+    gtype = (gtype or "").lower()
+    raw = (content or "").strip()
+    lines = [f"{title or _STUDIO_TITLES.get(gtype, 'Studio')}",
+             f"({_STUDIO_TITLES.get(gtype, gtype)} · CraftLife v1.6.3)", ""]
+    if gtype in ("quiz", "flashcards"):
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            if gtype == "quiz":
+                qs = (data.get("questions") if isinstance(data, dict) else data) or []
+                for i, q in enumerate(qs, 1):
+                    if not isinstance(q, dict):
+                        continue
+                    qtype = str(q.get("type") or ("essay" if (q.get("model_answer") or q.get("modelAnswer")) and not q.get("options") else "mc")).lower()
+                    lines.append(f"{i}. {q.get('q') or q.get('question') or ''}")
+                    if qtype == "essay":
+                        lines.append(f"   [Esai] Jawaban contoh: {q.get('model_answer') or q.get('modelAnswer') or '-'}")
+                    else:
+                        answer = q.get("answer")
+                        if answer is None:
+                            answer = q.get("correctAnswerIndex")
+                        for oi, opt in enumerate(q.get("options") or []):
+                            lines.append(f"   {'*' if int(oi) == int(answer or 0) else '-'} {opt}")
+                        exp = q.get("explain") or q.get("explanation") or ""
+                        if exp:
+                            lines.append(f"   Penjelasan: {exp}")
+                    lines.append("")
+            else:
+                arr = data if isinstance(data, list) else (data.get("cards") or data.get("flashcards") or [])
+                for i, card in enumerate(arr, 1):
+                    lines.append(f"{i}. {card.get('front') or card.get('question') or ''}")
+                    lines.append(f"   {card.get('back') or card.get('answer') or ''}")
+                    lines.append("")
+            return "\n".join(lines)
+        except Exception:
+            pass
+    lines.append(raw)
+    return "\n".join(lines)
+
+
+def _artifact_markdown(gtype: str, title: str, content: str, meta: dict) -> str:
+    """Ubah isi generasi (JSON atau teks) menjadi Markdown rapi untuk diekspor."""
+    gtype = (gtype or "").lower()
+    head = f"# {title or _STUDIO_TITLES.get(gtype, 'Studio')}\n\n"
+    head += f"> {_STUDIO_TITLES.get(gtype, gtype)} · CraftLife v1.6.3"
+    if meta.get("itemCount"):
+        head += f" · {meta['itemCount']} item"
+    elif meta.get("words"):
+        head += f" · {meta['words']} kata"
+    head += "\n\n---\n\n"
+    raw = (content or "").strip()
+    if gtype == "quiz":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            qs = (data.get("questions") if isinstance(data, dict) else data) or []
+            quiz_title = data.get("title") if isinstance(data, dict) else ""
+            body = [f"**Judul quiz:** {quiz_title}\n"] if quiz_title else []
+            for i, q in enumerate(qs, 1):
+                if not isinstance(q, dict):
+                    continue
+                qtype = str(q.get("type") or ("essay" if (q.get("model_answer") or q.get("modelAnswer")) and not q.get("options") else "mc")).lower()
+                body.append(f"### {i}. {q.get('q') or q.get('question') or ''}")
+                if qtype == "essay":
+                    body.append(f"*Tipe: esai*\n")
+                    body.append(f"**Jawaban contoh:** {q.get('model_answer') or q.get('modelAnswer') or '-'}\n")
+                else:
+                    opts = q.get("options") or []
+                    answer = q.get("answer")
+                    if answer is None:
+                        answer = q.get("correctAnswerIndex")
+                    for oi, opt in enumerate(opts):
+                        marker = " ✅" if int(oi) == int(answer or 0) else ""
+                        body.append(f"- [{'x' if marker else ' '}] {opt}{marker}")
+                    exp = q.get("explain") or q.get("explanation") or ""
+                    if exp:
+                        body.append(f"\n*Penjelasan:* {exp}")
+                    body.append("")
+            return head + "\n".join(body)
+        except Exception:
+            return head + raw
+    if gtype == "flashcards":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            arr = data if isinstance(data, list) else (data.get("cards") or data.get("flashcards") or [])
+            body = []
+            for i, card in enumerate(arr, 1):
+                front = card.get("front") or card.get("question") or ""
+                back = card.get("back") or card.get("answer") or ""
+                body.append(f"**{i}. {front}**\n\n{back}\n")
+            return head + "\n".join(body)
+        except Exception:
+            return head + raw
+    if gtype == "audio_overview":
+        lines = []
+        for line in raw.splitlines():
+            if "|" in line:
+                speaker, text = line.split("|", 1)
+                speaker = speaker.strip().replace("HOST_A", "Alex").replace("HOST_B", "Sam")
+                lines.append(f"**{speaker or 'Host'}:** {text.strip()}\n")
+        return head + ("\n".join(lines) or raw)
+    if gtype == "mind_map":
+        try:
+            return head + "```json\n" + json.dumps(json.loads(_strip_json_fence(raw)), indent=2, ensure_ascii=False) + "\n```"
+        except Exception:
+            return head + raw
+    return head + raw
+
+
 def handle_get(path: str, uid: int, qs=None):
     qs = qs or {}
     if path == "/api/learning/notebooks":
         return {"ok": True, "notebooks": snapshot(uid)["notebooks"]}
+    if path == "/api/learning/generations/export":
+        # A06: ekspor satu artefak Studio sebagai berkas .md / .txt.
+        # Berkas "dititipkan" (staged) ke server lalu diunduh lewat jalur unduhan
+        # terverifikasi A03.5 (`/api/system/download-file?id=…`) — jadi di shell Qt
+        # maupun browser berkas benar-benar sampai ke komputer user.
+        try:
+            gid = int((qs.get("generationId") or ["0"])[0] or 0)
+            nid = int((qs.get("notebookId") or ["0"])[0] or 0)
+        except (TypeError, ValueError):
+            gid = nid = 0
+        fmt = ((qs.get("format") or ["md"])[0] or "md").strip().lower()
+        if fmt not in ("md", "txt"):
+            fmt = "md"
+        if not gid or not nid:
+            return {"ok": False, "msg": "learning_not_found"}
+        row = db.get_learning_generation(gid, nid)
+        if not row:
+            return {"ok": False, "msg": "learning_not_found"}
+        title = " ".join(str(row.get("title") or "").split()) or "studio"
+        gtype = (row.get("type") or "summary").lower()
+        content = row.get("content") or ""
+        meta = _artifact_meta(gtype, content)
+        if fmt == "md":
+            data = _artifact_markdown(gtype, title, content, meta)
+        else:
+            data = _artifact_plain(gtype, title, content)
+        safe = "".join(ch for ch in title if ch not in '<>:"/\\|?*' and ord(ch) >= 32).strip(" .") or "studio"
+        safe = safe[:60]
+        try:
+            import api_server as _api  # lazy: hindari impor melingkar saat modul dimuat
+            staged = _api._dl_stage_file(uid, {
+                "name": f"{safe}.{fmt}",
+                "mime": "text/markdown" if fmt == "md" else "text/plain",
+                "text": data,
+            })
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+        if not isinstance(staged, dict) or not staged.get("ok"):
+            return staged if isinstance(staged, dict) else {"ok": False, "msg": "stage_failed"}
+        staged["format"] = fmt
+        staged["gtype"] = gtype
+        staged["title"] = title
+        staged["itemCount"] = meta.get("itemCount") or 0
+        return staged
     if path == "/api/music/playlists":
         # Parity MusicPage._ensure_favorite_playlist: jamin playlist "Favorite"
         # (is_favorite=1) selalu ada, supaya tombol "Tambah ke favorit" valid.
@@ -1014,6 +1350,16 @@ def handle_get(path: str, uid: int, qs=None):
     if path == "/api/love/couple-tracking":
         _refresh_couple_mirror(uid)
         return _couple_tracking_map(uid)
+    if path == "/api/love/events/upcoming":
+        # A09: acara & hari istimewa dalam rentang `days` (default 90).
+        try:
+            days = int((qs.get("days") or ["90"])[0] or 90)
+        except (TypeError, ValueError):
+            days = 90
+        days = max(1, min(730, days))
+        items = db.upcoming_relationship_events(uid, days)
+        return {"ok": True, "days": days, "count": len(items),
+                "events": items, "specialDays": [it for it in items if it.get("isSpecial")]}
     if path == "/api/settings/cleanup":
         # P62: status pembersihan DB (ukuran, retensi, estimasi dry-run).
         st = db.get_maintenance_state(uid)
@@ -1182,13 +1528,16 @@ def handle_get(path: str, uid: int, qs=None):
             return {"ok": False, "error": str(e)}
     if path == "/api/music/lyrics":
         # P58: (1) cek lirik TERSIMPAN dulu (source apapun) — kecuali refresh=1;
-        # (2) cari web dengan DURASI lagu agar tidak salah versi (live/remix).
+        # (2) cari web dengan DURASI + ALBUM lagu agar tidak salah versi (live/remix).
+        # A02: + prefer=<indeks kandidat> & cache negatif (trek kosong tak diulang terus).
         qs = qs or {}
         key = (qs.get("key") or [""])[0].strip()
         artist = (qs.get("artist") or [""])[0].strip()
         title = (qs.get("title") or [""])[0].strip()
+        album = (qs.get("album") or [""])[0].strip()
         fpath = (qs.get("path") or [""])[0].strip()
         refresh = (qs.get("refresh") or [""])[0] == "1"
+        prefer = (qs.get("prefer") or [""])[0].strip() or None
         try:
             dur = float((qs.get("duration") or ["0"])[0]) or None
         except (TypeError, ValueError):
@@ -1203,9 +1552,82 @@ def handle_get(path: str, uid: int, qs=None):
                     "plain": row.get("plain") or "", "synced": row.get("synced") or "",
                     "source": row.get("source") or "saved", "saved": True,
                     "offsetMs": int(row.get("offset_ms") or 0)}}
-        ly = get_lyrics(artist, title, fpath, dur)
+        ly = get_lyrics(artist, title, fpath, dur, album=album, prefer=prefer, refresh=refresh)
         ly.update({"saved": False, "offsetMs": 0})
         return {"ok": True, "lyrics": ly}
+    if path == "/api/music/lyrics-candidates":
+        # A02: daftar kandidat lirik (maks 12) dari LRCLIB get/search + lyrics.ovh +
+        # lirik tertanam, sudah diberi skor album/durasi/versi → user pilih yang benar.
+        qs = qs or {}
+        artist = (qs.get("artist") or [""])[0].strip()
+        title = (qs.get("title") or [""])[0].strip()
+        album = (qs.get("album") or [""])[0].strip()
+        fpath = (qs.get("path") or [""])[0].strip()
+        try:
+            dur = float((qs.get("duration") or ["0"])[0]) or None
+        except (TypeError, ValueError):
+            dur = None
+        try:
+            limit = max(1, min(int((qs.get("limit") or ["12"])[0]), 24))
+        except (TypeError, ValueError):
+            limit = 12
+        try:
+            cands = collect_lyrics_candidates(artist, title, album=album, duration=dur,
+                                              file_path=fpath, limit=limit)
+        except Exception as e:
+            return {"ok": True, "candidates": [], "error": str(e)}
+        return {"ok": True, "candidates": cands, "count": len(cands),
+                "query": {"artist": artist, "title": title, "album": album, "duration": dur}}
+    if path == "/api/music/track-meta":
+        # A02: metadata batch untuk trek yang melewati batas listing library
+        # (title/artist/album/duration) → lirik tetap dicocokkan dengan durasi.
+        qs = qs or {}
+        raw_paths = (qs.get("paths") or [""])[0]
+        paths = [p for p in (raw_paths.split("|") if raw_paths else []) if p.strip()]
+        if not paths:
+            paths = [p for p in qs.get("path", []) if p.strip()]
+        try:
+            import music_downloader as md
+            rows = md.get_track_meta_many(paths)
+        except Exception as e:
+            return {"ok": True, "tracks": [], "error": str(e)}
+        return {"ok": True, "tracks": rows, "count": len(rows)}
+    if path == "/api/music/lyrics-template":
+        # A03: template .lrc siap unduh (komentar cara pakai + tag + 6 baris contoh).
+        return {"__file_bytes__": lyrics_template_bytes(),
+                "name": "craftlife-lyrics-template.lrc", "mime": "text/plain"}
+    if path == "/api/music/lyrics-export":
+        # A03: ekspor lirik tersimpan ke .lrc (bertimestamp + header [ti:][ar:][al:][offset:])
+        # atau .txt (teks polos). Marker __file_bytes__ → api_server mengirim sebagai unduhan.
+        qs = qs or {}
+        key = (qs.get("key") or [""])[0].strip()
+        fmt = ((qs.get("format") or ["lrc"])[0] or "lrc").strip().lower()
+        if fmt not in ("lrc", "txt"):
+            fmt = "lrc"
+        row = None
+        if key:
+            try:
+                row = db.get_song_lyrics(uid, key)
+            except Exception:
+                row = None
+        if not row or not (row.get("plain") or row.get("synced")):
+            return {"ok": False, "error": "no_saved_lyrics"}
+        title = row.get("track_title") or (qs.get("title") or [""])[0] or "lyrics"
+        artist = row.get("artist") or (qs.get("artist") or [""])[0] or ""
+        album = (qs.get("album") or [""])[0].strip()
+        offset_ms = int(row.get("offset_ms") or 0)
+        if fmt == "txt":
+            text = (row.get("plain") or "").strip()
+            if not text:
+                text = _lrc_strip_timestamps(row.get("synced") or "").strip()
+            data = text + "\n"
+            mime = "text/plain"
+        else:
+            data = build_lrc_export(title, artist, album, offset_ms,
+                                    synced=row.get("synced") or "", plain=row.get("plain") or "")
+            mime = "text/plain"
+        safe = "".join(ch for ch in f"{artist} - {title}".strip(" -") if ch.isalnum() or ch in " -_().,")[:80].strip() or "lyrics"
+        return {"__file_bytes__": data.encode("utf-8"), "name": f"{safe}.{fmt}", "mime": mime}
     return None
 
 
@@ -1278,9 +1700,25 @@ def _norm_lyrics_text(s: str) -> str:
     return _re.sub(r"[^a-z0-9]+", " ", s).strip()
 
 
-def _score_lyrics_candidate(cand: dict, artist: str, title: str, duration=None) -> float:
-    """P58: skor kandidat lirik — kecocokan judul+artis, kedekatan DURASI (≤3 dtk
-    = versi studio yang sama, bukan live/remix), bonus bila synced (live per detik)."""
+def _version_markers(text: str) -> list:
+    """A02: penanda versi lagu yang sering membuat lirik TIDAK cocok
+    (live/remix/karaoke/cover/instrumental/sped up/slowed/acoustic)."""
+    t = (text or "").lower()
+    return sorted({m for m in (
+        "live", "remix", "karaoke", "cover", "instrumental", "sped up", "slowed",
+        "acoustic", "re-recorded", "demo", "extended",
+    ) if m in t})
+
+
+def _score_lyrics_candidate(cand: dict, artist: str, title: str, duration=None, album: str = "") -> float:
+    """Skor kandidat lirik (P58 + A02).
+
+    P58: kecocokan judul+artis, kedekatan DURASI (≤3 dtk = versi studio yang sama),
+    bonus bila synced (lirik live per detik).
+    A02: + bonus ALBUM (+1.5) supaya versi album benar, + PENALTI penanda versi
+    (live/remix/karaoke/cover/…) yang tidak diminta user, dan toleransi durasi
+    bertingkat (≤2 dtk: +3 · ≤5 dtk: +1.5 · >15 dtk: −2).
+    """
     score = 0.0
     ca = _norm_lyrics_text(cand.get("artist") or "")
     ct = _norm_lyrics_text(cand.get("title") or "")
@@ -1290,6 +1728,16 @@ def _score_lyrics_candidate(cand: dict, artist: str, title: str, duration=None) 
         score += 2.0
     if ta and ca and (ta in ca or ca in ta):
         score += 2.0
+    # A02: album — hanya menambah bila user memang punya info album.
+    cal = _norm_lyrics_text(cand.get("album") or "")
+    tal = _norm_lyrics_text(album or "")
+    if tal and cal and (tal in cal or cal in tal):
+        score += 1.5
+    # A02: penalti penanda versi yang tidak diminta (sumber "lirik lagu lain" paling umum).
+    asked = _version_markers(f"{title} {album or ''}")
+    bad = [m for m in _version_markers(f"{cand.get('title') or ''} {cand.get('album') or ''}") if m not in asked]
+    if bad:
+        score -= 1.5 * len(bad)
     if cand.get("synced"):
         score += 1.5
     try:
@@ -1303,115 +1751,489 @@ def _score_lyrics_candidate(cand: dict, artist: str, title: str, duration=None) 
             cd = None
         if cd:
             diff = abs(cd - dur)
-            if diff <= 3:
+            if diff <= 2:
                 score += 3.0
-            elif diff <= 8:
-                score += 0.5
-            else:
-                score -= min(2.0, (diff - 8) / 30.0)
+            elif diff <= 5:
+                score += 1.5
+            elif diff > 15:
+                score -= 2.0
     return score
 
 
-def get_lyrics(artist: str, title: str, file_path: str = "", duration=None) -> dict:
-    """Cari lirik online CEPAT, LUAS, dan P58: AKURAT.
+def _lyrics_preview(text: str, lines: int = 5) -> str:
+    """5 baris pertama untuk pratinjau kandidat (timestamp LRC dibuang)."""
+    import re as _re
+    clean = _re.sub(r"\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]", "", text or "")
+    rows = [ln.strip() for ln in clean.splitlines()]
+    return "\n".join([r for r in rows if r][:lines])
 
-    Kandidat dikumpulkan paralel dari LRCLIB get (+param durasi) & search (varian
-    query) + lyrics.ovh, lalu dipilih skor terbaik: kecocokan judul+artis,
-    kedekatan durasi lagu (menghindari versi live/remix yang salah), synced
-    diprioritaskan (live per detik). Fallback terakhir: lirik tertanam file.
-    Return {plain, synced, source}."""
+
+# A02: cache NEGATIF in-memory (trek tanpa lirik tidak memicu 4–6 request berulang).
+_NEG_CACHE: dict = {}
+_NEG_TTL = 600.0  # detik
+
+
+def _neg_key(artist: str, title: str, duration=None, album: str = "") -> str:
+    try:
+        dur = int(float(duration)) if duration else 0
+    except (TypeError, ValueError):
+        dur = 0
+    return f"{_norm_lyrics_text(artist)}|{_norm_lyrics_text(title)}|{_norm_lyrics_text(album)}|{dur}"
+
+
+def _neg_get(key: str) -> bool:
+    import time as _time
+    ts = _NEG_CACHE.get(key)
+    if not ts:
+        return False
+    if (_time.time() - ts) > _NEG_TTL:
+        _NEG_CACHE.pop(key, None)
+        return False
+    return True
+
+
+def _neg_put(key: str) -> None:
+    import time as _time
+    if len(_NEG_CACHE) > 2000:
+        _NEG_CACHE.clear()
+    _NEG_CACHE[key] = _time.time()
+
+
+def _mk_cand(plain: str, synced: str, artist: str, title: str, album: str = "",
+             duration=None, source: str = "", cid=None) -> dict:
+    """Satu kandidat lirik dalam bentuk seragam (dipakai semua sumber)."""
+    return {
+        "id": cid, "plain": plain or "", "synced": synced or "",
+        "artist": artist or "", "title": title or "", "album": album or "",
+        "duration": duration, "source": source or "",
+    }
+
+
+def _lrc_strip_timestamps(text: str) -> str:
+    """A03: buang tag metadata + timestamp LRC → teks polos (untuk ekspor .txt)."""
+    import re as _re
+    body = _re.sub(r"^\s*\[(ar|ti|al|by|re|ve|length|offset)\s*:[^\]]*\]\s*$", "", text or "", flags=_re.I | _re.M)
+    body = _re.sub(r"\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]", "", body)
+    rows = [ln.strip() for ln in body.splitlines()]
+    return "\n".join([r for r in rows if r])
+
+
+def _lyrics_report_payload(parsed: dict) -> dict:
+    """A03: bentuk laporan validasi yang dikirim ke UI (semua angka + kode peringatan).
+
+    Peringatan dikirim sebagai KODE (mis. ``untimed_lines:3``) agar UI bisa menerjemahkan
+    ke id/en lewat i18n — bukan string bahasa yang dikunci di backend.
+    """
+    return {
+        "format": parsed.get("format") or "plain",
+        "timedLines": int(parsed.get("timedLines") or 0),
+        "breakLines": int(parsed.get("breakLines") or 0),
+        "firstMs": int(parsed.get("firstMs") or 0),
+        "lastMs": int(parsed.get("lastMs") or 0),
+        "lineCount": int(parsed.get("lineCount") or 0),
+        "offsetMs": int(parsed.get("offsetMs") or 0),
+        "metadata": parsed.get("metadata") or {},
+        "warnings": parsed.get("warnings") or [],
+        "preview": parsed.get("preview") or [],
+    }
+
+
+def _parse_lrc_like(content: str, duration=None) -> dict:
+    """A03 — Parser LRC/plain yang menghasilkan LAPORAN VALIDASI.
+
+    Mendukung:
+      • tag metadata standar yang BUKAN baris lirik: ``[ar:]`` ``[ti:]`` ``[al:]``
+        ``[by:]`` ``[re:]`` ``[ve:]`` ``[length:]`` ``[offset:±ms]``;
+      • timestamp ``[mm:ss]`` / ``[mm:ss.x]`` / ``[mm:ss.xx]`` / ``[mm:ss.xxx]``,
+        termasuk ``[m:ss]`` dan **multi-timestamp dalam satu baris**;
+      • baris ber-timestamp **tanpa teks** = jeda/instrumen (bukan baris kosong yang error);
+      • campuran baris tanpa timestamp → dilaporkan sebagai peringatan.
+
+    Return: ``{format, plain, synced, offsetMs, timedLines, breakLines, firstMs, lastMs,
+    metadata, warnings, preview, lineCount}``.
+    """
+    import re as _re
+
+    meta_re = _re.compile(r"^\s*\[(ar|ti|al|by|re|ve|length|offset)\s*:\s*(.*?)\]\s*$", _re.I)
+    ts_re = _re.compile(r"\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]")
+
+    lines = (content or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    metadata = {}
+    warnings = []
+    out_lines = []           # baris synced yang dibangun ulang (kanonik)
+    timed = 0                # baris dengan teks + timestamp
+    breaks = 0               # timestamp tanpa teks (jeda)
+    plain_lines = []         # teks tanpa timestamp (untuk mode plain)
+    offset_ms = 0
+    untimed_within_lrc = 0
+    bad_brackets = 0
+
+    def _ts_to_ms(m, s, frac):
+        ms = int(m) * 60000 + int(s) * 1000
+        if frac:
+            ms += int((frac + "00")[:3])
+        return ms
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        mmeta = meta_re.match(line)
+        if mmeta:
+            k = mmeta.group(1).lower()
+            v = (mmeta.group(2) or "").strip()
+            metadata[k] = v
+            if k == "offset":
+                try:
+                    offset_ms += int(float(v))
+                except (TypeError, ValueError):
+                    warnings.append("offset_bad_value")
+            continue
+        stamps = list(ts_re.finditer(line))
+        text = ts_re.sub("", line).strip()
+        # Sisa bracket aneh (mis. "[xx:yy]") → laporan, bukan crash
+        if _re.search(r"\[[^\]]*\]", text):
+            bad_brackets += 1
+            text = _re.sub(r"\[[^\]]*\]", "", text).strip()
+        if stamps:
+            if not text:
+                breaks += 1
+            else:
+                timed += 1
+            for st in stamps:
+                ms = _ts_to_ms(st.group(1), st.group(2), st.group(3))
+                out_lines.append((ms, text))
+        else:
+            if text:
+                plain_lines.append(text)
+                untimed_within_lrc += 1
+
+    out_lines.sort(key=lambda x: x[0])
+    is_lrc = timed > 0
+    if is_lrc:
+        # Deteksi duplikat & urutan timestamp yang mundur (setelah sort: harus naik).
+        seen_ms = set()
+        dup = 0
+        for ms, _t in out_lines:
+            if ms in seen_ms:
+                dup += 1
+            seen_ms.add(ms)
+        if dup:
+            warnings.append(f"duplicate_timestamps:{dup}")
+    if not is_lrc and plain_lines:
+        warnings.append("no_timestamps")
+    if is_lrc and untimed_within_lrc:
+        warnings.append(f"untimed_lines:{untimed_within_lrc}")
+    if bad_brackets:
+        warnings.append(f"unknown_tags:{bad_brackets}")
+    if is_lrc and timed < 3:
+        warnings.append("too_few_lines")
+    first_ms = out_lines[0][0] if out_lines else 0
+    last_ms = out_lines[-1][0] if out_lines else 0
+    if is_lrc and first_ms > 20000:
+        warnings.append("first_line_late")
+    if duration:
+        try:
+            dur_ms = float(duration) * 1000
+            if is_lrc and last_ms > dur_ms + 5000:
+                warnings.append("beyond_track_duration")
+        except (TypeError, ValueError):
+            pass
+
+    synced = "\n".join(f"[{ms // 60000:02d}:{(ms % 60000) / 1000:05.2f}]{t}" for ms, t in out_lines)
+    plain = "" if is_lrc else "\n".join(plain_lines)
+    preview = [f"[{ms // 60000:02d}:{(ms % 60000) / 1000:05.2f}]{t}" for ms, t in out_lines[:5]] or plain_lines[:5]
+    return {
+        "format": "lrc" if is_lrc else "plain",
+        "plain": plain,
+        "synced": synced,
+        "offsetMs": offset_ms,
+        "timedLines": timed,
+        "breakLines": breaks,
+        "firstMs": first_ms,
+        "lastMs": last_ms,
+        "lineCount": len([ln for ln in lines if ln.strip()]),
+        "metadata": metadata,
+        "warnings": warnings,
+        "preview": preview,
+    }
+
+
+def _fmt_lrc_ms(ms: int) -> str:
+    ms = max(0, int(ms))
+    return f"[{ms // 60000:02d}:{(ms % 60000) / 1000:05.2f}]"
+
+
+def lyrics_template_bytes() -> bytes:
+    """A03: template .lrc siap pakai (komentar + 6 baris contoh + tag metadata)."""
+    text = (
+        "# CraftLife — template lirik .lrc\n"
+        "# Cara pakai:\n"
+        "#   1. Tag di bawah boleh diubah/dihapus. [ar:] artis, [ti:] judul, [al:] album,\n"
+        "#      [offset:+500] menggeser lirik (ms; + = lirik lebih lambat, - = lebih cepat).\n"
+        "#   2. Tulis satu baris lirik per baris, diawali timestamp [mm:ss.xx].\n"
+        "#   3. Baris boleh punya beberapa timestamp sekaligus, mis. [00:12.00][01:20.00]Reff\n"
+        "#   4. Timestamp tanpa teks = jeda/instrumen (boleh ditulis [00:30.00] saja).\n"
+        "#   5. Simpan sebagai .lrc (UTF-8), lalu unggah lewat tombol Import di panel lirik.\n"
+        "[ar:Nama Artis]\n"
+        "[ti:Judul Lagu]\n"
+        "[al:Nama Album]\n"
+        "[by:CraftLife]\n"
+        "[offset:0]\n"
+        "\n"
+        "[00:00.00]Contoh baris pembuka\n"
+        "[00:05.35]Baris kedua mulai di detik 5,35\n"
+        "[00:11.00]Baris ketiga\n"
+        "[00:16.20][00:48.00]Reff — satu teks, dua timestamp\n"
+        "[00:24.00]\n"
+        "[00:26.50]Baris terakhir contoh\n"
+    )
+    return text.encode("utf-8")
+
+
+def build_lrc_export(title: str, artist: str, album: str = "", offset_ms: int = 0,
+                     synced: str = "", plain: str = "") -> str:
+    """A03: rangkai lirik menjadi berkas .lrc (header tag + baris bertimestamp)."""
+    head = [
+        f"[ti:{title or ''}]",
+        f"[ar:{artist or ''}]",
+    ]
+    if album:
+        head.append(f"[al:{album}]")
+    head += [f"[offset:{int(offset_ms or 0)}]", "[re:CraftLife]"]
+    if synced:
+        # Normalkan timestamp agar file ekspor selalu format kanonik [mm:ss.xx].
+        parsed = _parse_lrc_like(synced)
+        body = parsed["synced"] or synced
+        return "\n".join(head) + "\n\n" + body + "\n"
+    body = plain or ""
+    return "\n".join(head) + "\n\n" + body + "\n"
+
+
+def collect_lyrics_candidates(artist: str, title: str, album: str = "", duration=None,
+                              file_path: str = "", limit: int = 12, timeout: int = 9) -> list:
+    """A02: kumpulkan kandidat lirik dari BANYAK sumber sekaligus lalu beri skor.
+
+    Sumber: LRCLIB ``get`` (durasi eksak + toleransi ±2 dtk) · LRCLIB ``search`` dengan
+    varian query (``artist title``, ``title album``, ``artist album title``, ``title``) ·
+    lyrics.ovh · lirik tertanam di file. Hasil: daftar terurut skor menurun (maks ``limit``),
+    tiap item memuat album/durasi/badge/preview supaya user bisa memilih sendiri.
+    """
     import concurrent.futures as _cf
-    import os
     import requests
     from urllib.parse import quote
+
+    artist_c = _clean_lyrics_query(artist)
+    title_c = _clean_lyrics_query(title)
+    album_c = _clean_lyrics_query(album or "")
+    try:
+        dur = float(duration) if duration else None
+    except (TypeError, ValueError):
+        dur = None
+    if not (artist_c or title_c):
+        return []
+
+    ua = {"User-Agent": "CraftLifeDesktop/1.0"}
+    raw = []
+
+    def _lrclib_row(d, src="lrclib"):
+        return _mk_cand(d.get("plainLyrics") or "", d.get("syncedLyrics") or "",
+                        d.get("artistName") or "", d.get("trackName") or "",
+                        d.get("albumName") or "", d.get("duration"), src, d.get("id"))
+
+    def lrclib_get():
+        """get (durasi eksak) → bila kosong, coba get dengan durasi ±2 dtk."""
+        tries = [int(dur)] if dur else []
+        if dur:
+            tries += [int(dur) - 2, int(dur) + 2]
+        if not tries:
+            tries = [None]
+        for t in tries:
+            params = {"artist_name": artist_c, "track_name": title_c}
+            if t:
+                params["duration"] = t
+            try:
+                r = requests.get("https://lrclib.net/api/get", params=params, headers=ua, timeout=5)
+                d = r.json() if r.ok else {}
+            except Exception:
+                continue
+            if isinstance(d, dict) and (d.get("syncedLyrics") or d.get("plainLyrics")):
+                return [_lrclib_row(d)]
+        return []
+
+    def lrclib_search(q):
+        if not (q or "").strip():
+            return []
+        try:
+            r = requests.get("https://lrclib.net/api/search", params={"q": q}, headers=ua, timeout=5)
+            rows = (r.json() if r.ok else []) or []
+        except Exception:
+            return []
+        out = []
+        for it in rows:
+            if not isinstance(it, dict):
+                continue
+            if it.get("syncedLyrics") or it.get("plainLyrics"):
+                out.append(_lrclib_row(it))
+            if len(out) >= 12:
+                break
+        return out
+
+    def ovh():
+        if not (artist_c and title_c):
+            return []
+        try:
+            r = requests.get(f"https://api.lyrics.ovh/v1/{quote(artist_c)}/{quote(title_c)}", timeout=5)
+            ly = ((r.json() or {}).get("lyrics") or "") if r.ok else ""
+        except Exception:
+            ly = ""
+        return [_mk_cand(ly, "", artist_c, title_c, "", None, "ovh")] if ly else []
+
+    def embedded():
+        if not file_path:
+            return []
+        import os as _os
+        try:
+            import music_downloader as _md
+            real = _os.path.realpath(file_path)
+            lib = _os.path.realpath(_md.get_download_dir())
+            if not (real.startswith(lib + _os.sep) and _os.path.isfile(real)):
+                return []
+            text = _read_embedded_lyrics(real)
+        except Exception:
+            text = ""
+        import re as _re
+        if not text:
+            return []
+        is_lrc = bool(_re.search(r"\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]", text))
+        return [_mk_cand("" if is_lrc else text, text if is_lrc else "", artist_c, title_c,
+                         album_c, dur, "embedded")]
+
+    def _jobs():
+        yield lrclib_get
+        yield ovh
+        yield embedded
+        seen_q = set()
+        for q in (f"{artist_c} {title_c}".strip(), f"{title_c} {album_c}".strip(),
+                  f"{artist_c} {album_c} {title_c}".strip(), title_c):
+            q = q.strip()
+            if q and q not in seen_q:
+                seen_q.add(q)
+                yield lambda q=q: lrclib_search(q)
+
+    try:
+        with _cf.ThreadPoolExecutor(max_workers=6) as ex:
+            futs = [ex.submit(fn) for fn in _jobs()]
+            for fut in _cf.as_completed(futs, timeout=timeout):
+                try:
+                    raw.extend(fut.result() or [])
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    # Gabung kandidat "sama" (artis+judul+album) → satu baris, isi field yang bolong.
+    merged: dict = {}
+    order = []
+    for c in raw:
+        if not (c.get("plain") or c.get("synced")):
+            continue
+        mkey = (_norm_lyrics_text(c.get("artist")), _norm_lyrics_text(c.get("title")),
+                _norm_lyrics_text(c.get("album")))
+        cur = merged.get(mkey)
+        if cur is None:
+            merged[mkey] = dict(c)
+            order.append(mkey)
+            continue
+        if c.get("synced") and not cur.get("synced"):
+            cur["synced"] = c["synced"]
+            cur["source"] = c.get("source") or cur.get("source")
+        if c.get("plain") and not cur.get("plain"):
+            cur["plain"] = c["plain"]
+        if c.get("album") and not cur.get("album"):
+            cur["album"] = c["album"]
+        if c.get("duration") and not cur.get("duration"):
+            cur["duration"] = c["duration"]
+
+    out = []
+    for mkey in order:
+        c = merged[mkey]
+        if not (c.get("plain") or c.get("synced")):
+            continue
+        score = _score_lyrics_candidate(c, artist_c, title_c, dur, album_c)
+        badges = []
+        if c.get("synced"):
+            badges.append("SYNCED")
+        if c.get("plain"):
+            badges.append("PLAIN")
+        if c.get("source") == "embedded":
+            badges.append("EMBEDDED")
+        delta = None
+        try:
+            if dur and c.get("duration") is not None:
+                delta = int(round(float(c["duration"]) - float(dur)))
+        except (TypeError, ValueError):
+            delta = None
+        out.append({
+            "artist": c.get("artist") or artist_c, "title": c.get("title") or title_c,
+            "album": c.get("album") or "", "duration": c.get("duration"),
+            "durationDelta": delta, "synced": bool(c.get("synced")), "plain": bool(c.get("plain")),
+            "source": c.get("source") or "lrclib", "score": round(float(score), 2),
+            "badges": badges, "versionMarkers": _version_markers(f"{c.get('title')} {c.get('album')}"),
+            "preview": _lyrics_preview(c.get("synced") or c.get("plain") or ""),
+            "syncedText": c.get("synced") or "", "plainText": c.get("plain") or "",
+        })
+    out.sort(key=lambda x: (x["score"], 1 if x["synced"] else 0), reverse=True)
+    return out[: int(limit)]
+
+
+def get_lyrics(artist: str, title: str, file_path: str = "", duration=None,
+               album: str = "", prefer=None, refresh: bool = False) -> dict:
+    """Cari lirik online CEPAT, LUAS, dan AKURAT (P58 + A02).
+
+    Kandidat dikumpulkan dari LRCLIB get/search + lyrics.ovh (+ lirik tertanam file),
+    diberi skor (judul, artis, ALBUM, durasi bertingkat, penalti versi live/remix,
+    bonus synced), lalu diambil yang terbaik. ``prefer`` = indeks kandidat pilihan
+    user (dari /api/music/lyrics-candidates). Trek tanpa hasil di-cache negatif 10 menit
+    supaya tidak memicu request berulang. Return {plain, synced, source} (+ cachedEmpty).
+    """
+    import os
+
+    neg = _neg_key(artist, title, duration, album)
+    if not refresh and _neg_get(neg):
+        return {"plain": "", "synced": "", "source": "", "cachedEmpty": True}
 
     plain = ""
     synced = ""
     source = ""
-    artist = _clean_lyrics_query(artist)
-    title = _clean_lyrics_query(title)
-    if artist or title:
-        user_agent = {"User-Agent": "CraftLifeDesktop/1.0"}
-
-        def lrclib_get():
-            params = {"artist_name": artist, "track_name": title}
-            try:
-                if duration:
-                    params["duration"] = int(float(duration))
-            except (TypeError, ValueError):
-                pass
-            r = requests.get("https://lrclib.net/api/get",
-                             params=params,
-                             headers=user_agent, timeout=5)
-            d = r.json() if r.ok else {}
-            if d.get("syncedLyrics") or d.get("plainLyrics"):
-                return [{"plain": d.get("plainLyrics") or "", "synced": d.get("syncedLyrics") or "",
-                         "artist": d.get("artistName") or "", "title": d.get("trackName") or "",
-                         "duration": d.get("duration")}]
-            return []
-
-        def lrclib_search(q):
-            r = requests.get("https://lrclib.net/api/search",
-                             params={"q": q},
-                             headers=user_agent, timeout=5)
-            out = []
-            for it in (r.json() if r.ok else []) or []:
-                if it.get("syncedLyrics") or it.get("plainLyrics"):
-                    out.append({"plain": it.get("plainLyrics") or "", "synced": it.get("syncedLyrics") or "",
-                                "artist": it.get("artistName") or "", "title": it.get("trackName") or "",
-                                "duration": it.get("duration")})
-                    if len(out) >= 12:
-                        break
-            return out
-
-        def ovh():
-            if not (artist and title):
-                return []
-            r = requests.get(f"https://api.lyrics.ovh/v1/{quote(artist)}/{quote(title)}", timeout=5)
-            if not r.ok:
-                return []
-            ly = ((r.json() or {}).get("lyrics") or "")
-            return [{"plain": ly, "synced": "", "artist": artist, "title": title, "duration": None}] if ly else []
-
-        # Varian query progresif (paling akurat → paling longgar) utk coverage luas.
-        queries = []
-        if artist and title:
-            queries.append(f"{artist} {title}")
-        if title and title not in queries:
-            queries.append(title)
-        if artist and artist not in queries:
-            queries.append(artist)
-
-        def _jobs():
-            if artist and title:
-                yield lrclib_get
-            yield ovh
-            for q in queries:
-                yield lambda q=q: lrclib_search(q)
-
+    cands = []
+    try:
+        cands = collect_lyrics_candidates(artist, title, album=album, duration=duration,
+                                         file_path=file_path, limit=12)
+    except Exception:
         cands = []
+    if cands:
+        chosen = None
         try:
-            with _cf.ThreadPoolExecutor(max_workers=5) as ex:
-                futs = [ex.submit(fn) for fn in _jobs()]
-                for fut in _cf.as_completed(futs, timeout=9):
-                    try:
-                        cands.extend(fut.result() or [])
-                    except Exception:
-                        continue
-        except Exception:
-            pass
-
-        # P58: pilih kandidat TERBAIK (bukan sekadar yang pertama selesai).
-        if cands:
-            scored = [(_score_lyrics_candidate(c, artist, title, duration), c) for c in cands]
-            best_synced = max((s for s in scored if s[1]["synced"]), key=lambda x: x[0], default=None)
-            best_plain = max((s for s in scored if s[1]["plain"]), key=lambda x: x[0], default=None)
-            if best_synced:
-                synced = best_synced[1]["synced"]
-                source = "lrclib"
-            if best_plain:
-                plain = best_plain[1]["plain"]
-                source = source or "lrclib"
+            idx = int(prefer) if prefer is not None and str(prefer) != "" else None
+        except (TypeError, ValueError):
+            idx = None
+        if idx is not None and 0 <= idx < len(cands):
+            chosen = cands[idx]
+        else:
+            # pilih kandidat terbaik yang punya synced (lirik live per detik) — fallback terbaik.
+            chosen = next((c for c in cands if c.get("synced")), cands[0])
+        if chosen:
+            synced = chosen.get("syncedText") or ""
+            plain = chosen.get("plainText") or ""
+            source = chosen.get("source") or "lrclib"
+            # Bila kandidat terbaik hanya synced, ambil plain dari kandidat dengan
+            # judul+artis SAMA (jangan campur versi berbeda).
+            if not plain:
+                for c in cands:
+                    if c.get("plainText") and c.get("title") == chosen.get("title"):
+                        plain = c["plainText"]
+                        break
 
     # Fallback: lirik tertanam di file (parity _embedded_lyrics), hanya path valid.
     if not synced and not plain and file_path:
@@ -1429,61 +2251,186 @@ def get_lyrics(artist: str, title: str, file_path: str = "", duration=None) -> d
             source = "embedded"
 
     if synced:
-        source = "lrclib"
+        source = "lrclib" if source in ("", "embedded") else source
     elif plain:
         source = source or "lrclib"
+    if not synced and not plain:
+        _neg_put(neg)
     return {"plain": plain, "synced": synced, "source": source}
 
 
-def _chat_ai(uid: int, notebook_id: int, question: str) -> str:
-    db.add_learning_chat(notebook_id, "user", question)
-    key = ""
+def _parse_citations(raw) -> list:
+    """Ubah kolom `citations` (JSON TEXT) menjadi list aman untuk UI."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return raw
     try:
-        key = db.get_gemini_api_key(uid) or os.environ.get("GEMINI_API_KEY") or ""
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
     except Exception:
-        key = os.environ.get("GEMINI_API_KEY") or ""
-    chunks = []
+        return []
+
+
+def _normalize_ids(values) -> list:
+    """Bersihkan daftar id dari UI (string / int / dipisah koma)."""
+    out = []
+    if values in (None, "", []):
+        return out
+    if isinstance(values, str):
+        values = [v for v in values.split(",")]
+    if not isinstance(values, (list, tuple, set)):
+        values = [values]
+    for v in values:
+        token = str(v).strip()
+        if token and token not in out:
+            out.append(token)
+    return out
+
+
+def _selected_sources(notebook_id: int, uid: int, source_ids=None) -> list:
+    """Sumber yang DIPILIH untuk grounding (A08).
+
+    `source_ids` kosong → semua sumber notebook (perilaku lama). Bila diisi, hanya
+    sumber dengan id tersebut yang masuk konteks — inilah "checkbox sumber" NotebookLM.
+    """
     try:
-        rows = db.get_learning_chunks(notebook_id, uid) or []
-        chunks = [r.get("chunk_text") or r.get("content") or "" for r in rows]
-        chunks = [c for c in chunks if c]
+        rows = db.get_learning_source_rows(notebook_id, uid)
     except Exception:
-        chunks = []
-    if not chunks:
-        try:
-            for s in db.get_learning_sources(notebook_id, uid) or []:
-                if s.get("content"):
-                    chunks.append(s["content"][:2000])
-        except Exception:
-            pass
+        rows = []
+    out = []
+    for row in rows or []:
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        out.append({
+            "id": str(row.get("id")),
+            "title": row.get("title") or "Sumber",
+            "type": row.get("type") or "text",
+            "content": content,
+        })
+    wanted = _normalize_ids(source_ids)
+    if wanted:
+        picked = [x for x in out if str(x["id"]) in wanted]
+        if picked:
+            return picked
+    return out
+
+
+def _chat_ai(uid: int, notebook_id: int, question: str, source_ids=None) -> dict:
+    """Jawab pertanyaan user dari sumber notebook — kini dengan SITASI (A08).
+
+    Return `{"answer": str, "citations": [...], "grounded": bool, "sourcesUsed": n}`.
+    Pemanggil lama yang mengharapkan string dapat memakai `["answer"]`; respons HTTP
+    tetap membawa `answer` sehingga kontrak lama tidak putus.
+    """
+    key = _gemini_key(uid)
+    sources = _selected_sources(notebook_id, uid, source_ids)
     history = []
     try:
         for c in db.get_learning_chats(notebook_id) or []:
             history.append({"role": c.get("role") or "user", "content": c.get("content") or ""})
     except Exception:
         pass
-    answer = ""
-    if key and chunks:
+
+    result = {"answer": "", "citations": [], "grounded": False, "sourcesUsed": len(sources)}
+
+    if key and sources:
         try:
             import learning_helper as lh
-            ctx = chunks[:8]
-            if hasattr(lh, "find_relevant_chunks"):
-                try:
-                    ctx = lh.find_relevant_chunks(question, chunks) or ctx
-                except Exception:
-                    pass
-            answer = lh.chat_with_sources(question, ctx, history, key)
+            payload = lh.chat_with_citations(question, sources, history, key)
+            answer = (payload or {}).get("answer") or ""
+            citations = (payload or {}).get("citations") or []
+            if answer:
+                result = {
+                    "answer": answer,
+                    "citations": citations,
+                    "grounded": bool(citations),
+                    "sourcesUsed": len(sources),
+                }
         except Exception as e:
-            answer = str(e)
-    if not answer:
-        if not chunks:
-            answer = "Tambahkan sumber ke notebook ini dulu, baru tanya AI."
+            result["answer"] = str(e)
+
+    # Jalur lama (chunks RAG tanpa baris sumber) tetap dipertahankan sebagai fallback.
+    if not result["answer"]:
+        try:
+            rows = db.get_learning_chunks(notebook_id, uid) or []
+            chunks = [r.get("chunk_text") or r.get("content") or "" for r in rows]
+            chunks = [c for c in chunks if c]
+            if chunks and key:
+                import learning_helper as lh
+                ctx = chunks[:8]
+                if hasattr(lh, "find_relevant_chunks"):
+                    try:
+                        ctx = lh.find_relevant_chunks(question, chunks) or ctx
+                    except Exception:
+                        pass
+                result["answer"] = lh.chat_with_sources(question, ctx, history, key)
+        except Exception:
+            pass
+
+    if not result["answer"]:
+        if not sources:
+            result["answer"] = "Tambahkan sumber ke notebook ini dulu, baru tanya AI."
         elif not key:
-            answer = "Setel Gemini API key di pengaturan (tersimpan di Python, bukan di web)."
+            result["answer"] = "Setel Gemini API key di pengaturan (tersimpan di Python, bukan di web)."
         else:
-            answer = "Tidak ada jawaban."
-    db.add_learning_chat(notebook_id, "assistant", answer)
-    return answer
+            result["answer"] = "Tidak ada jawaban."
+
+    try:
+        db.add_learning_chat(notebook_id, "assistant", result["answer"], result["citations"] or None)
+    except Exception:
+        pass
+    return result
+
+
+def podcast_audio_dir() -> str:
+    """Folder audio podcast — SAMA dengan jalur desktop (`learning_audio/`)."""
+    try:
+        base = os.path.dirname(os.path.abspath(db.DB_PATH))
+    except Exception:
+        base = os.getcwd()
+    path = os.path.join(base, "learning_audio")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def podcast_audio_path(generation_id) -> str:
+    return os.path.join(podcast_audio_dir(), f"podcast_{int(generation_id)}.mp3")
+
+
+def podcast_audio_info(notebook_id, generation_id) -> dict | None:
+    """Metadata audio tersimpan (untuk daftar artefak & pemutar web)."""
+    try:
+        row = db.get_learning_audio(notebook_id, generation_id)
+    except Exception:
+        row = None
+    if not row:
+        return None
+    path = row.get("path") or ""
+    if not path or not os.path.exists(path):
+        return None
+    return {
+        "url": f"/api/learning/podcast/audio?notebook={int(notebook_id)}&id={int(generation_id)}",
+        "durationSec": float(row.get("duration_sec") or 0),
+        "sizeBytes": int(row.get("size_bytes") or 0),
+        "language": row.get("language") or "id",
+        "engine": row.get("engine") or "",
+        "voiceA": row.get("voice_a") or "",
+        "voiceB": row.get("voice_b") or "",
+        "turns": row.get("turns") or [],
+        "createdAt": row.get("created_at") or "",
+    }
+
+
+def _latest_audio_generation(notebook_id: int):
+    """Generasi `audio_overview` terbaru notebook (sumber transkrip podcast)."""
+    try:
+        gens = db.get_learning_generations(notebook_id) or []
+    except Exception:
+        gens = []
+    picks = [g for g in gens if (g.get("type") or "").lower() in ("audio_overview", "podcast")]
+    return picks[-1] if picks else None
 
 
 def _bad(msg: str) -> dict:
@@ -1521,6 +2468,86 @@ def _strip_json_fence(text: str) -> str:
     return text.strip()
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  A05 — whitelist & validasi opsi konfigurasi per tipe Studio
+# ══════════════════════════════════════════════════════════════════════════════
+#  Dialog tiap tipe (StudioGenerateDialog) mengirim opsi seperti `difficulty`,
+#  `length`, `faqCount`, `absoluteDates`, dst. Semua divalidasi DI SINI (server),
+#  bukan hanya di UI: nilai di luar rentang/whitelist dibuang, angka di-clamp,
+#  dan teks dipangkas panjangnya. Ini mencegah penyalahgunaan payload (mis. prompt
+#  injection lewat nilai pilihan yang tidak dikenal).
+_STUDIO_CHOICES = {
+    "difficulty": ("easy", "mixed", "hard"),
+    "language": ("auto", "id", "en"),
+    "length": ("short", "standard", "deep"),
+    "granularity": ("day", "week", "month", "year"),
+    "style": ("term", "qa", "formula", "casual", "formal", "debate",
+              "brief", "detail", "bullets", "narrative"),
+}
+_STUDIO_INTS = {"depth": (1, 3), "branches": (3, 8), "subs": (2, 6),
+                "exercises": (3, 10), "faq_count": (5, 15)}
+_STUDIO_TEXTS = {"focus": 200, "instructions": 600}
+_STUDIO_SECTIONS = ("summary", "concepts", "examples", "practice", "conclusion")
+# Alias dari UI (gaya per tipe) → satu kunci `style` yang dipakai learning_helper.
+_STUDIO_ALIASES = {
+    "cardStyle": "style", "hostStyle": "style", "answerStyle": "style",
+    "summaryStyle": "style", "card_style": "style", "host_style": "style",
+    "answer_style": "style", "summary_style": "style",
+    "faqCount": "faq_count", "faq_count": "faq_count", "faqQuestions": "faq_count",
+    "absoluteDates": "absolute_dates", "absolute_dates": "absolute_dates",
+    "focusTopic": "focus", "customInstructions": "instructions",
+    "extraInstructions": "instructions",
+}
+
+
+def _studio_opts(body: dict) -> dict:
+    """Ambil opsi A05 yang valid dari body request (sisanya diabaikan)."""
+    src = {}
+    for raw_key, value in (body or {}).items():
+        if value in (None, ""):
+            continue
+        src[_STUDIO_ALIASES.get(raw_key, raw_key)] = value
+    out = {}
+    for key, allowed in _STUDIO_CHOICES.items():
+        val = src.get(key)
+        if isinstance(val, str) and val.strip().lower() in allowed:
+            val = val.strip().lower()
+            if not (key == "language" and val == "auto"):
+                out[key] = val
+    for key, (lo, hi) in _STUDIO_INTS.items():
+        val = src.get(key)
+        if val is None or val == "":
+            continue
+        try:
+            out[key] = max(lo, min(hi, int(val)))
+        except (TypeError, ValueError):
+            continue
+    for key, limit in _STUDIO_TEXTS.items():
+        val = src.get(key)
+        if isinstance(val, str) and val.strip():
+            # Buang karakter kontrol (bisa merusak prompt/log).
+            clean = "".join(ch for ch in val if ch.isprintable() or ch in "\n\t").strip()
+            if clean:
+                out[key] = clean[:limit]
+    if "sections" in src:
+        val = src["sections"]
+        if isinstance(val, str):
+            val = [x.strip() for x in val.split(",")]
+        if isinstance(val, (list, tuple)):
+            picked = [x for x in _STUDIO_SECTIONS if x in [str(v).strip().lower() for v in val]]
+            if picked:
+                out["sections"] = picked
+    if "absolute_dates" in src:
+        val = src["absolute_dates"]
+        if isinstance(val, bool):
+            out["absolute_dates"] = val
+        elif isinstance(val, (int, float)):
+            out["absolute_dates"] = bool(val)
+        elif isinstance(val, str) and val.strip().lower() in ("true", "false", "1", "0", "yes", "no"):
+            out["absolute_dates"] = val.strip().lower() in ("true", "1", "yes")
+    return out
+
+
 def _studio_generate(uid: int, body: dict, studio_type: str):
     key = _gemini_key(uid)
     content = body.get("content") or ""
@@ -1529,9 +2556,9 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
     chunks = [content[:8000]] if content else []
     if nid and not chunks:
         try:
-            for s in db.get_learning_sources(int(nid), uid) or []:
-                if s.get("content"):
-                    chunks.append(s["content"][:4000])
+            # A08: hanya sumber terpilih (`sourceIds`) yang dijadikan konteks.
+            for src in _selected_sources(int(nid), uid, body.get("sourceIds") or body.get("source_ids")):
+                chunks.append((src.get("content") or "")[:4000])
         except Exception:
             pass
         if not topic:
@@ -1558,6 +2585,28 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
                         break
                     except (TypeError, ValueError):
                         pass
+            # A04: DUA counter terpisah untuk quiz — Pilihan Ganda & Essay
+            # (default 10 + 5, total gabungan maks 30; guard juga ada di learning_helper).
+            for _mk in ("mcCount", "mc_count", "mcQuestions"):
+                _mv = body.get(_mk)
+                if _mv not in (None, ""):
+                    try:
+                        kwargs["mc_count"] = int(_mv)
+                        break
+                    except (TypeError, ValueError):
+                        pass
+            for _ek in ("essayCount", "essay_count", "essayQuestions"):
+                _ev = body.get(_ek)
+                if _ev not in (None, ""):
+                    try:
+                        kwargs["essay_count"] = int(_ev)
+                        break
+                    except (TypeError, ValueError):
+                        pass
+        # A05: opsi konfigurasi per tipe (difficulty/language/style/length/depth/branches/
+        # subs/sections/exercises/faqCount/granularity/absoluteDates/focus/instructions).
+        # Divalidasi & di-clamp di `_studio_opts` → tidak ada nilai liar yang masuk prompt.
+        kwargs.update(_studio_opts(body))
         raw = lh.generate_studio_content(studio_type, topic or "Materi", chunks, key, **kwargs)
     except Exception as e:
         return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
@@ -1619,7 +2668,21 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
         payload["summary"] = text
     if nid:
         try:
-            db.add_learning_generation(int(nid), persist_type, topic or studio_type, text[:200000])
+            # A04: untuk QUIZ, simpan JSON yang SUDAH dinormalkan (field `type` +
+            # `modelAnswer` ikut tersimpan). Dulu `text` mentah dari model tersimpan
+            # apa adanya, lalu `_nb_map` membuang `type`/`model_answer` → setelah
+            # refresh, soal esai kehilangan identitasnya dan muncul sebagai PG tanpa
+            # opsi (inilah inti bug "tidak bisa mengetik jawaban essay").
+            persist_text = text
+            if studio_type == "quiz" and payload.get("quiz"):
+                persist_text = json.dumps({"title": topic or "Quiz", "questions": payload["quiz"]},
+                                          ensure_ascii=False)
+            saved = db.add_learning_generation(int(nid), persist_type, topic or studio_type,
+                                               persist_text[:200000])
+            # A08: kembalikan id generasi yang baru dibuat → UI bisa langsung
+            # menawarkan "Buat voice" untuk podcast tanpa perlu fetch ulang daftar.
+            if isinstance(saved, dict) and saved.get("generation_id"):
+                payload["generationId"] = str(saved["generation_id"])
         except Exception:
             pass
     return {"result": payload, "skip_snap": True}
@@ -1656,8 +2719,13 @@ def _add_source_from_upload(nid: int, uid: int, path: str) -> dict:
 
 def handle_post(path: str, uid: int, body: dict, parts: list):
     if path == "/api/learning/notebooks":
+        # A15: ikon & deskripsi dari dialog "Notebook Baru" ikut disimpan — sebelumnya
+        # hanya `title` yang diteruskan sehingga ikon pilihan user hilang dan rail kiri
+        # Learning selalu menampilkan 📚.
         title = (body.get("title") or "Notebook").strip()
-        return {"result": db.create_learning_notebook(uid, title)}
+        icon = body.get("icon") or "📚"
+        description = body.get("description") or body.get("desc") or ""
+        return {"result": db.create_learning_notebook(uid, title, icon, description)}
 
     if path == "/api/learning/source-content":
         # Parity LearningPage._view_source: tampilkan isi penuh source (lookup
@@ -1689,11 +2757,18 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             return {"result": {"ok": True}}
         if len(parts) >= 5 and parts[4] == "rename":
             # Parity LearningPage._rename_notebook (QInputDialog judul baru).
-            title = (body.get("title") or "").strip()
-            if not title:
+            # A15: `icon`/`description` boleh ikut dikirim (update parsial) — jalur ini
+            # dipakai rail kiri untuk mengganti ikon notebook tanpa menyentuh judul.
+            title = body.get("title")
+            title = title.strip() if isinstance(title, str) else None
+            if title is not None and not title:
                 return {"result": {"ok": False, "msg": "learning_no_title"}}
-            db.update_learning_notebook(nid, uid, title)
-            return {"result": {"ok": True}}
+            icon = body.get("icon")
+            description = body.get("description") if "description" in body else None
+            if title is None and icon is None and description is None:
+                return {"result": {"ok": False, "msg": "learning_no_fields"}, "skip_snap": True}
+            return {"result": db.update_learning_notebook(
+                nid, uid, title=title, icon=icon, description=description)}
         if len(parts) >= 5 and parts[4] == "upload-source":
             # Parity LearningPage._add_source_files: ekstrak per ekstensi →
             # db.add_learning_source(type, basename, path, content[:80000]).
@@ -1730,8 +2805,15 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             text = (body.get("text") or "").strip()
             if not text:
                 return {"result": {"ok": False, "msg": "empty"}}
-            answer = _chat_ai(uid, nid, text)
-            return {"result": {"ok": True, "answer": answer}}
+            # A08: pesan USER ikut disimpan (dulu hanya jawaban AI yang tersimpan di
+            # `learning_chats`, sehingga pertanyaan hilang setelah reload/restart).
+            try:
+                db.add_learning_chat(nid, "user", text)
+            except Exception:
+                pass
+            # A08: `sourceIds` = sumber yang dicentang user (grounding).
+            reply = _chat_ai(uid, nid, text, body.get("sourceIds") or body.get("source_ids"))
+            return {"result": {"ok": True, **reply}}
 
     if path == "/api/music/play":
         return {"result": db.log_music_play(uid, body.get("path") or "", body.get("title") or "", body.get("artist") or "")}
@@ -1755,6 +2837,90 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             return {"result": {"ok": True, "jobId": jid}, "skip_snap": True}
         except Exception as e:
             return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
+    if path == "/api/learning/podcast/audio":
+        # A08: buat audio DUA HOST yang nyata (MP3) dari transkrip podcast sebuah
+        # generasi, lengkap dengan offset tiap giliran agar pemutar web interaktif:
+        # klik giliran = lompat ke detiknya, giliran aktif disorot otomatis.
+        # Suara selalu mengikuti bahasa transkrip (id → id-ID-ArdiNeural/GadisNeural),
+        # jadi tidak ada lagi suara Inggris yang membaca teks Indonesia.
+        try:
+            gid = int(body.get("generationId") or body.get("id") or 0)
+            nid = int(body.get("notebookId") or 0)
+        except (TypeError, ValueError):
+            gid = nid = 0
+        if not nid:
+            return _bad("notebook_required")
+        if not gid:
+            latest = _latest_audio_generation(nid)
+            gid = int(latest.get("id")) if latest else 0
+        if not gid:
+            return _bad("learning_no_podcast")
+        row = None
+        try:
+            row = db.get_learning_generation_row(gid, nid)
+        except Exception:
+            row = None
+        if not row:
+            return _bad("learning_not_found")
+        script = row.get("content") or ""
+        output_path = podcast_audio_path(gid)
+        force = bool(body.get("force") or body.get("regenerate"))
+        cached = podcast_audio_info(nid, gid)
+        if cached and not force:
+            return {"result": {"ok": True, "generationId": gid, "cached": True, **cached}, "skip_snap": True}
+        try:
+            import learning_helper as lh
+        except Exception as e:
+            return _bad(f"learning_helper_error: {e}")
+        key = _gemini_key(uid)
+        try:
+            meta = lh.build_podcast_audio(
+                script, output_path, language=body.get("language") or "auto",
+                api_key=key,
+            )
+        except Exception as e:
+            return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
+        try:
+            db.save_learning_audio(
+                nid, gid, meta["path"], language=meta.get("language") or "id",
+                engine=meta.get("engine") or "", voice_a=meta.get("voiceA") or "",
+                voice_b=meta.get("voiceB") or "", duration_sec=meta.get("durationSec") or 0,
+                size_bytes=meta.get("sizeBytes") or 0, turns=meta.get("turns") or [],
+            )
+        except Exception:
+            pass
+        info = podcast_audio_info(nid, gid) or {}
+        return {
+            "result": {
+                "ok": True, "generationId": gid, "cached": False,
+                "languageLabel": meta.get("languageLabel") or "",
+                **info,
+            },
+            "skip_snap": True,
+        }
+
+    if path == "/api/learning/generations/rename":
+        # A06: ganti nama artefak Studio dari daftar artefak (list ke bawah).
+        try:
+            gid = int(body.get("generationId") or 0)
+            nid = int(body.get("notebookId") or 0)
+        except (TypeError, ValueError):
+            gid = nid = 0
+        if not gid or not nid:
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        res = db.rename_learning_generation(gid, nid, body.get("title"))
+        return {"result": res, "skip_snap": True}
+    if path == "/api/learning/generations/duplicate":
+        # A06: duplikat artefak (isi sama, judul + " (copy)").
+        try:
+            gid = int(body.get("generationId") or 0)
+            nid = int(body.get("notebookId") or 0)
+        except (TypeError, ValueError):
+            gid = nid = 0
+        if not gid or not nid:
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        res = db.duplicate_learning_generation(gid, nid)
+        return {"result": res, "skip_snap": True}
     if path == "/api/learning/generations/delete":
         # Parity LearningPage._delete_generation (hapus entri history Studio).
         try:
@@ -1799,8 +2965,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         text = (body.get("text") or body.get("question") or "").strip()
         if not nid or not text:
             return {"result": {"ok": False, "msg": "notebook_and_text"}, "skip_snap": True}
-        answer = _chat_ai(uid, nid, text)
-        return {"result": {"ok": True, "answer": answer}, "skip_snap": True}
+        reply = _chat_ai(uid, nid, text, body.get("sourceIds") or body.get("source_ids"))
+        return {"result": {"ok": True, **reply}, "skip_snap": True}
     if path == "/api/ai/solve-math":
         expr = (body.get("expression") or body.get("latex") or body.get("content") or "").strip()
         try:
@@ -1858,20 +3024,60 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         key = (body.get("key") or "").strip()
         return {"result": {"ok": bool(db.delete_song_lyrics(uid, key))}, "skip_snap": True}
     if path == "/api/music/lyrics-import":
-        # Import manual: konten .lrc (bertimestamp) atau .txt polos — auto-deteksi.
+        # A03: import manual .lrc/.txt — parser penuh (tag [ar:][ti:][al:][offset:],
+        # multi-timestamp, jeda) + LAPORAN VALIDASI (bukan lagi toast buta).
         key = (body.get("key") or "").strip()
         content = (body.get("content") or "").strip()
         if not key or not content:
             return {"result": {"ok": False, "msg": "key_and_content"}, "skip_snap": True}
-        import re as _re_lrc
-        is_lrc = bool(_re_lrc.search(r"\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]", content))
-        synced = content if is_lrc else ""
-        plain = "" if is_lrc else content
-        db.save_song_lyrics(uid, key, body.get("title") or "", body.get("artist") or "",
-                            "user", plain, synced, 0)
-        return {"result": {"ok": True, "lyrics": {"plain": plain, "synced": synced,
-                                                  "source": "user", "saved": True, "offsetMs": 0}},
+        try:
+            dur = float(body.get("duration")) if body.get("duration") else None
+        except (TypeError, ValueError):
+            dur = None
+        parsed = _parse_lrc_like(content, duration=dur)
+        if not (parsed["plain"] or parsed["synced"]):
+            return {"result": {"ok": False, "msg": "empty_content",
+                               "report": _lyrics_report_payload(parsed)}, "skip_snap": True}
+        # Metadata dari tag .lrc dipakai bila user tidak mengirim judul/artis.
+        meta = parsed.get("metadata") or {}
+        title = body.get("title") or meta.get("ti") or ""
+        artist = body.get("artist") or meta.get("ar") or ""
+        offset_ms = int(body.get("offsetMs") or 0) or int(parsed.get("offsetMs") or 0)
+        db.save_song_lyrics(uid, key, title, artist, "user",
+                            parsed["plain"], parsed["synced"], offset_ms)
+        return {"result": {"ok": True,
+                           "lyrics": {"plain": parsed["plain"], "synced": parsed["synced"],
+                                      "source": "user", "saved": True, "offsetMs": offset_ms},
+                           "report": _lyrics_report_payload(parsed)},
                 "skip_snap": True}
+    if path == "/api/music/lyrics-validate":
+        # A03: cek file SEBELUM disimpan — UI menampilkan jumlah baris bertimestamp,
+        # rentang waktu, peringatan (tag aneh, baris tanpa timestamp, timestamps ganda,
+        # melewati durasi lagu), dan metadata yang terbaca.
+        key = (body.get("key") or "").strip()
+        content = (body.get("content") or "").strip()
+        if not content:
+            return {"result": {"ok": False, "msg": "empty_content"}, "skip_snap": True}
+        try:
+            dur = float(body.get("duration")) if body.get("duration") else None
+        except (TypeError, ValueError):
+            dur = None
+        parsed = _parse_lrc_like(content, duration=dur)
+        return {"result": {"ok": True, "report": _lyrics_report_payload(parsed),
+                           "key": key}, "skip_snap": True}
+    if path == "/api/music/lyrics-apply":
+        # A02: simpan KANDIDAT pilihan user sebagai lirik tersimpan (source "user-pick")
+        # → pilihan user tidak pernah tertimpa pencarian web berikutnya.
+        key = (body.get("key") or "").strip()
+        plain = body.get("plain") or ""
+        synced = body.get("synced") or ""
+        if not key or not (plain or synced):
+            return {"result": {"ok": False, "msg": "key_and_lyrics"}, "skip_snap": True}
+        db.save_song_lyrics(uid, key, body.get("title") or "", body.get("artist") or "",
+                            "user-pick", plain, synced, 0)
+        return {"result": {"ok": True, "lyrics": {"plain": plain, "synced": synced,
+                                                  "source": "user-pick", "saved": True,
+                                                  "offsetMs": 0}}, "skip_snap": True}
     if path == "/api/music/lyrics-offset":
         key = (body.get("key") or "").strip()
         if not key:
@@ -1954,18 +3160,30 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         )
         return {"result": result}
     if path == "/api/love/memories":
+        # A10: payload lengkap (emoji, tag, favorit, tautan foto) + validasi nyata.
         ca = _cloud_mod()
         payload = {
-            "title": body.get("title") or "",
-            "memory_date": body.get("date") or "",
-            "notes": body.get("description") or "",
+            "title": (body.get("title") or "").strip(),
+            "memory_date": body.get("date") or body.get("memoryDate") or "",
+            "notes": body.get("description") or body.get("notes") or "",
+            "emoji": body.get("emoji") or "",
+            "tags": body.get("tags") or "",
+            "is_favorite": 1 if (body.get("isFavorite") or body.get("is_favorite")) else 0,
         }
+        photo_id = body.get("photoId") or body.get("photo_id") or None
+        if not payload["title"]:
+            return {"result": {"ok": False, "msg": "love_memory_title_required"}, "skip_snap": True}
+        if not payload["memory_date"]:
+            return {"result": {"ok": False, "msg": "love_memory_date_required"}, "skip_snap": True}
         if ca and ca.is_cloud_linked(uid):
             try:
                 return {"result": ca.love_upsert_cloud(uid, "memory", payload)}
             except Exception:
                 pass
-        return {"result": db.add_relationship_memory(uid, payload["title"], payload["memory_date"], payload["notes"])}
+        return {"result": db.add_relationship_memory(
+            uid, payload["title"], payload["memory_date"], payload["notes"],
+            emoji=payload["emoji"], tags=payload["tags"],
+            is_favorite=payload["is_favorite"], photo_id=photo_id)}
     if path == "/api/love/checkin":
         from datetime import date as _date
         payload = {
@@ -1985,13 +3203,31 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             uid, payload["checkin_date"], payload["my_mood"], payload["partner_mood"],
             payload["connection_score"], payload["note"])}
     if path == "/api/love/events":
+        # A09: payload lengkap (ikon, lokasi, Special Day, pengulangan, pengingat).
+        # Server cloud lama mengabaikan kunci yang tak dikenalnya, jadi aman dikirim.
+        payload = {
+            "title": body.get("title") or "Event",
+            "event_date": body.get("date") or body.get("eventDate") or "",
+            "category": body.get("category") or "date",
+            "notes": body.get("notes") or "",
+            "icon": body.get("icon") or "",
+            "location": body.get("location") or "",
+            "is_special": 1 if (body.get("isSpecial") or body.get("is_special")) else 0,
+            "recurring": body.get("recurring") or "none",
+            "remind_days_before": body.get("remindDaysBefore") or body.get("remind_days_before") or 0,
+        }
+        if not payload["event_date"]:
+            return {"result": {"ok": False, "msg": "love_event_date_required"}}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                return {"result": ca.love_upsert_cloud(uid, "event", dict(payload, notes=payload["notes"]))}
+            except Exception:
+                pass
         return {"result": db.add_relationship_event(
-            uid,
-            body.get("title") or "Event",
-            body.get("date") or body.get("eventDate") or "",
-            body.get("category") or "date",
-            body.get("notes") or "",
-        )}
+            uid, payload["title"], payload["event_date"], payload["category"], payload["notes"],
+            icon=payload["icon"], location=payload["location"], is_special=payload["is_special"],
+            recurring=payload["recurring"], remind_days_before=payload["remind_days_before"])}
     if path == "/api/love/weekly":
         return {"result": db.save_relationship_weekly_review(
             uid,
@@ -2040,7 +3276,25 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
         return {"result": {"ok": False, "msg": "path_required"}}
     if path == "/api/love/bucket":
-        return {"result": db.add_relationship_bucket_item(uid, body.get("title") or "Goal")}
+        # A10: kategori, target tanggal, catatan & prioritas (dulu hanya judul).
+        title = (body.get("title") or "").strip()
+        if not title:
+            return {"result": {"ok": False, "msg": "love_bucket_title_required"}, "skip_snap": True}
+        payload = {
+            "category": body.get("category") or "dream",
+            "target_date": body.get("targetDate") or body.get("target_date") or None,
+            "notes": body.get("notes") or "",
+            "priority": int(body.get("priority") or 0),
+        }
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                return {"result": ca.love_upsert_cloud(uid, "bucket_item", dict(payload, title=title))}
+            except Exception:
+                pass
+        return {"result": db.add_relationship_bucket_item(
+            uid, title, payload["category"], payload["target_date"],
+            notes=payload["notes"], priority=payload["priority"])}
     if len(parts) >= 5 and parts[1] == "love" and parts[2] == "bucket" and parts[4] == "toggle":
         bid = int(parts[3])
         items = db.get_relationship_bucket_items(uid) or []
@@ -2050,6 +3304,167 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 done = not bool(it.get("done") or it.get("is_done"))
                 break
         return {"result": db.toggle_relationship_bucket_item(uid, bid, done)}
+
+    # --- A09: Love Space → tab plans (edit acara) ---
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "events" and parts[4] == "update":
+        try:
+            eid = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        fields = {}
+        for src_key, dst_key in (("title", "title"), ("date", "date"), ("eventDate", "date"),
+                                 ("category", "category"), ("notes", "notes"), ("icon", "icon"),
+                                 ("location", "location"), ("isSpecial", "isSpecial"),
+                                 ("is_special", "isSpecial"), ("recurring", "recurring"),
+                                 ("remindDaysBefore", "remindDaysBefore"),
+                                 ("remind_days_before", "remindDaysBefore")):
+            if src_key in body:
+                fields[dst_key] = body.get(src_key)
+        if "title" in fields and not str(fields["title"] or "").strip():
+            return {"result": {"ok": False, "msg": "love_event_title_required"}, "skip_snap": True}
+        res = db.update_relationship_event(uid, eid, **fields)
+        if not res.get("ok"):
+            return {"result": res, "skip_snap": True}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                row = res.get("event") or {}
+                ca.love_upsert_cloud(uid, "event", {
+                    "title": row.get("title") or "",
+                    "event_date": row.get("event_date") or "",
+                    "category": row.get("category") or "date",
+                    "notes": row.get("notes") or "",
+                    "icon": row.get("icon") or "",
+                    "location": row.get("location") or "",
+                    "is_special": int(row.get("is_special") or 0),
+                    "recurring": row.get("recurring") or "none",
+                    "remind_days_before": int(row.get("remind_days_before") or 0),
+                }, record_id=row.get("cloud_id") or None)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "eventId": str(eid)}}
+
+    # --- A10: Love Space → tab memories & bucket list ---
+    # 1) edit kenangan (dulu: hanya tambah + hapus) + tautkan foto/tag/emoji
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "events" and parts[4] == "create-reminder":
+        # A12: "Buat pengingat" dari hari istimewa Love Space.
+        # `<id>` boleh id acara (angka) ATAU kunci profil: my_birthdate,
+        # partner_birthdate, start_date (ulang tahun & hari jadi dari profil).
+        # Idempoten lewat `reminders.source_ref`, dan otomatis `repeat_type='yearly'`
+        # untuk acara yang berulang tahunan → mesin Reminder kini mengenal Tahunan.
+        try:
+            days_before = int(body.get("daysBefore") or body.get("days_before") or 0) or None
+        except (TypeError, ValueError):
+            days_before = None
+        res = db.create_reminder_from_special_day(
+            uid, parts[3], days_before=days_before,
+            time_str=(body.get("time") or "09:00"))
+        if not res.get("ok"):
+            msg = {"not_found": "learning_not_found",
+                   "no_date": "love_reminder_no_date",
+                   "bad_event": "love_reminder_bad_event"}.get(res.get("code") or "", "msg_error")
+            return {"result": {"ok": False, "msg": msg}, "skip_snap": True}
+        return {"result": res, "skip_snap": True}
+
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "memories" and parts[4] == "update":
+        try:
+            mid = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        fields = {}
+        for key in ("title", "date", "memoryDate", "memory_date", "notes", "description",
+                    "emoji", "tags", "isFavorite", "is_favorite", "photoId", "photo_id"):
+            if key in body:
+                fields[key] = body.get(key)
+        if "title" in fields and not str(fields["title"] or "").strip():
+            return {"result": {"ok": False, "msg": "love_memory_title_required"}, "skip_snap": True}
+        if "memoryDate" in fields or "memory_date" in fields:
+            stamp = fields.get("memoryDate") or fields.get("memory_date")
+            if not str(stamp or "").strip():
+                return {"result": {"ok": False, "msg": "love_memory_date_required"}, "skip_snap": True}
+        res = db.update_relationship_memory(uid, mid, **fields)
+        if not res.get("ok"):
+            return {"result": res, "skip_snap": True}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                row = res.get("memory") or {}
+                ca.love_upsert_cloud(uid, "memory", _love_memory_cloud_payload(row),
+                                     record_id=row.get("cloud_id") or None)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "memoryId": str(mid)}}
+
+    # 2) bintang favorit kenangan (toggle)
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "memories" and parts[4] == "favorite":
+        try:
+            mid = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        res = db.toggle_relationship_memory_favorite(uid, mid)
+        if not res.get("ok"):
+            return {"result": res, "skip_snap": True}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                row = db.get_relationship_memory(uid, mid) or {}
+                ca.love_upsert_cloud(uid, "memory", _love_memory_cloud_payload(row),
+                                     record_id=row.get("cloud_id") or None)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "favorite": bool(res.get("favorite")), "memoryId": str(mid)}}
+
+    # 3) edit item bucket list (judul/kategori/target/catatan/prioritas/selesai)
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "bucket" and parts[4] == "update":
+        try:
+            bid = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        fields = {}
+        for key in ("title", "category", "targetDate", "target_date", "date", "notes",
+                    "priority", "isDone", "is_done", "done"):
+            if key in body:
+                fields[key] = body.get(key)
+        if "title" in fields and not str(fields["title"] or "").strip():
+            return {"result": {"ok": False, "msg": "love_bucket_title_required"}, "skip_snap": True}
+        res = db.update_relationship_bucket_item(uid, bid, **fields)
+        if not res.get("ok"):
+            return {"result": res, "skip_snap": True}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                row = res.get("item") or {}
+                ca.love_upsert_cloud(uid, "bucket_item", _love_bucket_cloud_payload(row),
+                                     record_id=row.get("cloud_id") or None)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "itemId": str(bid)}}
+
+    # 4) item selesai → kenangan (satu klik, idempoten)
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "bucket" and parts[4] == "promote-to-memory":
+        try:
+            bid = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        res = db.promote_relationship_bucket_item(uid, bid)
+        if not res.get("ok"):
+            return {"result": res, "skip_snap": True}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                mem = db.get_relationship_memory(uid, res["memory_id"]) or {}
+                ca.love_upsert_cloud(uid, "memory", _love_memory_cloud_payload(mem),
+                                     record_id=mem.get("cloud_id") or None)
+            except Exception:
+                pass
+            try:
+                item = db.get_relationship_bucket_item(uid, bid) or {}
+                ca.love_upsert_cloud(uid, "bucket_item", _love_bucket_cloud_payload(item),
+                                     record_id=item.get("cloud_id") or None)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "memoryId": str(res.get("memory_id") or ""),
+                           "itemId": str(bid), "already": bool(res.get("already"))}}
 
     # --- Love parity: delete handlers per tab (parity tombol "love_delete_selected") ---
     if len(parts) >= 5 and parts[1] == "love" and parts[2] == "memories" and parts[4] == "delete":
@@ -2492,5 +3907,140 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             visibility=body.get("visibility"),
         )
         return {"result": result}
+
+
+    # ── A11: connection · cycle · gallery diprofesionalkan ──────────────
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "cycles" and parts[4] == "update":
+        # Edit riwayat siklus (dulu hanya tambah + hapus).
+        try:
+            cyc_id = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        kwargs = {}
+        for key, arg in (("startDate", "start_date"), ("start_date", "start_date"),
+                         ("endDate", "end_date"), ("end_date", "end_date"),
+                         ("notes", "notes")):
+            if key in body and arg not in kwargs:
+                kwargs[arg] = body.get(key)
+        res = db.update_menstrual_cycle(uid, cyc_id, **kwargs)
+        if not res.get("ok"):
+            code = res.get("code") or ""
+            msg = {"start_date": "love_cycle_date_required",
+                   "range": "love_cycle_range_invalid",
+                   "not_found": "learning_not_found",
+                   "forbidden": "learning_not_found"}.get(code, "love_cycle_no_fields")
+            return {"result": {"ok": False, "msg": msg}, "skip_snap": True}
+        ca = _cloud_mod()
+        if ca and ca.is_cloud_linked(uid):
+            try:
+                row = res.get("cycle") or {}
+                ca.love_upsert_cloud(uid, "cycle", {
+                    "start_date": row.get("start_date") or "",
+                    "end_date": row.get("end_date") or "",
+                    "notes": row.get("notes") or "",
+                }, record_id=row.get("cloud_id") or None)
+            except Exception:
+                pass
+        return {"result": {"ok": True, "cycleId": str(cyc_id)}}
+
+    if path == "/api/love/cycles/create-reminder":
+        # Tombol "Jadikan pengingat" di tab Cycle: buat pengingat H-n dari
+        # prediksi siklus berikutnya. Idempoten — pengingat dengan judul &
+        # waktu sama tidak digandakan (klik dua kali = aman).
+        pred = db.get_menstrual_prediction(uid) or {}
+        if not pred.get("predicted_start"):
+            return {"result": {"ok": False, "msg": "love_cycle_no_data"}, "skip_snap": True}
+        try:
+            days_before = int(body.get("daysBefore") or body.get("days_before") or 3)
+        except (TypeError, ValueError):
+            days_before = 3
+        days_before = max(0, min(30, days_before))
+        from datetime import date as _d, timedelta as _td
+        try:
+            start = _d.fromisoformat(str(pred["predicted_start"])[:10])
+        except (ValueError, TypeError):
+            return {"result": {"ok": False, "msg": "love_cycle_no_data"}, "skip_snap": True}
+        when = start - _td(days=days_before)
+        title = (body.get("title") or "").strip() or "Love Space · cycle reminder"
+        time_str = (body.get("time") or "09:00").strip()
+        if len(time_str) == 5:
+            time_str += ":00"
+        stamp = f"{when.isoformat()} {time_str}"
+        description = (body.get("description") or "").strip()
+        existing = None
+        try:
+            for rem in (db.get_reminders(uid) or []):
+                if (rem.get("title") or "") == title and                         str(rem.get("reminder_datetime") or "").startswith(when.isoformat()):
+                    existing = rem
+                    break
+        except Exception:
+            existing = None
+        if existing:
+            return {"result": {"ok": True, "already": True, "reminderId": str(existing.get("id")),
+                               "reminderDate": when.isoformat(), "daysBefore": days_before},
+                    "skip_snap": True}
+        res = db.add_reminder(uid, title, description, stamp, repeat_type="none")
+        # A11 (temuan uji): `add_reminder` mengembalikan key `reminder_id`, bukan `id`
+        # → dulu `reminderId` selalu kosong walau pengingatnya benar-benar dibuat.
+        return {"result": {"ok": bool(res.get("ok")), "already": False,
+                           "reminderId": str(res.get("reminder_id") or res.get("id") or ""),
+                           "reminderDate": when.isoformat(), "daysBefore": days_before},
+                "skip_snap": True}
+
+    if len(parts) >= 5 and parts[1] == "love" and parts[2] == "albums" and parts[4] == "cover":
+        # Sampul album (foto otomatis dimasukkan bila belum jadi anggota album).
+        try:
+            alb_id = int(parts[3])
+        except (TypeError, ValueError):
+            return {"result": {"ok": False, "msg": "learning_not_found"}, "skip_snap": True}
+        res = db.set_love_album_cover(uid, alb_id, body.get("photoId") or body.get("photo_id"))
+        if not res.get("ok"):
+            return {"result": {"ok": False, "msg": "love_album_invalid"}, "skip_snap": True}
+        return {"result": {"ok": True, "albumId": str(alb_id),
+                           "photoId": str(res.get("photo_id") or ""),
+                           "added": bool(res.get("added"))}}
+
+    if path == "/api/love/photos/bulk":
+        # Aksi massal galeri: hapus / ubah visibilitas / pindah album sekaligus.
+        ids = body.get("ids") or body.get("photoIds") or []
+        if isinstance(ids, str):
+            ids = [x for x in ids.split(",") if x.strip()]
+        action = (body.get("action") or "").strip()
+        # A11 (perbaikan audit): `cloud_id` WAJIB dibaca sebelum baris dihapus.
+        # Versi sebelumnya membacanya setelah `bulk_love_photos`, jadi foto sudah
+        # tidak ada → penghapusan massal tidak pernah masuk antrean sinkron cloud
+        # (foto tetap tertinggal di Supabase & storage).
+        cloud_deletes = []
+        if action == "delete":
+            for pid in (ids or []):
+                try:
+                    ph = db.get_love_space_photo_raw(int(pid))
+                except (TypeError, ValueError):
+                    continue
+                except Exception:
+                    continue
+                # Hanya foto milik pengirim yang benar-benar terhapus oleh bulk.
+                if ph and ph.get("cloud_id") and int(ph.get("owner_user_id") or 0) == int(uid):
+                    cloud_deletes.append((int(pid), str(ph.get("cloud_id"))))
+        res = db.bulk_love_photos(uid, ids, action,
+                                  album_id=body.get("albumId") or body.get("album_id"),
+                                  visibility=body.get("visibility"))
+        if res.get("ok") and action == "delete" and cloud_deletes:
+            # Sinkronkan penghapusan ke cloud (pola sama dengan hapus satu foto).
+            ca = _cloud_mod()
+            if ca and ca.is_cloud_linked(uid):
+                for pid, cid in cloud_deletes:
+                    try:
+                        db.enqueue_sync(uid, "gallery_photo", pid, "delete",
+                                        {"cloud_photo_id": cid})
+                    except Exception:
+                        pass
+        if not res.get("ok"):
+            msg = {"no_photos": "love_gallery_none_selected",
+                   "bad_action": "love_gallery_invalid_action",
+                   "album": "love_album_invalid",
+                   "invalid": "love_gallery_invalid_visibility"}.get(res.get("code") or "", "msg_error")
+            return {"result": {"ok": False, "msg": msg}, "skip_snap": True}
+        return {"result": res, "skip_snap": True}
 
     return None

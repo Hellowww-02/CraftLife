@@ -11,15 +11,32 @@ import json
 import textwrap
 import traceback
 
+# A08: SDK resmi saat ini adalah `google.genai` (paket `google-genai`).
+# `google.generativeai` sudah END OF SUPPORT (tidak lagi menerima update/bugfix),
+# jadi ia hanya dipakai sebagai jaring pengaman bila `google.genai` belum terpasang.
+genai = None                     # modul SDK yang aktif (baru ATAU lama)
+LEGACY_SDK = False               # True bila terpaksa memakai google.generativeai
+SDK_NAME = "google.genai"
 try:
-    import google.generativeai as genai
+    from google import genai  # type: ignore  # paket: google-genai
     GEMINI_AVAILABLE = True
     GEMINI_IMPORT_ERROR = ""
 except Exception as e:
-    # Optional AI dependency must never prevent the whole desktop app from starting.
-    GEMINI_AVAILABLE = False
-    GEMINI_IMPORT_ERROR = str(e)
-    genai = None
+    try:
+        import google.generativeai as genai  # type: ignore  # deprecated
+        GEMINI_AVAILABLE = True
+        GEMINI_IMPORT_ERROR = ""
+        LEGACY_SDK = True
+        SDK_NAME = "google.generativeai"
+        print(
+            "[learning_helper] PERINGATAN: `google.genai` tidak ditemukan — memakai "
+            "`google.generativeai` yang sudah END OF SUPPORT. Jalankan: pip install -U google-genai"
+        )
+    except Exception as e2:
+        # Optional AI dependency must never prevent the whole desktop app from starting.
+        GEMINI_AVAILABLE = False
+        GEMINI_IMPORT_ERROR = f"{e} / {e2}"
+        genai = None
 
 # ── Chunking ─────────────────────────────────────────────────────────────
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100):
@@ -140,167 +157,156 @@ def fetch_youtube_transcript(url: str) -> str:
     return "[Transcript Youtube tidak ditemukan. Coba paste manual transcript atau gunakan link website.]"
 
 # ── Gemini ───────────────────────────────────────────────────────────────
-def _get_model(api_key: str, model_name: str = "gemini-2.0-flash"):
-    # Coba SDK baru dulu (google.genai) untuk AQ Auth keys, fallback ke SDK lama (google.generativeai)
-    # SDK baru handle AQ... lebih baik
+def _clean_model_name(model_name: str) -> str:
+    """`models/gemini-2.5-flash` → `gemini-2.5-flash` (SDK baru tidak pakai prefix)."""
+    name = str(model_name or "").strip().replace("models/", "")
+    if name == "gemini-pro":
+        name = "gemini-1.5-flash"
+    return name
+
+
+def _new_sdk_client(api_key: str):
+    """Buat klien `google.genai`. Dipisah agar mudah di-mock saat uji."""
+    return genai.Client(api_key=api_key.strip())
+
+
+def _extract_text(resp) -> str:
+    """Ambil teks dari respons SDK (dua bentuk: `.text` atau daftar `parts`)."""
+    text = getattr(resp, "text", None)
+    if text:
+        return text
+    try:
+        parts = resp.candidates[0].content.parts
+        return "".join([p.text for p in parts if getattr(p, "text", None)])
+    except Exception:
+        return ""
+
+
+def _generate_once(api_key: str, model_name: str, prompt: str, temperature: float = 0.7) -> str:
+    """Satu panggilan generate dengan SDK aktif. Raise RuntimeError bila gagal."""
+    clean_name = _clean_model_name(model_name)
+    if LEGACY_SDK:
+        genai.configure(api_key=api_key.strip())  # type: ignore[attr-defined]
+        model = genai.GenerativeModel(clean_name)  # type: ignore[attr-defined]
+        resp = model.generate_content(prompt, generation_config={"temperature": temperature})
+        if not getattr(resp, "candidates", None):
+            raise RuntimeError("blocked")
+        return _extract_text(resp)
+    from google.genai import types  # type: ignore
+    client = _new_sdk_client(api_key)
+    resp = client.models.generate_content(
+        model=clean_name,
+        contents=prompt,
+        config=types.GenerateContentConfig(temperature=temperature),
+    )
+    text = _extract_text(resp)
+    if not text:
+        raise RuntimeError("empty response")
+    return text
+
+
+def _get_model(api_key: str, model_name: str = "gemini-2.5-flash"):
+    """Validasi API key & kembalikan penanda model yang siap dipakai.
+
+    A08: hanya untuk kompatibilitas pemanggil lama (`call_gemini` kini memakai
+    `_generate_once`). Mengembalikan `((sdk, clean_name), None)` atau `(None, pesan)`.
+    """
     if not api_key or not api_key.strip():
         return None, "API Key Gemini belum diisi. Isi di Settings → Learning AI"
     if not (api_key.startswith("AIza") or api_key.startswith("AQ.")):
         return None, "API Key terlihat tidak valid (harus diawali AIza... atau AQ...)"
-    
-    # Coba SDK baru (google.genai) - untuk AQ keys
-    try:
-        from google import genai as new_genai
-        from google.genai import types
-        # Untuk SDK baru, model name tanpa models/ prefix
-        clean_name = model_name.replace("models/", "")
-        # Map nama lama ke nama baru jika perlu
-        if clean_name == "gemini-pro":
-            clean_name = "gemini-1.5-flash"
-        try:
-            client = new_genai.Client(api_key=api_key.strip())
-            # Test dengan list models untuk validasi
-            return ("new_sdk", client, clean_name), None
-        except Exception as e:
-            last_err_new = str(e)
-            # Jika bukan 404, lanjut coba SDK lama
-            if "404" not in last_err_new and "not found" not in last_err_new.lower():
-                pass
-    except ImportError:
-        pass
-    except Exception:
-        pass
-    
-    # Fallback ke SDK lama (google.generativeai)
     if not GEMINI_AVAILABLE:
-        return None, "google-generativeai belum terinstall. Jalankan: pip install google-generativeai\nAtau untuk AQ keys: pip install google-genai"
-    candidates = [model_name]
-    if not model_name.startswith("models/"):
-        candidates.append(f"models/{model_name}")
-    else:
-        candidates.append(model_name.replace("models/", ""))
-    # Hapus gemini-pro yang deprecated
-    candidates = [c for c in candidates if "gemini-pro" not in c or "1.5-pro" in c]
-    last_err = None
-    for m in candidates:
-        try:
-            genai.configure(api_key=api_key.strip())
-            model = genai.GenerativeModel(m)
-            return model, None
-        except Exception as e:
-            last_err = str(e)
-            if "404" in last_err or "not found" in last_err.lower():
-                continue
-            return None, f"Gagal init Gemini: {e}"
-    return None, f"Gagal init Gemini (404): {last_err}"
+        return None, GEMINI_IMPORT_ERROR or "SDK Gemini belum terpasang"
+    return (SDK_NAME, _clean_model_name(model_name)), None
+
 
 def call_gemini(prompt: str, api_key: str, system_instruction: str = None, model_name: str = "gemini-2.5-flash", temperature: float = 0.7) -> str:
-    # Auto-detect: jika model_name adalah 2.0/1.5 yang lama dan gagal, akan fallback ke 2.5
+    """Panggil Gemini (SDK `google.genai`) dengan fallback model bila 429/404.
 
-    """Panggil Gemini dengan fallback model jika 429 quota. Return text atau pesan user-friendly."""
-    # Fallback models - update 2026-08: 2.5 series yang tersedia untuk AQ keys
-    # Dari error Models tersedia: gemini-2.5-flash, 2.5-pro, dll. 404 untuk 2.0/1.5 lama
+    Return teks jawaban, atau pesan ramah-pengguna (prefixed `[MOCK ...]`) yang
+    membuat UI tetap bisa menampilkan sesuatu walau key/quota bermasalah.
+    """
     models_to_try = [
         model_name,
         "gemini-2.5-flash",
-        "models/gemini-2.5-flash",
         "gemini-2.5-pro",
-        "models/gemini-2.5-pro",
         "gemini-2.5-flash-lite",
-        "models/gemini-2.5-flash-lite",
         "gemini-2.0-flash",
-        "models/gemini-2.0-flash",
         "gemini-1.5-flash",
-        "models/gemini-1.5-flash",
         "gemma-4-26b-a4b-it",
-        "models/gemma-4-26b-a4b-it",
     ]
     seen = set()
     unique_models = []
     for m in models_to_try:
-        if m not in seen:
-            seen.add(m)
+        clean = _clean_model_name(m)
+        if clean and clean not in seen:
+            seen.add(clean)
             unique_models.append(m)
-    
+
+    full_prompt = prompt
+    if system_instruction:
+        full_prompt = f"System: {system_instruction}\n\nUser: {prompt}"
+
+    if not GEMINI_AVAILABLE:
+        return (
+            f"[MOCK - {GEMINI_IMPORT_ERROR}]\n\nPrompt preview:\n{prompt[:600]}..."
+            "\n\nPasang SDK: pip install -U google-genai (isi API Key di Learning → 🔑 API Key)."
+        )
+    if not api_key or not api_key.strip():
+        return "[MOCK - API key belum diisi]\n\nIsi API Key Gemini di Learning → 🔑 API Key untuk hasil real."
+
     last_error = None
     for m in unique_models:
-        model_info, err = _get_model(api_key, m)
-        if err:
-            last_error = err
-            if "quota" not in err.lower() and "429" not in err:
-                return f"[MOCK - {err}]\n\nPrompt preview:\n{prompt[:600]}...\n\n[Isi API Key Gemini di Learning → 🔑 API Key untuk hasil real]"
-            continue
         try:
-            full_prompt = prompt
-            if system_instruction:
-                full_prompt = f"System: {system_instruction}\n\nUser: {prompt}"
-            # Handle new SDK vs old SDK
-            if isinstance(model_info, tuple) and model_info[0] == "new_sdk":
-                _, client, clean_name = model_info
-                from google.genai import types
-                resp = client.models.generate_content(model=clean_name, contents=full_prompt, config=types.GenerateContentConfig(temperature=temperature))
-                # New SDK response handling
-                try:
-                    return resp.text
-                except:
-                    return str(resp)
-            else:
-                model = model_info
-                resp = model.generate_content(full_prompt, generation_config=genai.GenerationConfig(temperature=temperature))
-            if not resp.candidates:
-                return "[Gemini blocked response - coba sederhanakan prompt atau ganti topik]"
-            try:
-                return resp.text
-            except:
-                parts = resp.candidates[0].content.parts
-                return "".join([p.text for p in parts if hasattr(p, 'text')])
+            return _generate_once(api_key, m, full_prompt, temperature)
         except Exception as e:
             err_str = str(e)
             last_error = err_str
-            if "429" in err_str or "quota" in err_str.lower() or "exceeded" in err_str.lower() or "404" in err_str or "not found" in err_str.lower():
-                print(f"[Gemini] {m} tidak tersedia/quota, coba model berikutnya...")
+            if any(tok in err_str.lower() for tok in ("429", "quota", "exceeded", "404", "not found", "empty response")):
+                print(f"[Gemini] {_clean_model_name(m)} tidak tersedia/quota, coba model berikutnya...")
                 continue
             traceback.print_exc()
-            return f"[Error Gemini ({m}): {e}]"
-    
-    # Jika semua model 404, coba list models dan auto-pilih yang tersedia
-    _hint = ""
-    _auto_models = []
+            return f"[Error Gemini ({_clean_model_name(m)}): {e}]"
+
+    # Semua model gagal → coba satu model apa pun yang benar-benar tersedia.
+    hint = ""
     try:
-        from google import genai as _new_genai
-        _client = _new_genai.Client(api_key=api_key.strip())
-        _models = [m.name for m in _client.models.list()]
-        if _models:
-            _hint = f"\nModels tersedia: {', '.join(_models[:5])}"
-            # Simpan untuk auto-try di iterasi berikutnya (jika ada)
-            _auto_models = _models[:3]
-            # Coba langsung satu model dari list jika fallback habis
-            for _m in _auto_models:
-                clean = _m.replace("models/", "")
-                if clean not in [m.replace("models/", "") for m in models_to_try]:
-                    try:
-                        _c2 = _new_genai.Client(api_key=api_key.strip())
-                        _resp = _c2.models.generate_content(model=clean, contents="hai")
-                        return _resp.text
-                    except:
+        if not LEGACY_SDK:
+            client = _new_sdk_client(api_key)
+            names = [getattr(x, "name", "") for x in client.models.list()]
+            names = [n for n in names if n]
+            if names:
+                hint = f"\nModels tersedia: {', '.join(names[:5])}"
+                for n in names[:3]:
+                    if _clean_model_name(n) in seen:
                         continue
-    except Exception as _e:
-        _hint = f"\nListModels gagal: {_e}" if "_e" not in locals() else ""
-        pass
-    
+                    try:
+                        return _generate_once(api_key, n, full_prompt, temperature)
+                    except Exception:
+                        continue
+    except Exception as e:
+        hint = f"\nListModels gagal: {e}"
+
+    sdk_hint = (
+        "SDK aktif: **google.genai** ✅"
+        if not LEGACY_SDK
+        else "SDK aktif: google.generativeai ⚠️ (deprecated) → jalankan `pip install -U google-genai`"
+    )
     return (
         "[Quota/Model Error] Gemini menolak semua model.\n\n"
+        f"{sdk_hint}\n\n"
         "Penyebab paling sering untuk key baru `AQ...`:\n"
-        "1. **Generative Language API belum di-Enable** (404) → Buka https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com → Pilih project 'gen-lang-client-093...' → Klik **Enable** → Tunggu 1 menit\n"
-        "2. Quota 0 → Tunggu 2 menit atau buat key baru di **New Project**\n"
-        "3. Model gemini-pro & 1.5-pro sudah deprecated untuk v1beta → sudah di-handle\n\n"
+        "1. **Generative Language API belum di-Enable** (404) → Buka https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com → pilih project → **Enable** → tunggu 1 menit\n"
+        "2. Quota 0 → tunggu 2 menit atau buat key baru di **New Project**\n"
+        "3. Model lama (gemini-pro/1.5-pro) sudah deprecate → sudah di-handle otomatis\n\n"
         "Langkah cepat:\n"
         "1. Enable API di link atas\n"
-        "2. pip install google-genai (sudah ada di requirements)\n"
+        "2. pip install -U google-genai\n"
         "3. Coba chat lagi dengan topik simpel `hai`\n"
         "4. Cek https://aistudio.google.com/app/apikey → Usage\n\n"
-        f"Detail: {last_error[:600] if last_error else 'Unknown'}{_hint}"
+        f"Detail: {str(last_error)[:600] if last_error else 'Unknown'}{hint}"
     )
+
 
 # ── RAG sederhana (keyword search, tanpa vector DB) ─────────────────────
 def find_relevant_chunks(all_chunks: list, query: str, top_k: int = 3):
@@ -400,10 +406,35 @@ def podcast_voice_pair(language: str, seed_text: str = ""):
 
 # ── Studio Generators ────────────────────────────────────────────────────
 def generate_studio_content(studio_type: str, query: str, context_chunks: list, api_key: str,
-                            language_hint: str = None, count: int = None) -> str:
+                            language_hint: str = None, count: int = None,
+                            mc_count: int = None, essay_count: int = None,
+                            difficulty: str = None, language: str = None, style: str = None,
+                            length: str = None, depth: int = None, branches: int = None,
+                            subs: int = None, sections: list = None, exercises: int = None,
+                            faq_count: int = None, granularity: str = None,
+                            absolute_dates: bool = None, focus: str = None,
+                            instructions: str = None) -> str:
     """Generate konten Studio berdasarkan type.
 
-    `count` hanya dipakai untuk quiz & flashcards (jumlah soal/kartu 10–30).
+    A04: quiz memakai DUA counter terpisah — `mc_count` (pilihan ganda) dan `essay_count`
+    (esai), masing-masing 0–30 dan **total gabungan ≤ 30** (dijaga di sini juga, bukan
+    hanya di UI). Default bila tidak dikirim: **10 PG + 5 esai**.
+    `count` lama tetap dihormati (backward compatible) → dibagi 2/3 PG : 1/3 esai;
+    `count` juga masih dipakai flashcards (5–30, default 15).
+
+    A05: opsi konfigurasi per tipe (semua OPSIONAL). Bila tidak ada satu pun yang dikirim,
+    prompt & hasil **identik dengan sebelumnya** (zero-regression):
+      - `difficulty`  : easy | mixed | hard            (quiz, flashcards)
+      - `language`    : id | en                        (semua tipe; None = deteksi otomatis)
+      - `style`       : term|qa|formula (kartu) · casual|formal|debate (podcast)
+                        brief|detail (FAQ jawaban) · bullets|narrative (ringkasan)
+      - `length`      : short | standard | deep        (podcast jumlah giliran, ringkasan kata)
+      - `depth`/`branches`/`subs` : mind map (1–3 / 3–8 / 2–6)
+      - `sections`    : study guide (summary, concepts, examples, practice, conclusion)
+      - `exercises`   : study guide 3–10 soal latihan
+      - `faq_count`   : FAQ 5–15 Q&A
+      - `granularity` : day|week|month|year + `absolute_dates` (timeline)
+      - `focus` / `instructions` : arahan bebas user (ditempel ke prompt tipe apa pun)
     """
     context = "\n\n---\n\n".join(context_chunks[:6])  # batasi 6 chunks biar tidak kepanjangan
     if not context.strip():
@@ -411,24 +442,153 @@ def generate_studio_content(studio_type: str, query: str, context_chunks: list, 
     detected_language = language_hint or detect_content_language(
         f"{query}\n{' '.join(context_chunks[:3])}"
     )
+    # A05: opsi bahasa user mengalahkan deteksi otomatis (kecuali 'auto'/None).
+    if language in ("id", "en"):
+        detected_language = language
     language_name = _LANGUAGE_NAMES.get(detected_language, "English")
     try:
         n = int(count)
     except (TypeError, ValueError):
         n = 0
+
+    def _clamp_cnt(value, lo, hi):
+        if value is None or value == "":
+            return None
+        try:
+            return max(lo, min(hi, int(value)))
+        except (TypeError, ValueError):
+            return None
+
+    # A04: dua counter terpisah — Pilihan Ganda & Essay (default 10 + 5, total ≤ 30).
+    mc_in = _clamp_cnt(mc_count, 0, 30)
+    essay_in = _clamp_cnt(essay_count, 0, 30)
     if studio_type == "quiz":
-        n = max(10, min(30, n or 15))
-    elif studio_type == "flashcards":
-        n = max(10, min(30, n or 15))
-    quiz_count = n if studio_type == "quiz" else 15
+        if mc_in is None and essay_in is None:
+            # Jalur lama (backward compatible): satu `count` (default 15) → 2/3 PG : 1/3 esai.
+            total = max(10, min(30, n or 15))
+            quiz_mc = min(total, max(0, round(total * 2 / 3)))
+            quiz_essay = total - quiz_mc
+        else:
+            quiz_mc = mc_in if mc_in is not None else 0
+            quiz_essay = essay_in if essay_in is not None else 0
+            if quiz_mc + quiz_essay <= 0:
+                quiz_mc, quiz_essay = 10, 5          # tidak boleh 0 soal sama sekali
+            if quiz_mc + quiz_essay > 30:
+                # Guard sisi server: total gabungan maksimum 30 soal.
+                quiz_essay = max(0, 30 - min(30, quiz_mc))
+        quiz_count = quiz_mc + quiz_essay
+    else:
+        quiz_count, quiz_mc, quiz_essay = 15, 10, 5
+    if studio_type == "flashcards":
+        # A05: rentang kartu 5–30 (dulu 10–30) — default tetap 15.
+        n = max(5, min(30, n or 15))
     flash_count = n if studio_type == "flashcards" else 15
-    quiz_mc = max(3, round(quiz_count * 0.7))
-    quiz_essay = quiz_count - quiz_mc
-    
+
+    # A04: catatan tambahan di prompt bila salah satu jenis soal dimatikan (0 soal).
+    count_note = ""
+    if studio_type == "quiz":
+        if quiz_mc == 0:
+            count_note = "JANGAN buat soal pilihan ganda sama sekali (hanya esai)."
+        elif quiz_essay == 0:
+            count_note = "JANGAN buat soal esai sama sekali (hanya pilihan ganda)."
+        else:
+            count_note = "Campur keduanya sesuai jumlah di atas."
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  A05 — opsi konfigurasi per tipe (semua opsional, default = perilaku lama)
+    # ══════════════════════════════════════════════════════════════════════════
+    _diff_map = {
+        "easy": "MUDAH — fokus ingatan & pemahaman dasar, kalimat sederhana.",
+        "mixed": "CAMPURAN — variasikan dari ingatan dasar sampai penerapan.",
+        "hard": "SULIT — dominan analisis, sintesis, dan studi kasus kompleks.",
+    }
+    difficulty_line = (f"\nTINGKAT KESULITAN: {_diff_map[difficulty]}"
+                       if difficulty in _diff_map else "")
+
+    focus_line = f"\nFOKUS KHUSUS (utamakan bagian ini): {str(focus).strip()}" if str(focus or "").strip() else ""
+    instr_line = (f"\nINSTRUKSI TAMBAHAN DARI USER (WAJIB dipatuhi selama tidak melanggar format output): "
+                  f"{str(instructions).strip()}") if str(instructions or "").strip() else ""
+    # Ditempel ke SEMUA prompt di bawah (durutan: kesulitan → fokus → instruksi).
+    extra = difficulty_line + focus_line + instr_line
+
+    # Podcast / Audio Overview
+    _host_map = {
+        "casual": "Santai & akrab — bahasa sehari-hari, sesekali lelucon ringan, seperti dua teman ngobrol.",
+        "formal": "Formal & edukatif — bahasa baku dan sopan, penjelasan runut dan terstruktur.",
+        "debate": "Diskusi kritis — Host B aktif menantang asumsi Host A, ada bantahan dan sanggahan sehat.",
+    }
+    _turns_map = {"short": "6-8", "standard": "14-24", "deep": "26-36"}
+    host_note = _host_map.get(style, "")
+    host_line = f"\nGAYA PEMBAWA ACARA: {host_note}" if host_note else ""
+    turns_line = _turns_map.get(length, "14-24")
+
+    # Flashcards
+    _card_map = {
+        "term": "Setiap kartu: sisi depan = ISTILAH/konsep singkat, sisi belakang = DEFINISI jelas. Buat kartu istilah kunci.",
+        "qa": "Setiap kartu: sisi depan = PERTANYAAN, sisi belakang = JAWABAN singkat dan jelas.",
+        "formula": "Setiap kartu: sisi depan = RUMUS/ekspresi (tulis teksnya bila tidak bisa simbol), sisi belakang = ARTI & penggunaan rumus.",
+    }
+    card_line = f"\nGAYA KARTU: {_card_map[style]}" if style in _card_map else ""
+
+    # Mind map
+    depth_i = _clamp_cnt(depth, 1, 3) or 2
+    branches_i = _clamp_cnt(branches, 3, 8) or 5
+    subs_i = _clamp_cnt(subs, 2, 6) or 3
+    if depth_i == 1:
+        mind_line = (f"\nSTRUKTUR: {branches_i} cabang utama, tiap cabang {subs_i} sub (satu tingkat, "
+                     f"sub berupa teks biasa — JANGAN bercabang lagi).")
+    else:
+        mind_line = (f"\nSTRUKTUR: {branches_i} cabang utama, tiap cabang {subs_i} sub. Kedalaman maksimum "
+                     f"{depth_i} tingkat — sub boleh berupa object {{\"label\": \"...\", \"children\": [...]}} "
+                     f"untuk tingkat lanjutan, atau teks biasa bila sudah paling dalam.")
+
+    # Study guide
+    _sec_names = {
+        "summary": "Ringkasan Utama", "concepts": "Konsep Kunci (dengan penjelasan)",
+        "examples": "Contoh Penting", "practice": "Latihan Soal", "conclusion": "Kesimpulan",
+    }
+    sec_list = [k for k in ("summary", "concepts", "examples", "practice", "conclusion")
+                if isinstance(sections, (list, tuple)) and k in sections]
+    if not sec_list:
+        sec_list = ["summary", "concepts", "examples", "practice", "conclusion"]
+    exercises_i = _clamp_cnt(exercises, 3, 10) or 3
+    sec_lines = "\n".join(
+        f"## {i + 1}. {_sec_names[k]}" + (f" ({exercises_i} soal + jawaban)" if k == "practice" else "")
+        for i, k in enumerate(sec_list)
+    )
+
+    # FAQ
+    faq_i = _clamp_cnt(faq_count, 5, 15) or 8
+    _ans_map = {
+        "brief": "Singkat: 1-2 kalimat langsung ke inti.",
+        "detail": "Detail: 1 paragraf pendek (3-5 kalimat) yang menjelaskan alasan/contoh.",
+    }
+    faq_style_line = f"\nGAYA JAWABAN: {_ans_map[style]}" if style in _ans_map else ""
+
+    # Timeline
+    _gran_map = {
+        "day": "Harian (format tanggal YYYY-MM-DD bila tersedia)",
+        "week": "Mingguan (mis. Minggu ke-1 / pekan tanggal ...)",
+        "month": "Bulanan (mis. Januari 2024)",
+        "year": "Tahunan (mis. 2024)",
+    }
+    gran_line = f"\nGRANULARITAS WAKTU: {_gran_map[granularity]}." if granularity in _gran_map else ""
+    abs_line = ("\nSertakan tanggal/kurun waktu absolut bila sumber menyebutkannya."
+                if absolute_dates else
+                "\nJANGAN mengarang tanggal absolut; pakai urutan relatif (Tahap 1, 2, 3) bila sumber tidak jelas.")
+
+    # Summary
+    _sum_len = {"short": "maksimal 150 kata", "standard": "sekitar 200-400 kata",
+                "deep": "mendalam, 500-800 kata dengan sub-poin"}
+    sum_len_line = f"\nPANJANG: {_sum_len[length]}" if length in _sum_len else ""
+    _sum_style = {"bullets": "Gaya Poin-poin: bullet list ringkas per ide utama.",
+                  "narrative": "Gaya Naratif: paragraf mengalir yang saling terhubung."}
+    sum_style_line = f"\nGAYA: {_sum_style[style]}" if style in _sum_style else ""
+
     prompts = {
         "audio_overview": f"""Buat dialog podcast edukasi dengan DUA HOST yang benar-benar saling berbicara, bertanya, menanggapi, dan menyimpulkan materi.
 
-BAHASA OUTPUT WAJIB: {language_name}. Gunakan bahasa ini untuk SETIAP giliran percakapan, terlepas dari bahasa antarmuka aplikasi.
+BAHASA OUTPUT WAJIB: {language_name}. Gunakan bahasa ini untuk SETIAP giliran percakapan, terlepas dari bahasa antarmuka aplikasi.{host_line}{extra}
 
 KARAKTER HOST:
 - Host A: pembawa acara utama yang hangat, percaya diri, terstruktur, dan pandai menjelaskan konsep rumit dengan analogi.
@@ -436,7 +596,7 @@ KARAKTER HOST:
 
 ALUR KREATIF:
 - Mulai dengan cold open atau pertanyaan pemancing yang langsung menarik perhatian.
-- Buat 14-24 giliran bicara yang bergantian secara natural.
+- Buat {turns_line} giliran bicara yang bergantian secara natural.
 - Variasikan panjang giliran: reaksi singkat, pertanyaan tajam, penjelasan, contoh sehari-hari, mini-kuis, dan rangkuman.
 - Sisipkan minimal satu analogi, satu contoh konkret, satu momen salah paham yang diluruskan, dan satu mini-kuis.
 - Akhiri dengan takeaway yang kuat dan ajakan mencoba menerapkan materi.
@@ -452,34 +612,33 @@ HOST_A|Penjelasan dengan analogi atau contoh...
 HOST_B|Respons, tantangan, atau rangkuman...
 
 Konteks:\n{context}\n\nTopik: {query or 'Rangkum semua sources'}""",
-        
-        "mind_map": f"""Buatkan struktur MIND MAP dalam format JSON untuk visualisasi.
+
+        "mind_map": f"""Buatkan struktur MIND MAP dalam format JSON untuk visualisasi.{mind_line}
+Bahasa label: {language_name}.{extra}
 Konteks:\n{context}\n\nTopik: {query or 'Topik utama'}
 
 Format JSON WAJIB seperti ini (jangan tambah markdown):
-{{"central": "Topik Utama", "branches": [{{"label": "Cabang 1", "children": ["sub 1", "sub 2"]}}, {{"label": "Cabang 2", "children": []}}]}}
-Buat 3-6 cabang utama, tiap cabang 2-4 sub.""",
-        
+{{"central": "Topik Utama", "branches": [{{"label": "Cabang 1", "children": [{{"label": "sub 1", "children": [{{"label": "anak 1", "children": []}}]}}, "sub 2"]}}, {{"label": "Cabang 2", "children": []}}]}}
+Setiap elemen `children` boleh berupa teks ATAU object {{"label": ..., "children": [...]}} (maksimal kedalaman {depth_i}).""",
+
         "study_guide": f"""Buatkan STUDY GUIDE lengkap dari konteks berikut.
-Konteks:\n{context}\n\nBuat dengan format:
+Bahasa: {language_name}.{extra}
+Konteks:\n{context}\n\nBuat dengan format (HANYA bagian berikut, urut, tanpa bagian lain):
 # Study Guide: [Judul]
-## 1. Ringkasan Utama
-## 2. Konsep Kunci (dengan penjelasan)
-## 3. Contoh Penting
-## 4. Latihan Soal (3 soal + jawaban)
-## 5. Kesimpulan
+{sec_lines}
 Topik: {query or 'Semua materi'}""",
-        
+
         "quiz": f"""Buatkan QUIZ interaktif (seperti fitur Quiz di NotebookLM) dari konteks berikut.
 Konteks:\n{context}\n\nTopik: {query or 'Semua materi'}
 
-BAHASA OUTPUT WAJIB: {language_name} untuk seluruh pertanyaan, opsi, dan penjelasan.
+BAHASA OUTPUT WAJIB: {language_name} untuk seluruh pertanyaan, opsi, dan penjelasan.{extra}
 
 ATURAN OUTPUT WAJIB:
 - Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
-- Buat tepat {quiz_count} pertanyaan: {quiz_mc} pilihan ganda ("mc") dan {quiz_essay} esai ("essay").
-- Pilihan ganda: 4 opsi, tepat satu jawaban benar (index 0-3), plus penjelasan singkat mengapa benar.
-- Esai: sertakan "model_answer" berupa jawaban contoh yang baik dan lengkap.
+- Buat TEPAT {quiz_count} pertanyaan: {quiz_mc} pilihan ganda ("type":"mc") dan {quiz_essay} esai ("type":"essay"). {count_note}
+- WAJIB: SETIAP soal punya field "type" bernilai "mc" atau "essay" — tanpa field ini aplikasi tidak bisa mengenali/menilai soal tersebut.
+- Pilihan ganda ("type":"mc"): 4 opsi, tepat satu jawaban benar (index 0-3), plus penjelasan singkat mengapa benar.
+- Esai ("type":"essay"): JANGAN sertakan "options"; WAJIB sertakan "model_answer" berisi jawaban contoh yang baik dan lengkap (2-5 kalimat).
 - Variasikan kesulitan: ingatan, pemahaman, penerapan, analisis.
 ATURAN JSON KETAT (WAJIB DIPATUHI):
 - Setiap key WAJIB diikuti titik dua (:) — JANGAN pernah menulis koma setelah nama key (contoh SALAH: "q","teks").
@@ -488,37 +647,41 @@ ATURAN JSON KETAT (WAJIB DIPATUHI):
 - Semua teks memakai tanda kutip ganda; hindari tanda kutip ganda di dalam teks.
 Format persis:
 {{"title":"Judul Quiz","questions":[{{"type":"mc","q":"Pertanyaan?","options":["A","B","C","D"],"answer":0,"explain":"Karena..."}},{{"type":"essay","q":"Jelaskan...","model_answer":"Jawaban contoh..."}}]}}""",
-        
-        "faq": f"""Buatkan FAQ 8-10 pertanyaan dari konteks.
-Konteks:\n{context}\n\nFormat:
+
+        "faq": f"""Buatkan FAQ berisi TEPAT {faq_i} pertanyaan dari konteks.
+Bahasa: {language_name}.{faq_style_line}{extra}
+Konteks:\n{context}\n\nFormat (mulai dari Q1, tanpa pembuka):
 Q1: ...
 A1: ...
 Q2: ...
 A2: ...
 Topik: {query or 'Umum'}""",
-        
+
         "timeline": f"""Buatkan TIMELINE kronologis dari konteks.
+Bahasa: {language_name}.{gran_line}{abs_line}{extra}
 Konteks:\n{context}\n\nFormat:
-- **YYYY-MM-DD / Tahap 1:** Deskripsi
-- **Tahap 2:** ...
+- **2024-01-15 / Tahap 1:** Deskripsi
+- **Februari 2024:** ...
 Jika tidak ada tanggal, buat urutan logis Tahap 1,2,3...
 Topik: {query or 'Urutan'}""",
-        
+
         "flashcards": f"""Buatkan {flash_count} FLASHCARDS interaktif untuk belajar dari konteks berikut.
+Bahasa: {language_name}.{card_line}{extra}
 Konteks:\n{context}\n\nTopik: {query or 'Materi'}
 
 ATURAN OUTPUT WAJIB:
 - Output HANYA JSON array valid. Jangan tulis pembuka, penutup, Markdown, atau code fence.
 - Setiap item WAJIB memiliki key "front" dan "back".
-- Variasikan kartu: konsep, contoh, perbandingan, benar/salah, penerapan, dan mini problem.
+- Variasikan kartu: konsep, contoh, perbandingan, benar/salah, penerapan, dan mini problem (sesuai gaya kartu di atas).
 - Pertanyaan singkat dan jelas; jawaban padat tetapi cukup menjelaskan.
 Format persis:
 [{{"front":"Pertanyaan 1","back":"Jawaban 1"}},{{"front":"Pertanyaan 2","back":"Jawaban 2"}}]""",
-        
-        "summary": f"""Buatkan RINGKASAN EKSEKUTIF 200 kata dari konteks.
+
+        "summary": f"""Buatkan RINGKASAN EKSEKUTIF dari konteks berikut.
+Bahasa: {language_name}.{sum_len_line}{sum_style_line}{extra}
 Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}"""
     }
-    
+
     prompt = prompts.get(studio_type, prompts["summary"])
     if studio_type == "audio_overview":
         system = (
@@ -528,6 +691,139 @@ Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}"""
     else:
         system = "Kamu adalah asisten belajar NotebookLM yang membantu membuat materi belajar dari sources. Jawab dalam bahasa Indonesia yang jelas, terstruktur, dan engaging. Selalu gunakan konteks yang diberikan."
     return call_gemini(prompt, api_key, system_instruction=system)
+
+_CITE_RE = re.compile(r"\[S(\d{1,2})\]")
+
+
+def _citation_snippet(answer: str, marker: str, source_text: str) -> str:
+    """Pilih kalimat yang paling mewakili kutipan untuk chip sitasi.
+
+    Algoritma: cari SEMUA kemunculan penanda, ambil kalimat yang memuatnya
+    (berdasarkan posisi span, bukan potongan window), lalu pilih kalimat dengan
+    kemiripan kata tertinggi terhadap isi sumber. Dengan begitu chip menampilkan
+    kalimat yang benar-benar dikutip dari sumber itu.
+    """
+    text = str(answer or "").replace("\n", " ")
+    spans = [(m.start(), m.end()) for m in re.finditer(r"[^.!?]+[.!?]?", text)]
+    occurrences = [m.start() for m in re.finditer(re.escape(marker), text)]
+    candidates = []
+    for idx in occurrences:
+        for s_start, s_end in spans:
+            if s_start <= idx < s_end:
+                sentence = text[s_start:s_end].strip()
+                if sentence:
+                    candidates.append(sentence)
+                break
+
+    def clean(value: str) -> str:
+        value = re.sub(r"\[S\d+\]", "", value)
+        value = re.sub(r"\*\*|__", "", value)
+        # Buang judul/heading di depan bila kalimat dimulai dari satu baris daftar.
+        parts = re.split(r"\s[-•]\s", value.strip())
+        value = parts[-1] if parts else value
+        value = re.sub(r"^[-•]\s*", "", value.strip())
+        return re.sub(r"\s+", " ", value).strip()
+
+    if not candidates:
+        return clean(source_text)[:240]
+    src_words = set(re.findall(r"\w+", str(source_text or "").lower()))
+    best, best_score = candidates[0], -1
+    for cand in candidates:
+        words = set(re.findall(r"\w+", cand.lower()))
+        score = len(words & src_words)
+        if score > best_score:
+            best, best_score = cand, score
+    return clean(best)[:240] or clean(source_text)[:240]
+
+
+def chat_with_citations(question: str, sources: list, chat_history: list, api_key: str,
+                        language: str = "auto") -> dict:
+    """Jawab pertanyaan HANYA dari `sources` terpilih, lengkap dengan sitasi terstruktur.
+
+    A08: `sources` = [{"id": str, "title": str, "content": str}, ...] — daftar sumber
+    yang DICENTANG pengguna di panel Sumber (grounding). Model diminta menulis penanda
+    `[S1]`, `[S2]`, … yang lalu dipetakan balik ke `sourceId` asli.
+
+    Return: `{"answer": str, "citations": [{"index","sourceId","title","marker","snippet"}]}`
+    Bila model tidak memberi penanda apa pun → `citations: []` (jawaban tetap tampil,
+    tidak pernah error — sesuai rencana A08).
+    """
+    src_list = []
+    for i, src in enumerate(sources or [], start=1):
+        content = str((src or {}).get("content") or "").strip()
+        if not content:
+            continue
+        src_list.append({
+            "index": i,
+            "id": str((src or {}).get("id") or ""),
+            "title": str((src or {}).get("title") or f"Sumber {i}"),
+            "content": content[:6000],
+        })
+    if not src_list:
+        return {"answer": "", "citations": []}
+
+    lang = detect_content_language(question) if language in (None, "", "auto") else language
+    lang_name = language_display_name(lang)
+    blocks = "\n\n".join(
+        f"[S{src['index']}] {src['title']}\n{src['content']}" for src in src_list
+    )
+    history_text = ""
+    for msg in (chat_history or [])[-6:]:
+        role = msg.get("role", "user")
+        history_text += f"{role}: {msg.get('content', '')}\n"
+
+    is_greeting = len(question.strip()) < 5 or question.strip().lower() in {
+        "hai", "halo", "hello", "hi", "pagi", "siang", "sore", "malam",
+        "selamat pagi", "selamat siang", "selamat sore", "selamat malam",
+    }
+
+    rules = f"""Aturan WAJIB:
+- Jawab dalam {lang_name}, jelas, modern, dan rapi (bullet "-" untuk daftar, **bold** untuk judul).
+- Setiap klaim yang berasal dari sumber HARUS diikuti penanda sitasi seperti [S1] atau [S2][S3].
+- Hanya gunakan nomor sumber yang benar-benar ada di daftar SOURCES di atas — dilarang mengarang nomor.
+- Jangan tulis daftar sumber di akhir jawaban; cukup penanda di dalam kalimat."""
+    if is_greeting:
+        rules += "\n- Ini sapaan: balas ramah tanpa penanda sitasi."
+
+    prompt = f"""SOURCES (sumber terpilih untuk jawaban ini):
+{blocks}
+
+CHAT HISTORY:
+{history_text}
+
+PERTANYAAN: {question}
+
+{rules}"""
+
+    answer = call_gemini(
+        prompt, api_key,
+        system_instruction=(
+            "Kamu tutor AI seperti NotebookLM: jawab hanya dari SOURCES yang diberikan "
+            "dan sertakan penanda sitasi [S1], [S2], ... pada klaim yang memakai sumber."
+        ),
+        temperature=0.4,
+    )
+
+    citations = []
+    if not answer.startswith("[MOCK") and not answer.startswith("[Quota") and not answer.startswith("[Error"):
+        seen = set()
+        for match in _CITE_RE.finditer(answer):
+            num = int(match.group(1))
+            src = next((x for x in src_list if x["index"] == num), None)
+            if not src or num in seen:
+                continue
+            seen.add(num)
+            marker = f"[S{num}]"
+            citations.append({
+                "index": num,
+                "sourceId": src["id"],
+                "title": src["title"],
+                "marker": marker,
+                "snippet": _citation_snippet(answer, marker, src["content"]),
+            })
+        citations.sort(key=lambda c: c["index"])
+    return {"answer": answer, "citations": citations}
+
 
 def chat_with_sources(question: str, context_chunks: list, chat_history: list, api_key: str) -> str:
     """Chat Q&A dengan citations."""
@@ -571,6 +867,170 @@ Aturan:
     return call_gemini(prompt, api_key, system_instruction=system)
 
 # ── TTS untuk Audio Overview (pakai edge-tts jika ada, fallback ke gTTS) ─
+# gTTS tidak menerima prefix locale panjang ("id-ID") — pakai kode bahasa pendek.
+_GTTS_LANG = {
+    "id": "id", "en": "en", "es": "es", "fr": "fr", "de": "de",
+    "ja": "ja", "ko": "ko", "zh": "zh-CN", "pt": "pt", "ar": "ar", "ru": "ru",
+}
+# Perkiraan durasi dari ukuran berkas (bitrate default edge-tts ≈ 48 kbps mono).
+_EDGE_BYTES_PER_SEC = 6000.0
+_GTTS_BYTES_PER_SEC = 4000.0
+
+
+def _edge_synth_sync(text: str, voice: str, rate: str, pitch: str) -> tuple:
+    """Sintesis satu giliran via edge-tts → (bytes_mp3, durasi_detik)."""
+    import asyncio
+    import edge_tts  # type: ignore
+
+    async def _run():
+        comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume="+0%")
+        chunks = []
+        last_end = 0.0
+        async for chunk in comm.stream():
+            kind = chunk.get("type")
+            if kind == "audio":
+                chunks.append(chunk["data"])
+            elif kind == "WordBoundary":
+                # offset & duration dalam satuan 100 ns
+                end = (chunk.get("offset", 0) + chunk.get("duration", 0)) / 10_000_000
+                last_end = max(last_end, end)
+        return b"".join(chunks), last_end
+
+    return asyncio.run(_run())
+
+
+def _gtts_synth_sync(text: str, language: str) -> tuple:
+    """Fallback gTTS dengan bahasa yang BENAR (bukan suara Inggris membaca teks Indonesia)."""
+    import io
+    from gtts import gTTS  # type: ignore
+
+    buf = io.BytesIO()
+    gTTS(text=text, lang=_GTTS_LANG.get(language, "en")).write_to_fp(buf)
+    data = buf.getvalue()
+    return data, len(data) / _GTTS_BYTES_PER_SEC
+
+
+def build_podcast_audio(script: str, output_path: str, language: str = "auto",
+                        voice_a: str = None, voice_b: str = None,
+                        api_key: str = "", progress_cb=None) -> dict:
+    """Buat MP3 dua host yang benar-benar bergantian + metadata per giliran (A08).
+
+    Perbedaan penting dari `podcast_to_speech` lama:
+      • setiap giliran disintesis terpisah → durasi & offset tiap giliran diketahui,
+        sehingga pemutar di UI bisa **klik giliran untuk lompat** dan menyorot
+        giliran yang sedang berbunyi (interaktif, bukan sekadar daftar teks);
+      • suara selalu mengikuti **bahasa transkrip** (`id` → id-ID-ArdiNeural /
+        id-ID-GadisNeural), jadi tidak ada lagi suara Inggris membaca teks Indonesia;
+      • fallback gTTS memakai kode bahasa yang benar (lang="id"), bukan default Inggris.
+
+    Return: {path, voiceA, voiceB, language, languageLabel, engine, durationSec,
+             sizeBytes, turns:[{index,speaker,text,startSec,endSec}]}
+    """
+    if not script or not script.strip():
+        raise ValueError("Transkrip podcast kosong.")
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    detected = detect_content_language(script) if language in (None, "", "auto") else language
+    supplied_language = (voice_a or "").split("-", 1)[0].lower()
+    if not voice_a or not voice_b or supplied_language != detected:
+        voice_a, voice_b = podcast_voice_pair(detected, script)
+
+    turns = parse_podcast_dialogue(script)
+    speakers = {speaker for speaker, _ in turns}
+    if len(speakers) < 2 or len(turns) < 4:
+        if api_key and api_key.strip():
+            rewritten = _rewrite_as_two_host_dialogue(script, api_key.strip(), detected)
+            repaired = parse_podcast_dialogue(rewritten)
+            if len({sp for sp, _ in repaired}) >= 2 and len(repaired) >= 4:
+                turns = repaired
+        if len({sp for sp, _ in turns}) < 2 or len(turns) < 4:
+            raise ValueError(
+                "Transkrip belum berbentuk dialog dua host. Generate ulang Podcast audio "
+                "agar Host A dan Host B dapat berbicara bergantian."
+            )
+
+    engine = ""
+    parts = []
+    meta_turns = []
+    cursor = 0.0
+    total = len(turns)
+    for index, (speaker, utterance) in enumerate(turns):
+        voice = voice_a if speaker == "A" else voice_b
+        variation = (-1, 1, 0)[index % 3]
+        if speaker == "A":
+            rate_value = variation
+            pitch_value = -2 + variation
+        else:
+            rate_value = 4 + variation
+            pitch_value = 3 + variation
+        if utterance.rstrip().endswith("?"):
+            rate_value += 1
+            pitch_value += 2
+        rate, pitch = f"{rate_value:+d}%", f"{pitch_value:+d}Hz"
+
+        data = duration = None
+        if not engine or engine == "edge-tts":
+            try:
+                data, duration = _edge_synth_sync(utterance, voice, rate, pitch)
+                engine = "edge-tts"
+            except ImportError:
+                if not engine:
+                    engine = ""
+            except Exception as exc:  # jaringan/voice tidak tersedia → fallback
+                print(f"[podcast] edge-tts gagal pada giliran {index + 1}: {exc}")
+                if engine == "edge-tts":
+                    engine = ""
+        if not data:
+            if engine == "edge-tts":
+                raise RuntimeError("edge-tts gagal di tengah proses; audio dibatalkan agar tidak setengah jadi.")
+            data, duration = _gtts_synth_sync(utterance, detected)
+            if not engine:
+                engine = "gTTS"
+        if not data:
+            raise RuntimeError("Tidak ada mesin TTS yang tersedia (edge-tts / gTTS).")
+        if not duration or duration <= 0:
+            duration = len(data) / (_EDGE_BYTES_PER_SEC if engine == "edge-tts" else _GTTS_BYTES_PER_SEC)
+        parts.append(data)
+        meta_turns.append({
+            "index": index,
+            "speaker": "A" if speaker == "A" else "B",
+            "voice": voice,
+            "text": utterance,
+            "startSec": round(cursor, 2),
+            "endSec": round(cursor + duration, 2),
+        })
+        cursor += duration
+        if progress_cb:
+            try:
+                progress_cb(index + 1, total)
+            except Exception:
+                pass
+
+    temp_path = output_path + ".part"
+    with open(temp_path, "wb") as fh:
+        for data in parts:
+            fh.write(data)
+    if os.path.getsize(temp_path) <= 0:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        raise RuntimeError("Audio hasil sintesis kosong.")
+    os.replace(temp_path, output_path)
+
+    return {
+        "path": output_path,
+        "voiceA": voice_a,
+        "voiceB": voice_b,
+        "language": detected,
+        "languageLabel": language_display_name(detected),
+        "engine": engine or "gTTS",
+        "durationSec": round(cursor, 2),
+        "sizeBytes": os.path.getsize(output_path),
+        "turns": meta_turns,
+    }
+
+
 def text_to_speech(text: str, output_path: str, voice: str = "id-ID-ArdiNeural"):
     """Generate audio dari text. Return path jika sukses."""
     try:
@@ -726,82 +1186,17 @@ TEKS SUMBER:
 def podcast_to_speech(script: str, output_path: str,
                       voice_a: str = None, voice_b: str = None,
                       api_key: str = "", language: str = "auto"):
-    """Create real alternating two-host audio; locale follows the transcript itself."""
-    if not script or not script.strip():
-        return None
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    """Kompatibilitas desktop (PyQt): hasilkan audio dua host, kembalikan path.
 
-    detected_language = detect_content_language(script) if language in (None, "", "auto") else language
-    # Prevent an English voice from reading Indonesian (or the inverse), even if
-    # a stale caller passes voices selected from the CraftLife settings language.
-    supplied_language = (voice_a or "").split("-", 1)[0].lower()
-    if not voice_a or not voice_b or supplied_language != detected_language:
-        voice_a, voice_b = podcast_voice_pair(detected_language, script)
-    language = detected_language
+    A08: seluruh logika dipindah ke `build_podcast_audio` (satu sumber kebenaran untuk
+    desktop **dan** web). Signature & nilai balik dipertahankan agar `MainPyQt6.py`
+    tidak perlu diubah; metadata tambahan (offset per giliran) tersedia lewat
+    `build_podcast_audio` untuk pemutar interaktif di web.
+    """
+    result = build_podcast_audio(
+        script, output_path, language=language,
+        voice_a=voice_a, voice_b=voice_b, api_key=api_key,
+    )
+    return result["path"]
 
-    turns = parse_podcast_dialogue(script)
-    speakers = {speaker for speaker, _ in turns}
-    if len(speakers) < 2 or len(turns) < 4:
-        if api_key and api_key.strip():
-            rewritten = _rewrite_as_two_host_dialogue(script, api_key.strip(), language)
-            turns = parse_podcast_dialogue(rewritten)
-            speakers = {speaker for speaker, _ in turns}
-        if len(speakers) < 2 or len(turns) < 4:
-            raise ValueError(
-                "Transkrip belum berbentuk dialog dua host. Generate ulang Podcast audio "
-                "agar Host A dan Host B dapat berbicara bergantian."
-            )
 
-    segments = [
-        (speaker, voice_a if speaker == "A" else voice_b, utterance)
-        for speaker, utterance in turns if utterance.strip()
-    ]
-
-    try:
-        import edge_tts  # type: ignore
-        import asyncio
-
-        async def _generate():
-            temp_path = output_path + ".part"
-            try:
-                with open(temp_path, "wb") as audio_file:
-                    for index, (speaker, voice, utterance) in enumerate(segments):
-                        # Separate synthesis calls preserve a distinct voice per host.
-                        # Small deterministic prosody changes keep long podcasts lively
-                        # without turning them into exaggerated character voices.
-                        variation = (-1, 1, 0)[index % 3]
-                        if speaker == "A":
-                            rate_value = variation
-                            pitch_value = -2 + variation
-                        else:
-                            rate_value = 4 + variation
-                            pitch_value = 3 + variation
-                        if utterance.rstrip().endswith("?"):
-                            rate_value += 1
-                            pitch_value += 2
-                        communication = edge_tts.Communicate(
-                            utterance, voice,
-                            rate=f"{rate_value:+d}%",
-                            pitch=f"{pitch_value:+d}Hz",
-                            volume="+0%",
-                        )
-                        async for chunk in communication.stream():
-                            if chunk.get("type") == "audio":
-                                audio_file.write(chunk["data"])
-                if os.path.getsize(temp_path) <= 0:
-                    raise RuntimeError("Audio stream kosong")
-                os.replace(temp_path, output_path)
-            finally:
-                if os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except OSError:
-                        pass
-
-        asyncio.run(_generate())
-        return output_path
-    except ImportError as error:
-        raise RuntimeError("edge-tts belum terpasang; audio dua host tidak dapat dibuat") from error
-    except Exception as error:
-        # Do not fall back to one voice: that would turn the podcast back into narration.
-        raise RuntimeError(f"Gagal membuat audio dua host: {error}") from error

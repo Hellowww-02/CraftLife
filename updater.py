@@ -35,7 +35,66 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-APP_VERSION = "1.6.0"
+# v1.6.3 "Quality of Life" — commit phase A01–A14 (satu rilis):
+#   A01–A03 lirik · A03.5 unduhan · A04–A08 Learning · A09–A12 Love Space · A13 Home · A14 rilis.
+#   A08 (selesai 2026-09-15): sitasi sumber + grounding di jawaban AI, Audio Overview dua host
+#   dengan suara mengikuti bahasa transkrip + pemutar MP3 interaktif (Range/seek), dan migrasi
+#   dependency AI `google.generativeai` → `google.genai` (SDK lama end-of-support).
+#   A09 (selesai 2026-09-16): Love Space → tab Plans — catatan acara yang dulu mustahil diisi,
+#   edit acara, Special Day dengan pengulangan tahunan + pengingat H-n, hitung mundur, dan
+#   hari istimewa otomatis dari profil. Migrasi SQLite otomatis (6 kolom relationship_events);
+#   Supabase opsional lewat 20260916000000_phase_a09_love_special_days.sql.
+#   A10 (selesai 2026-09-16): Love Space → tab Memories & Bucket List — kenangan kini bisa
+#   diedit, diberi emoji pilihan, tag, bintang favorit, dan ditautkan ke foto galeri; bucket list
+#   punya progres nyata, kategori, target tanggal (badge H-n/terlewat), catatan, prioritas, filter,
+#   dan tombol "Simpan jadi kenangan" saat tercapai (idempoten). Migrasi SQLite otomatis (9 kolom
+#   baru: 5 memories + 4 bucket_items, plus 2 indeks); Supabase opsional lewat
+#   20260916010000_phase_a10_love_memories_bucket.sql.
+#   A11 (selesai 2026-09-16): Love Space → tab connection/cycle/gallery diprofesionalkan.
+#   Connection: riwayat jawaban (cari/filter kategori/favorit/jawab ulang), prompt favorit,
+#   grafik tren mood 30/90 hari + skor koneksi, streak check-in. Cycle: riwayat siklus yang bisa
+#   diedit + catatan + tombol "Jadikan pengingat" H-3/H-1 (idempoten), prediksi ovulasi/jendela
+#   subur + badge keyakinan dari 3 siklus terakhir. Gallery: sampul album, jumlah & tanggal album,
+#   aksi massal (pindah album/hapus/visibilitas) lewat satu endpoint, lightbox bernavigasi
+#   keyboard (← → / Esc / zoom). Perbaikan bug: sync cloud penghapusan foto massal dulu no-op
+#   karena `cloud_id` dibaca setelah baris dihapus. Migrasi SQLite otomatis (menstrual_cycles.updated_at,
+#   love_albums.cover_photo_id + 2 indeks); Supabase opsional lewat
+#   20260916020000_phase_a11_love_cycle_gallery_alignment.sql.
+#   Paket baru yang WAJIB ada di mesin user: google-genai>=1.0.0, edge-tts>=6.1.0, gTTS>=2.5.0.
+#   A12 (selesai 2026-09-16): Love Space → tab `overview` menjadi dashboard pasangan
+#   (hero "bersama N hari / M tahun" dari tanggal jadian, kartu Hari istimewa berikutnya
+#   + hitung mundur + tombol "Buat pengingat", cincin skor kedekatan + rincian check-in,
+#   grid 6 statistik, aksi cepat) dan Special Day kini benar-benar berujung pada pengingat:
+#   mesin `get_next_reminder_datetime` mengenal `repeat_type='yearly'` (29 Feb → 28 Feb),
+#   ada endpoint idempoten `POST /api/love/events/<id>/create-reminder` (acara ATAU ulang
+#   tahun/hari jadi dari profil), opsi **Tahunan** + input batas akhir di halaman Reminders
+#   dengan badge "Tahunan · tiap {tanggal}", dan chip satu baris di Beranda. Migrasi SQLite
+#   otomatis: `reminders.repeat_until` (kolom ini selama ini dirujuk kode tetapi belum pernah
+#   ada), `reminders.source_ref` + indeks. Perbaikan bug dari uji A12: database BARU gagal
+#   `init_db()` (indeks `love_albums` dibuat sebelum tabelnya — warisan A11), update reminder
+#   yang tidak mengirim `repeat` menghapus pengulangan tahunan secara diam-diam, dan
+#   `repeat_until`/`reminder_datetime` yang tidak valid membuat proses pengingat gagal.
+#   A13 (selesai 2026-09-16): Home → Year Wrapped. Laporan ekonomi di dialog Wrapped tidak lagi
+#   memakai "Rp" hardcoded: seluruh angka (pemasukan, pengeluaran, selisih bersih) lewat
+#   `formatMoney(v, user.currency)` dari `web/src/utils/currency.ts` (satu-satunya formatter resmi),
+#   ditambah chip mata uang aktif + catatan kurs kecil dari `/api/catalog/currency`. Seluruh teks
+#   dialog kini i18n id+en (dulu hardcoded Indonesia). Polish laporan: kartu **Selisih bersih**
+#   berwarna dinamis, **rasio tabungan**, rincian **per tipe** (habits/dailies/quests/sport dari
+#   `by_type`), top habit dengan ikon + bar relatif, **pemilih tahun** (`GET /api/year-wrapped?year=`,
+#   baru juga mengembalikan `years[]` dari `db.get_wrapped_years`), tombol **Salin ringkasan**
+#   (clipboard) + **Unduh .txt**, confetti `canvas-confetti`, dan pemisahan **empty-state** dari
+#   **error** (dulu keduanya tampil "belum ada aktivitas"). Di halaman Reminders, badge
+#   **Tahunan · tiap {tanggal}** kini bisa diklik untuk langsung membuka dialog edit reminder itu.
+#   Tidak ada migrasi (hanya membaca tabel yang sudah ada).
+#   A15 (selesai 2026-09-16): perbaikan rail kiri halaman Learning. Ikon notebook kini benar-benar
+#   tersimpan (`learning_notebooks.icon`/`description`/`updated_at`, ALTER otomatis di init_db),
+#   `POST /api/learning/notebooks` meneruskan `icon`/`description`, dan `…/<id>/rename` menerima
+#   `title`/`icon`/`description` secara parsial (mengganti ikon tidak mengosongkan judul). Rail kiri
+#   menggambar satu avatar per notebook (emoji pilihan user, fallback inisial judul) dengan lebar
+#   mengikuti token `--rail-w` (72/220 px), judul `truncate`, tombol **+ Notebook** ikut melebar, daftar
+#   panjang bisa digulir. Dialog Ganti nama juga bisa mengganti emoji (pemilih `NB_EMOJI` dipakai bersama).
+#   i18n: key baru `learning_icon_label` → total 4.325.
+APP_VERSION = "1.6.3"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 

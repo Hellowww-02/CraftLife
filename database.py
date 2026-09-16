@@ -1239,6 +1239,8 @@ def init_db():
         FOREIGN KEY(folder_id) REFERENCES note_folders(id) ON DELETE SET NULL
     )""")
     _safe_alter(c, "notes", "sort_order", "INTEGER DEFAULT 0")
+    # A08: sitasi jawaban AI (JSON) pada riwayat chat — DB lama belum punya kolomnya.
+    _safe_alter(c, "learning_chats", "citations", "TEXT")
 
     # P54: lampiran catatan — file di disk (craftlife_attachments/<uid>/),
     # metadata di DB. kind: image | file.
@@ -1362,6 +1364,21 @@ def init_db():
         chunk_text TEXT NOT NULL,
         chunk_index INTEGER NOT NULL,
         FOREIGN KEY(source_id) REFERENCES learning_sources(id) ON DELETE CASCADE
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS learning_audio(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notebook_id INTEGER NOT NULL,
+        generation_id INTEGER,
+        path TEXT NOT NULL,
+        language TEXT DEFAULT 'id',
+        engine TEXT DEFAULT '',
+        voice_a TEXT DEFAULT '',
+        voice_b TEXT DEFAULT '',
+        duration_sec REAL DEFAULT 0,
+        size_bytes INTEGER DEFAULT 0,
+        turns_json TEXT,
+        created_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(notebook_id) REFERENCES learning_notebooks(id) ON DELETE CASCADE
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS learning_chats(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1675,6 +1692,68 @@ def init_db():
         _safe_alter(c,love_table,"cloud_id","TEXT")
         _safe_alter(c,love_table,"cloud_updated_at","TEXT")
         c.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{love_table}_cloud_id ON {love_table}(cloud_id) WHERE cloud_id IS NOT NULL")
+    # ── A09: catatan, ikon, lokasi, Special Day & pengingat pada acara Love Space ──
+    # (kolom `notes` sudah ada sejak awal, tetapi dulu tidak pernah bisa diisi karena
+    #  UI tidak punya input-nya — bug itu ditutup di A09.)
+    _safe_alter(c, "relationship_events", "icon", "TEXT DEFAULT ''")
+    _safe_alter(c, "relationship_events", "location", "TEXT DEFAULT ''")
+    _safe_alter(c, "relationship_events", "is_special", "INTEGER DEFAULT 0")
+    _safe_alter(c, "relationship_events", "recurring", "TEXT DEFAULT 'none'")
+    _safe_alter(c, "relationship_events", "remind_days_before", "INTEGER DEFAULT 0")
+    _safe_alter(c, "relationship_events", "updated_at", "TEXT DEFAULT ''")
+    # ── A10: kenangan & bucket list jadi fitur matang ─────────────────────
+    #  memories : emoji bisa dipilih (dulu selalu hardcoded 💖), tag, favorit,
+    #             tautan foto dari galeri, jejak waktu ubah.
+    #  bucket   : catatan, prioritas, target tanggal (kolom target_date &
+    #             category sudah ada sejak awal → _safe_alter hanya memastikan),
+    #             serta promoted_memory_id penanda "sudah disimpan jadi kenangan".
+    for _tab, _col, _defn in (
+        ("relationship_memories", "emoji", "TEXT DEFAULT ''"),
+        ("relationship_memories", "tags", "TEXT DEFAULT ''"),
+        ("relationship_memories", "is_favorite", "INTEGER DEFAULT 0"),
+        ("relationship_memories", "photo_id", "INTEGER"),
+        ("relationship_memories", "updated_at", "TEXT DEFAULT ''"),
+        ("relationship_bucket_items", "category", "TEXT DEFAULT 'dream'"),
+        ("relationship_bucket_items", "target_date", "TEXT"),
+        ("relationship_bucket_items", "notes", "TEXT DEFAULT ''"),
+        ("relationship_bucket_items", "priority", "INTEGER DEFAULT 0"),
+        ("relationship_bucket_items", "updated_at", "TEXT DEFAULT ''"),
+        ("relationship_bucket_items", "promoted_memory_id", "INTEGER DEFAULT 0"),
+    ):
+        _safe_alter(c, _tab, _col, _defn)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_relationship_memories_user_fav ON relationship_memories(user_id, is_favorite)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_relationship_bucket_items_user_due ON relationship_bucket_items(user_id, is_done, target_date)")
+    # ── A11: connection · cycle · gallery diprofesionalkan ───────────────
+    #  cycles : `notes` (catatan per siklus) sudah ada sejak awal → _safe_alter
+    #           hanya memastikan; `updated_at` baru = jejak audit saat edit.
+    #  albums : `cover_photo_id` = foto sampul album (0 = tanpa cover → UI
+    #           memakai foto pertama album).
+    for _tab, _col, _defn in (
+        ("menstrual_cycles", "notes", "TEXT DEFAULT ''"),
+        ("menstrual_cycles", "updated_at", "TEXT DEFAULT ''"),
+        ("love_albums", "cover_photo_id", "INTEGER DEFAULT 0"),
+    ):
+        _safe_alter(c, _tab, _col, _defn)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_menstrual_cycles_user_start "
+              "ON menstrual_cycles(user_id, start_date)")
+
+    # ── A12: reminders — pengulangan TAHUNAN (ulang tahun / anniversary) ────
+    #  repeat_until : batas akhir pengulangan (sudah didukung get_next_reminder_datetime
+    #                 & whitelist update_reminder, tetapi KOLOMNYA belum pernah dibuat —
+    #                 jadi setiap perubahan repeat_until selama ini gagal "no such column").
+    #  source_ref   : penanda asal pengingat (mis. `love_event:12`, `love_profile:start_date`)
+    #                 supaya "Buat pengingat" dari Love Space bersifat idempoten —
+    #                 klik dua kali memperbarui pengingat yang sama, bukan menggandakan.
+    for _tab, _col, _defn in (
+        ("reminders", "repeat_until", "TEXT"),
+        ("reminders", "source_ref", "TEXT DEFAULT ''"),
+    ):
+        _safe_alter(c, _tab, _col, _defn)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_reminders_source_ref "
+              "ON reminders(user_id, source_ref)")
+    #  CATATAN: indeks `idx_love_albums_user_cover` dipindah ke bawah pembuatan tabel
+    #  `love_albums` (A12) — di posisi lama ia dijalankan sebelum tabelnya ada sehingga
+    #  database BARU gagal init ("no such table: main.love_albums").
     _safe_alter(c, "sport_activities", "calories_burned", "INTEGER DEFAULT 0")
     _safe_alter(c, "sport_activities", "duration_minutes", "INTEGER DEFAULT 30")
     _safe_alter(c, "habits", "folder_id", "INTEGER")
@@ -1747,6 +1826,13 @@ def init_db():
     # ── Learning: ukuran font chat & studio per user ──
     _safe_alter(c, "users", "learning_chat_font", "INTEGER DEFAULT 13")
     _safe_alter(c, "users", "learning_studio_font", "INTEGER DEFAULT 14")
+    # ── A06: daftar artefak Studio — waktu perubahan terakhir (rename/duplikat) ──
+    # ── A15: ikon & deskripsi notebook tersimpan (dulu hanya di UI, hilang saat
+    #  dikirim ke server → rail kiri Learning selalu menampilkan 📚).
+    _safe_alter(c, "learning_notebooks", "icon", "TEXT DEFAULT '📚'")
+    _safe_alter(c, "learning_notebooks", "description", "TEXT DEFAULT ''")
+    _safe_alter(c, "learning_notebooks", "updated_at", "TEXT DEFAULT ''")
+    _safe_alter(c, "learning_generations", "updated_at", "TEXT DEFAULT ''")
     # ── Supplies: link ke kategori Economy (full-link integration) ──
     _safe_alter(c, "supplies_items", "economy_category", "TEXT DEFAULT ''")
     # ── Love Space: profil couple DUA sisi (kamu + pasangan, gender terintegrasi) ──
@@ -1765,6 +1851,14 @@ def init_db():
         updated_at TEXT DEFAULT(datetime('now'))
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_love_albums_user ON love_albums(user_id, scope)")
+    # A11/A12: `cover_photo_id` WAJIB dipastikan di sini (bukan hanya di blok migrasi atas)
+    # karena pada database BARU tabel `love_albums` belum ada saat blok itu berjalan —
+    # _safe_alter-nya diam-diam tidak melakukan apa pun sehingga kolomnya hilang.
+    _safe_alter(c, "love_albums", "cover_photo_id", "INTEGER DEFAULT 0")
+    # A11/A12: indeks sampul album (dibuat SETELAH tabelnya ada — lihat catatan di
+    # blok migrasi atas; urutan ini wajib supaya database baru bisa init).
+    c.execute("CREATE INDEX IF NOT EXISTS idx_love_albums_user_cover "
+              "ON love_albums(user_id, cover_photo_id)")
     c.execute("""CREATE TABLE IF NOT EXISTS love_album_items(
         album_id INTEGER NOT NULL,
         photo_id INTEGER NOT NULL,
@@ -6948,8 +7042,18 @@ def get_love_space_photo_raw(photo_id):
 
 
 def delete_love_space_photo(requester_user_id, photo_id):
+    """Hapus foto milik sendiri.
+
+    A11 (temuan audit): dulu baris `love_album_items` dan `love_albums.cover_photo_id`
+    dibiarkan menunjuk foto yang sudah hilang → album tetap menghitung foto itu dan
+    sampul album jadi kotak kosong. Kini keduanya dibersihkan sekaligus.
+    """
     conn=get_conn(); cur=conn.execute(
         "DELETE FROM love_space_photos WHERE id=? AND owner_user_id=?", (photo_id,requester_user_id))
+    if cur.rowcount:
+        conn.execute("DELETE FROM love_album_items WHERE photo_id=?", (photo_id,))
+        conn.execute("UPDATE love_albums SET cover_photo_id=0, updated_at=datetime('now') "
+                     "WHERE cover_photo_id=?", (photo_id,))
     conn.commit(); conn.close(); return {"ok": cur.rowcount>0, "code": "deleted" if cur.rowcount else "forbidden"}
 
 
@@ -11089,10 +11193,135 @@ def reset_reminder_triggered(reminder_id, user_id):
     conn.commit()
     conn.close()
 
+def create_reminder_from_special_day(user_id, event_id, days_before=None, time_str="09:00"):
+    """A12: buat/perbarui pengingat dari hari istimewa Love Space.
+
+    `event_id` menerima:
+      · id acara Love Space (angka), atau
+      · kunci profil: "my_birthdate" | "partner_birthdate" | "start_date"
+        (ulang tahun kamu/pasangan & hari jadi hubungan — sumber yang sama
+        dipakai `upcoming_relationship_events`).
+
+    Perilaku:
+      · tanggal pengingat = kejadian berikutnya − `days_before` (default: nilai
+        `remind_days_before` acara, atau 7 hari untuk hari istimewa tahunan);
+      · `repeat_type='yearly'` bila kejadiannya berulang tahunan, selain itu 'none';
+      · **idempoten** lewat `source_ref` — klik dua kali memperbarui pengingat yang
+        sama (judul, tanggal, ulangi) dan menghidupkannya kembali, bukan menumpuk.
+
+    Mengembalikan dict: {ok, already, updated, reminder_id, reminder_date,
+    days_before, repeat_type, title}.
+    """
+    from datetime import date as _d
+    today = _d.today()
+    key = str(event_id or "").strip()
+    if not key:
+        return {"ok": False, "code": "bad_event"}
+
+    profile_keys = {
+        "my_birthdate": ("my_birthdate", "my_name"),
+        "partner_birthdate": ("partner_birthdate", "partner_name"),
+        "start_date": ("start_date", None),
+    }
+    source_ref = ""
+    title = ""
+    category = "date"
+    notes = ""
+    raw_date = ""
+    recurring = "none"
+
+    if key in profile_keys:
+        col, name_col = profile_keys[key]
+        try:
+            prof = get_relationship_profile(user_id) or {}
+        except Exception:
+            prof = {}
+        raw_date = str(prof.get(col) or "")[:10]
+        if not raw_date:
+            return {"ok": False, "code": "no_date"}
+        recurring = "yearly"
+        source_ref = f"love_profile:{key}"
+        if key == "start_date":
+            title = tr_db(user_id=user_id, key="love_reminder_anniversary")
+            category = "anniversary"
+        else:
+            who = (prof.get(name_col) or "").strip()
+            title = tr_db(user_id=user_id, key="love_reminder_birthday",
+                          name=who or tr_db(user_id=user_id, key="love_partner_not_set"))
+            category = "birthday"
+    else:
+        try:
+            ev_id = int(key)
+        except (TypeError, ValueError):
+            return {"ok": False, "code": "bad_event"}
+        ev = get_relationship_event(user_id, ev_id)
+        if not ev:
+            return {"ok": False, "code": "not_found"}
+        raw_date = str(ev.get("event_date") or "")[:10]
+        recurring = _love_recurring_norm(ev.get("recurring"))
+        source_ref = f"love_event:{ev_id}"
+        title = (ev.get("title") or "").strip() or tr_db(user_id=user_id, key="love_create_reminder")
+        category = ev.get("category") or "date"
+        notes = (ev.get("notes") or "").strip()[:400]
+        if days_before is None:
+            try:
+                days_before = int(ev.get("remind_days_before") or 0) or None
+            except (TypeError, ValueError):
+                days_before = None
+
+    nxt = _love_next_occurrence(raw_date, recurring, today)
+    if not nxt:
+        return {"ok": False, "code": "no_date"}
+
+    # default H-n: 7 hari untuk tahunan (siap-siap hadiah), 1 hari untuk sekali jalan.
+    try:
+        days_before = int(days_before) if days_before is not None else (7 if recurring == "yearly" else 1)
+    except (TypeError, ValueError):
+        days_before = 7 if recurring == "yearly" else 1
+    days_before = max(0, min(365, days_before))
+
+    when_date = _love_date_add_days(nxt, -days_before)
+    stamp_time = (str(time_str or "09:00").strip() or "09:00")
+    if len(stamp_time) == 5:
+        stamp_time += ":00"
+    stamp = f"{when_date} {stamp_time}"
+    repeat_type = "yearly" if recurring == "yearly" else "none"
+    description = notes or tr_db(user_id=user_id, key="love_reminder_from_love")
+
+    conn = get_conn()
+    existing = conn.execute(
+        "SELECT * FROM reminders WHERE user_id=? AND source_ref=? ORDER BY id LIMIT 1",
+        (user_id, source_ref)).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE reminders SET title=?, description=?, reminder_datetime=?, repeat_type=?, "
+            "repeat_days='', is_active=1, triggered=0 WHERE id=? AND user_id=?",
+            (title, description, stamp, repeat_type, int(existing["id"]), user_id))
+        conn.commit()
+        rid = int(existing["id"])
+        conn.close()
+        return {"ok": True, "already": True, "updated": True, "reminder_id": rid,
+                "reminder_date": when_date, "days_before": days_before,
+                "repeat_type": repeat_type, "title": title, "category": category,
+                "next_date": nxt, "source_ref": source_ref}
+    cur = conn.execute(
+        """INSERT INTO reminders(user_id,title,description,reminder_datetime,sound_type,
+                                 sound_file,repeat_type,repeat_days,source_ref)
+           VALUES(?,?,?,?,?,?,?,?,?)""",
+        (user_id, title, description, stamp, "default", None, repeat_type, "", source_ref))
+    conn.commit()
+    rid = cur.lastrowid
+    conn.close()
+    return {"ok": True, "already": False, "updated": False, "reminder_id": rid,
+            "reminder_date": when_date, "days_before": days_before,
+            "repeat_type": repeat_type, "title": title, "category": category,
+            "next_date": nxt, "source_ref": source_ref}
+
+
 def get_next_reminder_datetime(current_dt_str, repeat_type, repeat_days, repeat_until=None):
     """
     Hitung tanggal/waktu berikutnya berdasarkan repeat_type.
-    - repeat_type: 'none', 'daily', 'weekly', 'custom'
+    - repeat_type: 'none', 'daily', 'weekly', 'monthly' (tidak dipakai UI), 'yearly', 'custom'
     - repeat_days: string angka hari (0=Senin, 6=Minggu) dipisah koma, misal "0,2,4"
     - repeat_until: tanggal akhir (YYYY-MM-DD) atau None
     Mengembalikan string datetime baru (YYYY-MM-DD HH:MM:SS) atau None jika tidak ada (sudah melewati repeat_until)
@@ -11100,7 +11329,13 @@ def get_next_reminder_datetime(current_dt_str, repeat_type, repeat_days, repeat_
     if repeat_type == 'none':
         return None
 
-    current_dt = datetime.strptime(current_dt_str, "%Y-%m-%d %H:%M:%S")
+    # A12: nilai waktu bisa saja tidak valid (mis. baris lama/rusak). Sebelumnya
+    # strptime langsung dipakai sehingga satu baris rusak membuat seluruh proses
+    # pengingat gagal; kini baris seperti itu dilewati (dianggap tidak berulang).
+    try:
+        current_dt = datetime.strptime(str(current_dt_str).strip()[:19], "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
     time_part = current_dt.strftime("%H:%M:%S")
 
     # Hitung next date
@@ -11108,6 +11343,14 @@ def get_next_reminder_datetime(current_dt_str, repeat_type, repeat_days, repeat_
         next_dt = current_dt + timedelta(days=1)
     elif repeat_type == 'weekly':
         next_dt = current_dt + timedelta(days=7)
+    elif repeat_type == 'yearly':
+        # A12: ulang tahun / anniversary — tambah 1 tahun dengan aman untuk 29 Feb
+        # (tahun non-kabisat → 28 Feb, pola yang sama dipakai _love_next_occurrence).
+        year = current_dt.year + 1
+        try:
+            next_dt = current_dt.replace(year=year)
+        except ValueError:
+            next_dt = current_dt.replace(year=year, day=28)
     elif repeat_type == 'custom':
         if not repeat_days:
             return None
@@ -11129,8 +11372,17 @@ def get_next_reminder_datetime(current_dt_str, repeat_type, repeat_days, repeat_
 
     # Jika repeat_until, cek apakah next_dt melewati batas
     if repeat_until:
-        until_date = datetime.strptime(repeat_until, "%Y-%m-%d").date()
-        if next_dt.date() > until_date:
+        # A12: `repeat_until` bisa berupa 'YYYY-MM-DD' (input tanggal UI) MAUPUN
+        # 'YYYY-MM-DD HH:MM:SS' (nilai yang tersimpan apa adanya), dan bisa saja
+        # tidak terbaca. Sebelumnya strptime langsung dipakai → ValueError membuat
+        # seluruh perhitungan pengingat gagal. Kini batasnya hanya dipakai bila
+        # valid; selain itu diabaikan (dianggap tanpa batas akhir).
+        until_date = None
+        try:
+            until_date = datetime.strptime(str(repeat_until).strip()[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            until_date = None
+        if until_date and next_dt.date() > until_date:
             return None
 
     # Gabungkan dengan waktu dari reminder asli
@@ -12789,6 +13041,36 @@ def get_health_productivity_series(user_id, days=30):
 
 # ── 🎁 YEAR WRAPPED ──────────────────────────────────────────────────────────
 
+def get_wrapped_years(user_id):
+    """A13: tahun-tahun yang punya aktivitas (untuk pemilih tahun Year Wrapped).
+
+    Digabung dari tiga sumber yang dipakai `get_year_wrapped`: riwayat task,
+    sesi pomodoro, dan transaksi ekonomi. Dikembalikan menurun (terbaru dulu)
+    dan selalu memuat tahun berjalan, sehingga pemilih tahun tidak pernah kosong
+    walau pengguna baru mulai memakai aplikasi tahun ini.
+    """
+    from datetime import date as _d
+    tahun = set()
+    conn = get_conn()
+    try:
+        for sql, col in (
+            ("SELECT DISTINCT substr(action_date,1,4) y FROM task_history WHERE user_id=?", "y"),
+            ("SELECT DISTINCT substr(completed_at,1,4) y FROM pomodoro_sessions WHERE user_id=?", "y"),
+            ("SELECT DISTINCT substr(date,1,4) y FROM economy_items WHERE user_id=?", "y"),
+        ):
+            try:
+                for r in conn.execute(sql, (user_id,)).fetchall():
+                    v = str(r[col] or "").strip()
+                    if len(v) == 4 and v.isdigit():
+                        tahun.add(int(v))
+            except Exception:
+                continue
+    finally:
+        conn.close()
+    tahun.add(_d.today().year)
+    return sorted(tahun, reverse=True)
+
+
 def get_year_wrapped(user_id, year=None):
     """Ringkasan setahun ala 'Wrapped'. Sumber: task_history, pomodoro, ekonomi."""
     year = year or date.today().year
@@ -13328,9 +13610,24 @@ def get_gemini_api_key(user_id):
     return (u.get("gemini_api_key") or "").strip() if u else ""
 
 # ── Notebooks ──
-def create_learning_notebook(user_id, title):
+def _notebook_icon(value):
+    """A15: bersihkan ikon notebook — emoji pendek, tanpa spasi berlebih, fallback 📚."""
+    s = str(value or "").strip()
+    s = "".join(ch for ch in s if ch not in "\r\n\t")
+    if not s:
+        return "📚"
+    return s[:8]
+
+
+def create_learning_notebook(user_id, title, icon="📚", description=""):
+    """A15: ikon & deskripsi notebook ikut disimpan (dulu parameter ini tidak ada sehingga
+    ikon pilihan user hilang dan rail kiri Learning selalu menampilkan 📚)."""
     conn = get_conn()
-    cur = conn.execute("INSERT INTO learning_notebooks(user_id, title) VALUES(?,?)", (user_id, title))
+    cur = conn.execute(
+        "INSERT INTO learning_notebooks(user_id, title, icon, description, updated_at)"
+        " VALUES(?,?,?,?,datetime('now'))",
+        (user_id, (title or "Notebook").strip() or "Notebook", _notebook_icon(icon),
+         str(description or "").strip()[:400]))
     nid = cur.lastrowid
     conn.commit()
     conn.close()
@@ -13355,9 +13652,28 @@ def delete_learning_notebook(notebook_id, user_id):
     conn.close()
     return {"ok": True}
 
-def update_learning_notebook(notebook_id, user_id, title):
+def update_learning_notebook(notebook_id, user_id, title=None, icon=None, description=None):
+    """A15: update parsial — hanya kolom yang dikirim yang diubah.
+
+    `title=None` (default) berarti judul tidak disentuh, sehingga mengubah ikon tidak
+    berisiko mengosongkan judul (pola bug yang sama seperti update reminder di A12).
+    """
+    sets, args = [], []
+    if title is not None:
+        sets.append("title=?")
+        args.append(str(title).strip())
+    if icon is not None:
+        sets.append("icon=?")
+        args.append(_notebook_icon(icon))
+    if description is not None:
+        sets.append("description=?")
+        args.append(str(description).strip()[:400])
+    if not sets:
+        return {"ok": False, "msg": "learning_no_fields"}
+    sets.append("updated_at=datetime('now')")
     conn = get_conn()
-    conn.execute("UPDATE learning_notebooks SET title=? WHERE id=? AND user_id=?", (title, notebook_id, user_id))
+    conn.execute("UPDATE learning_notebooks SET %s WHERE id=? AND user_id=?" % ", ".join(sets),
+                 (*args, notebook_id, user_id))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -13456,6 +13772,95 @@ def clear_learning_chats(notebook_id):
     conn.close()
     return {"ok": True}
 
+# ── A08: audio podcast dua host (cache per generasi) ────────────────────
+def save_learning_audio(notebook_id, generation_id, path, language="id", engine="",
+                        voice_a="", voice_b="", duration_sec=0.0, size_bytes=0,
+                        turns=None):
+    """Simpan/ganti metadata audio podcast satu generasi (1 baris per generasi)."""
+    conn = get_conn()
+    try:
+        conn.execute(
+            "DELETE FROM learning_audio WHERE notebook_id=? AND generation_id IS ?",
+            (notebook_id, generation_id),
+        )
+        conn.execute(
+            """INSERT INTO learning_audio(notebook_id, generation_id, path, language, engine,
+                                          voice_a, voice_b, duration_sec, size_bytes, turns_json)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (notebook_id, generation_id, path, language, engine, voice_a, voice_b,
+             float(duration_sec or 0), int(size_bytes or 0),
+             json.dumps(turns) if turns else None),
+        )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+def get_learning_audio(notebook_id, generation_id):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM learning_audio WHERE notebook_id=? AND generation_id IS ? ORDER BY id DESC LIMIT 1",
+            (notebook_id, generation_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return None
+    data = dict(row)
+    try:
+        data["turns"] = json.loads(data.get("turns_json") or "[]")
+    except Exception:
+        data["turns"] = []
+    return data
+
+
+def delete_learning_audio(notebook_id, generation_id=None):
+    conn = get_conn()
+    try:
+        if generation_id is None:
+            conn.execute("DELETE FROM learning_audio WHERE notebook_id=?", (notebook_id,))
+        else:
+            conn.execute("DELETE FROM learning_audio WHERE notebook_id=? AND generation_id IS ?",
+                         (notebook_id, generation_id))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+def get_learning_generation_row(generation_id, notebook_id):
+    """Baris generasi mentah (dipakai A08 untuk mengambil transkrip podcast)."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM learning_generations WHERE id=? AND notebook_id=?",
+            (generation_id, notebook_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+def get_learning_source_rows(notebook_id, user_id=None):
+    """Semua sumber mentah satu notebook (A08: grounding per sourceId)."""
+    conn = get_conn()
+    try:
+        if user_id:
+            rows = conn.execute(
+                "SELECT * FROM learning_sources WHERE notebook_id=? AND user_id=? ORDER BY id ASC",
+                (notebook_id, user_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM learning_sources WHERE notebook_id=? ORDER BY id ASC",
+                (notebook_id,),
+            ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
 # ── Generations (Studio) ──
 def add_learning_generation(notebook_id, type_, title, content):
     conn = get_conn()
@@ -13474,6 +13879,50 @@ def get_learning_generations(notebook_id, type_=None):
         rows = conn.execute("SELECT * FROM learning_generations WHERE notebook_id=? ORDER BY created_at DESC", (notebook_id,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_learning_generation(gen_id, notebook_id):
+    """A06: satu baris generasi Studio (dipakai rename/duplikat/ekspor artefak)."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM learning_generations WHERE id=? AND notebook_id=?", (gen_id, notebook_id)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def rename_learning_generation(gen_id, notebook_id, title):
+    """A06: ganti nama artefak Studio. Judul wajib tidak kosong, maksimal 120 karakter."""
+    clean = " ".join(str(title or "").split())[:120]
+    if not clean:
+        return {"ok": False, "msg": "title_required"}
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE learning_generations SET title=?, updated_at=datetime('now') WHERE id=? AND notebook_id=?",
+        (clean, gen_id, notebook_id),
+    )
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    if not changed:
+        return {"ok": False, "msg": "learning_not_found"}
+    return {"ok": True, "generationId": str(gen_id), "title": clean}
+
+
+def duplicate_learning_generation(gen_id, notebook_id):
+    """A06: duplikat artefak Studio (judul + " (copy)") tanpa menyentuh aslinya."""
+    row = get_learning_generation(gen_id, notebook_id)
+    if not row:
+        return {"ok": False, "msg": "learning_not_found"}
+    base = " ".join(str(row.get("title") or "Artifact").split()) or "Artifact"
+    suffix = " (copy)"
+    title = (base[:120 - len(suffix)] + suffix)
+    res = add_learning_generation(
+        notebook_id, row.get("type") or "summary", title, row.get("content") or "",
+    )
+    if isinstance(res, dict):
+        res["title"] = title
+    return res
+
 
 def delete_learning_generation(gen_id, notebook_id):
     conn = get_conn()
@@ -13565,12 +14014,257 @@ def save_relationship_profile(user_id, partner_name, partner_gender, partner_age
     return {"ok": True}
 
 
-def add_relationship_event(user_id, title, event_date, category="date", notes=""):
+def _love_recurring_norm(value):
+    """Normalisasi pilihan pengulangan acara: 'none' | 'yearly'."""
+    v = str(value or "none").strip().lower()
+    return "yearly" if v in ("yearly", "annual", "annually", "year", "tahunan", "setiap tahun") else "none"
+
+
+def _love_remind_norm(value):
+    """Pengingat 0..365 hari; nilai liar dibulatkan, bukan ditolak."""
+    try:
+        n = int(float(value or 0))
+    except (TypeError, ValueError):
+        n = 0
+    if n not in (0, 1, 3, 7, 14, 30, 60, 90):
+        # pilihan bebas tetap dihormati, hanya dibatasi rentangnya
+        n = max(0, min(365, n))
+    return n
+
+
+def _love_date_add_days(iso_date, days):
+    from datetime import date as _d, timedelta as _td
+    try:
+        base = _d.fromisoformat(str(iso_date)[:10])
+    except (TypeError, ValueError):
+        return ""
+    return (base + _td(days=int(days or 0))).isoformat()
+
+
+def _love_next_occurrence(iso_date, recurring, today=None, birthday=False):
+    """Tanggal kejadian berikutnya untuk sebuah acara.
+
+    - `recurring='yearly'` → bulan/tanggal yang sama pada tahun ini; bila sudah lewat
+      (atau jatuh tepat hari ini dan `birthday=False`) pindah ke tahun depan.
+    - selain itu → tanggal aslinya, atau "" bila sudah lewat (tak akan datang lagi).
+
+    Tahan tanggal 29 Feb: bila tahun tujuan tidak punya 29 Feb, dipakai 28 Feb.
+    """
+    from datetime import date as _d
+    today = today or _d.today()
+    if isinstance(today, str):
+        try:
+            today = _d.fromisoformat(today[:10])
+        except ValueError:
+            today = _d.today()
+    try:
+        base = _d.fromisoformat(str(iso_date)[:10])
+    except (TypeError, ValueError):
+        return ""
+    if _love_recurring_norm(recurring) != "yearly":
+        return base.isoformat() if base >= today else ""
+
+    def _mk(year):
+        try:
+            return base.replace(year=year)
+        except ValueError:  # 29 Feb pada tahun non-kabisat
+            return base.replace(year=year, day=28)
+
+    nxt = _mk(today.year)
+    if nxt < today:
+        nxt = _mk(today.year + 1)
+    return nxt.isoformat()
+
+
+def _love_days_until(iso_date, today=None):
+    from datetime import date as _d
+    today = today or _d.today()
+    if isinstance(today, str):
+        try:
+            today = _d.fromisoformat(today[:10])
+        except ValueError:
+            today = _d.today()
+    try:
+        return (_d.fromisoformat(str(iso_date)[:10]) - today).days
+    except (TypeError, ValueError):
+        return None
+
+
+def add_relationship_event(user_id, title, event_date, category="date", notes="",
+                           icon="", location="", is_special=0, recurring="none",
+                           remind_days_before=0):
+    """Tambah acara Love Space (A09: + ikon, lokasi, Special Day, pengulangan, pengingat)."""
     conn = get_conn()
-    cur = conn.execute("INSERT INTO relationship_events(user_id,title,event_date,category,notes) VALUES(?,?,?,?,?)",
-                       (user_id, title.strip(), event_date, category, notes.strip()))
+    cur = conn.execute(
+        "INSERT INTO relationship_events(user_id,title,event_date,category,notes,icon,location,"
+        "is_special,recurring,remind_days_before,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+        (user_id, (title or "").strip(), event_date, category or "date", (notes or "").strip(),
+         (icon or "").strip(), (location or "").strip(), 1 if is_special else 0,
+         _love_recurring_norm(recurring), _love_remind_norm(remind_days_before)))
     conn.commit(); conn.close()
     return {"ok": True, "event_id": cur.lastrowid}
+
+
+def get_relationship_event(user_id, event_id):
+    """Satu baris acara (dipakai handler update untuk tahu apakah barisnya ada)."""
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    row = conn.execute(f"SELECT * FROM relationship_events WHERE id=? AND user_id IN ({marks})",
+                       (int(event_id), *scope)).fetchone()
+    conn.close(); return dict(row) if row else None
+
+
+def update_relationship_event(user_id, event_id, **fields):
+    """Perbarui acara Love Space. Hanya kolom whitelist yang boleh berubah.
+
+    Nama kunci menerima bentuk camelCase (dari API) maupun snake_case.
+    Mengembalikan {"ok": True, "event_id": …} atau {"ok": False, "msg": "learning_not_found"}.
+    """
+    mapping = {
+        "title": "title", "date": "event_date", "eventdate": "event_date", "event_date": "event_date",
+        "category": "category", "notes": "notes", "icon": "icon", "location": "location",
+        "isspecial": "is_special", "is_special": "is_special",
+        "recurring": "recurring",
+        "reminddaysbefore": "remind_days_before", "remind_days_before": "remind_days_before",
+    }
+    sets, values = [], []
+    for key, value in (fields or {}).items():
+        col = mapping.get(str(key).lower().replace("-", ""))
+        if not col:
+            continue
+        if col == "is_special":
+            value = 1 if value in (True, 1, "1", "true", "True", "yes") else 0
+        elif col == "recurring":
+            value = _love_recurring_norm(value)
+        elif col == "remind_days_before":
+            value = _love_remind_norm(value)
+        elif col in ("title", "notes", "icon", "location", "category"):
+            value = str(value or "").strip()
+        elif col == "event_date":
+            value = str(value or "")[:32]
+        sets.append(f"{col}=?"); values.append(value)
+    if not sets:
+        return {"ok": False, "msg": "no_fields"}
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    existing = conn.execute(f"SELECT id FROM relationship_events WHERE id=? AND user_id IN ({marks})",
+                            (int(event_id), *scope)).fetchone()
+    if not existing:
+        conn.close(); return {"ok": False, "msg": "learning_not_found"}
+    sets.append("updated_at=datetime('now')")
+    conn.execute(f"UPDATE relationship_events SET {', '.join(sets)} WHERE id=?", (*values, int(event_id)))
+    conn.commit()
+    row = conn.execute("SELECT * FROM relationship_events WHERE id=?", (int(event_id),)).fetchone()
+    conn.close()
+    return {"ok": True, "event_id": int(event_id), "event": dict(row) if row else None}
+
+
+def upcoming_relationship_events(user_id, days=90):
+    """Acara & hari istimewa yang akan datang dalam `days` hari (A09).
+
+    Isi:
+      · acara biasa yang tanggalnya masih di depan,
+      · acara `recurring='yearly'` (ulang tahun/anniversary) — tanggal tahun berjalan,
+      · **ulang tahun & anniversary pasangan** dari `relationship_profiles`
+        (`start_date`, `my_birthdate`, `partner_birthdate`) sebagai `source='profile'`.
+
+    Tiap baris memuat `nextDate`, `daysUntil`, `yearsCount` (tahun ke-berapa) dan
+    `remindDate` (tanggal pengingat = nextDate − remind_days_before).
+    """
+    from datetime import date as _d
+    today = _d.today()
+    if isinstance(days, str):
+        try:
+            days = int(days)
+        except ValueError:
+            days = 90
+    days = max(1, min(730, int(days or 90)))
+
+    items = []
+    for ev in (get_relationship_events(user_id) or []):
+        recurring = _love_recurring_norm(ev.get("recurring"))
+        nxt = _love_next_occurrence(ev.get("event_date"), recurring, today)
+        if not nxt:
+            continue
+        delta = _love_days_until(nxt, today)
+        if delta is None or delta > days:
+            continue
+        years = 0
+        if recurring == "yearly":
+            try:
+                years = _d.fromisoformat(str(nxt)).year - _d.fromisoformat(str(ev.get("event_date"))[:10]).year
+            except ValueError:
+                years = 0
+        items.append({
+            "id": str(ev.get("id")),
+            "kind": "event",
+            "source": "event",
+            "title": ev.get("title") or "",
+            "category": ev.get("category") or "date",
+            "icon": ev.get("icon") or "",
+            "location": ev.get("location") or "",
+            "notes": ev.get("notes") or "",
+            "date": ev.get("event_date") or "",
+            "nextDate": nxt,
+            "daysUntil": delta,
+            "isSpecial": bool(ev.get("is_special")),
+            "recurring": recurring,
+            "remindDaysBefore": int(ev.get("remind_days_before") or 0),
+            "remindDate": _love_date_add_days(nxt, -int(ev.get("remind_days_before") or 0)),
+            "yearsCount": years,
+        })
+
+    # Hari istimewa dari profil (ulang tahun & hari jadi) — tanpa baris manual.
+    try:
+        prof = get_relationship_profile(user_id) or {}
+    except Exception:
+        prof = {}
+    profil_hari = (
+        ("my_birthdate", "birthday", "🎂", prof.get("my_name") or "Aku"),
+        ("partner_birthdate", "birthday", "🎂", prof.get("partner_name") or "Pasangan"),
+        ("start_date", "anniversary", "💞", ""),
+    )
+    for key, kategori, ikon, nama in profil_hari:
+        raw = prof.get(key)
+        if not raw:
+            continue
+        nxt = _love_next_occurrence(raw, "yearly", today)
+        if not nxt:
+            continue
+        delta = _love_days_until(nxt, today)
+        if delta is None or delta > days:
+            continue
+        label = {
+            "birthday": ("Ulang tahun " + nama).strip(),
+            "anniversary": "Hari jadi hubungan",
+        }[kategori]
+        years = 0
+        try:
+            years = _d.fromisoformat(nxt).year - _d.fromisoformat(str(raw)[:10]).year
+        except ValueError:
+            years = 0
+        items.append({
+            "id": f"{key}",
+            "kind": "profile",
+            "source": "profile",
+            "title": label,
+            "category": kategori,
+            "icon": ikon,
+            "location": "",
+            "notes": "",
+            "date": str(raw)[:10],
+            "nextDate": nxt,
+            "daysUntil": delta,
+            "isSpecial": True,
+            "recurring": "yearly",
+            "remindDaysBefore": 7,
+            "remindDate": _love_date_add_days(nxt, -7),
+            "yearsCount": years,
+        })
+
+    items.sort(key=lambda it: (it.get("daysUntil") if it.get("daysUntil") is not None else 9999,
+                               it.get("title") or ""))
+    return items
 
 
 def get_relationship_events(user_id, upcoming_only=False, limit=100):
@@ -13590,10 +14284,38 @@ def delete_relationship_event(user_id, event_id):
     conn.commit(); conn.close(); return {"ok": True}
 
 
-def add_relationship_memory(user_id, title, memory_date, notes=""):
+def _love_tags_norm(value):
+    """Normalisasi tag kenangan: terima list atau string "a, b" → "a, b" (unik, ≤12 tag)."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        parts = [str(x) for x in value]
+    else:
+        parts = str(value).replace(";", ",").replace("|", ",").split(",")
+    seen, out = set(), []
+    for part in parts:
+        tag = " ".join(str(part).split()).lower()[:24]
+        if not tag or tag in seen:
+            continue
+        seen.add(tag); out.append(tag)
+    return ", ".join(out[:12])
+
+
+def love_memory_tags(value):
+    """Kebalikan `_love_tags_norm`: nilai kolom → list tag (dipakai API/snapshot)."""
+    return [t.strip() for t in str(value or "").split(",") if t.strip()]
+
+
+def add_relationship_memory(user_id, title, memory_date, notes="", emoji="",
+                           tags="", is_favorite=0, photo_id=None):
+    """Tambah kenangan (A10: + emoji, tag, favorit, tautan foto)."""
     conn = get_conn()
-    cur = conn.execute("INSERT INTO relationship_memories(user_id,title,memory_date,notes) VALUES(?,?,?,?)",
-                       (user_id, title.strip(), memory_date, notes.strip()))
+    cur = conn.execute(
+        "INSERT INTO relationship_memories(user_id,title,memory_date,notes,emoji,tags,is_favorite,photo_id,updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,datetime('now'))",
+        (user_id, (title or "").strip()[:200], memory_date, (notes or "").strip(),
+         (emoji or "").strip()[:8], _love_tags_norm(tags), 1 if is_favorite else 0,
+         int(photo_id) if photo_id else None))
     conn.commit(); conn.close(); return {"ok": True, "memory_id": cur.lastrowid}
 
 
@@ -13608,6 +14330,79 @@ def get_relationship_memories(user_id, limit=100):
 def delete_relationship_memory(user_id, memory_id):
     conn = get_conn(); conn.execute("DELETE FROM relationship_memories WHERE id=? AND user_id=?", (memory_id, user_id))
     conn.commit(); conn.close(); return {"ok": True}
+
+
+def get_relationship_memory(user_id, memory_id):
+    """Satu kenangan (dalam lingkup couple) atau {} bila tidak ada."""
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    row = conn.execute(f"SELECT * FROM relationship_memories WHERE id=? AND user_id IN ({marks})",
+                       (int(memory_id), *scope)).fetchone()
+    conn.close(); return dict(row) if row else {}
+
+
+def update_relationship_memory(user_id, memory_id, **fields):
+    """Perbarui kenangan (A10: dulu tidak ada edit sama sekali).
+
+    Menerima camelCase (API) maupun snake_case; hanya kolom whitelist.
+    """
+    mapping = {
+        "title": "title", "date": "memory_date", "memorydate": "memory_date",
+        "memory_date": "memory_date", "notes": "notes", "description": "notes",
+        "emoji": "emoji", "tags": "tags",
+        "isfavorite": "is_favorite", "is_favorite": "is_favorite",
+        "photoid": "photo_id", "photo_id": "photo_id",
+    }
+    sets, values = [], []
+    for key, value in (fields or {}).items():
+        col = mapping.get(str(key).lower().replace("-", ""))
+        if not col:
+            continue
+        if col in ("title", "notes", "emoji", "memory_date"):
+            value = str(value or "").strip()
+            if col == "title":
+                value = value[:200]
+            elif col == "emoji":
+                value = value[:8]
+        elif col == "tags":
+            value = _love_tags_norm(value)
+        elif col == "is_favorite":
+            value = 1 if value in (True, 1, "1", "true", "True", "yes") else 0
+        elif col == "photo_id":
+            try:
+                value = int(value) if value not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                value = None
+        sets.append(f"{col}=?"); values.append(value)
+    if not sets:
+        return {"ok": False, "msg": "no_fields"}
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    existing = conn.execute(f"SELECT id FROM relationship_memories WHERE id=? AND user_id IN ({marks})",
+                            (int(memory_id), *scope)).fetchone()
+    if not existing:
+        conn.close(); return {"ok": False, "msg": "learning_not_found"}
+    sets.append("updated_at=datetime('now')")
+    conn.execute(f"UPDATE relationship_memories SET {', '.join(sets)} WHERE id=?", (*values, int(memory_id)))
+    conn.commit()
+    row = conn.execute("SELECT * FROM relationship_memories WHERE id=?", (int(memory_id),)).fetchone()
+    conn.close()
+    return {"ok": True, "memory_id": int(memory_id), "memory": dict(row) if row else None}
+
+
+def toggle_relationship_memory_favorite(user_id, memory_id):
+    """Bintang favorit kenangan (toggle) → {"ok": True, "favorite": bool}."""
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    row = conn.execute(f"SELECT is_favorite FROM relationship_memories WHERE id=? AND user_id IN ({marks})",
+                       (int(memory_id), *scope)).fetchone()
+    if not row:
+        conn.close(); return {"ok": False, "msg": "learning_not_found"}
+    favorite = 0 if int(row["is_favorite"] or 0) else 1
+    conn.execute("UPDATE relationship_memories SET is_favorite=?, updated_at=datetime('now') WHERE id=?",
+                 (favorite, int(memory_id)))
+    conn.commit(); conn.close()
+    return {"ok": True, "favorite": bool(favorite), "memory_id": int(memory_id)}
 
 
 def save_relationship_checkin(user_id, checkin_date, my_mood, partner_mood, connection_score, note=""):
@@ -13710,10 +14505,15 @@ def delete_relationship_weekly_review(user_id, review_id):
     conn.commit(); conn.close(); return {"ok": True}
 
 
-def add_relationship_bucket_item(user_id, title, category="dream", target_date=None):
+def add_relationship_bucket_item(user_id, title, category="dream", target_date=None,
+                                 notes="", priority=0):
+    """Tambah item bucket list (A10: + catatan & prioritas)."""
     conn = get_conn(); cur = conn.execute(
-        "INSERT INTO relationship_bucket_items(user_id,title,category,target_date) VALUES(?,?,?,?)",
-        (user_id, title.strip(), category, target_date))
+        "INSERT INTO relationship_bucket_items(user_id,title,category,target_date,notes,priority,updated_at)"
+        " VALUES(?,?,?,?,?,?,datetime('now'))",
+        (user_id, (title or "").strip()[:200], (category or "dream").strip()[:24],
+         (str(target_date).strip()[:32] if target_date else None),
+         (notes or "").strip(), max(0, min(3, int(priority or 0)))))
     conn.commit(); conn.close(); return {"ok": True, "item_id": cur.lastrowid}
 
 
@@ -13737,6 +14537,132 @@ def delete_relationship_bucket_item(user_id, item_id):
     conn.commit(); conn.close(); return {"ok": True}
 
 
+def get_relationship_bucket_item(user_id, item_id):
+    """Satu item bucket list (dalam lingkup couple) atau {} bila tidak ada."""
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    row = conn.execute(f"SELECT * FROM relationship_bucket_items WHERE id=? AND user_id IN ({marks})",
+                       (int(item_id), *scope)).fetchone()
+    conn.close(); return dict(row) if row else {}
+
+
+def update_relationship_bucket_item(user_id, item_id, **fields):
+    """Perbarui item bucket list (A10: judul, kategori, target, catatan, prioritas, selesai)."""
+    mapping = {
+        "title": "title", "category": "category",
+        "targetdate": "target_date", "target_date": "target_date", "date": "target_date",
+        "notes": "notes", "priority": "priority",
+        "isdone": "is_done", "is_done": "is_done", "done": "is_done",
+    }
+    sets, values = [], []
+    for key, value in (fields or {}).items():
+        col = mapping.get(str(key).lower().replace("-", ""))
+        if not col:
+            continue
+        if col in ("title", "category", "notes"):
+            value = str(value or "").strip()
+            if col == "title":
+                value = value[:200]
+            elif col == "category":
+                value = value[:24] or "dream"
+        elif col == "target_date":
+            value = str(value or "").strip()[:32] or None
+        elif col == "priority":
+            try:
+                value = max(0, min(3, int(value or 0)))
+            except (TypeError, ValueError):
+                value = 0
+        elif col == "is_done":
+            done = 1 if value in (True, 1, "1", "true", "True", "yes") else 0
+            sets.append("completed_at=CASE WHEN ?=1 THEN datetime('now') ELSE NULL END")
+            values.append(done)
+            value = done
+        sets.append(f"{col}=?"); values.append(value)
+    if not sets:
+        return {"ok": False, "msg": "no_fields"}
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    existing = conn.execute(f"SELECT id FROM relationship_bucket_items WHERE id=? AND user_id IN ({marks})",
+                            (int(item_id), *scope)).fetchone()
+    if not existing:
+        conn.close(); return {"ok": False, "msg": "learning_not_found"}
+    sets.append("updated_at=datetime('now')")
+    conn.execute(f"UPDATE relationship_bucket_items SET {', '.join(sets)} WHERE id=?", (*values, int(item_id)))
+    conn.commit()
+    row = conn.execute("SELECT * FROM relationship_bucket_items WHERE id=?", (int(item_id),)).fetchone()
+    conn.close()
+    return {"ok": True, "item_id": int(item_id), "item": dict(row) if row else None}
+
+
+def get_relationship_bucket_stats(user_id):
+    """Statistik bucket list: total/selesai/terbuka/terlewat/akan jatuh tempo (%).
+
+    `overdue` = belum selesai tapi target_date sudah lewat; `dueSoon` = ≤30 hari lagi.
+    """
+    from datetime import date as _d, timedelta as _td
+    items = get_relationship_bucket_items(user_id) or []
+    today = _d.today()
+    total = len(items)
+    done = sum(1 for it in items if it.get("is_done"))
+    overdue = due_soon = 0
+    for it in items:
+        if it.get("is_done") or not it.get("target_date"):
+            continue
+        try:
+            target = _d.fromisoformat(str(it["target_date"])[:10])
+        except ValueError:
+            continue
+        if target < today:
+            overdue += 1
+        elif target <= today + _td(days=30):
+            due_soon += 1
+    return {
+        "total": total, "done": done, "open": total - done,
+        "overdue": overdue, "dueSoon": due_soon,
+        "percent": int(round(done * 100 / total)) if total else 0,
+        "targeted": sum(1 for it in items if it.get("target_date")),
+    }
+
+
+def promote_relationship_bucket_item(user_id, item_id):
+    """Ubah item bucket list menjadi kenangan (1 klik, idempoten).
+
+    Kenangan baru memakai judul item, tanggal pencapaian (`completed_at` atau hari ini),
+    catatan item + penanda asal bucket, emoji kategori, dan tag `bucket` + kategori.
+    Item ditandai `promoted_memory_id` supaya tidak bisa diduplikasi.
+    """
+    from datetime import date as _d
+    scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
+    conn = get_conn()
+    row = conn.execute(f"SELECT * FROM relationship_bucket_items WHERE id=? AND user_id IN ({marks})",
+                       (int(item_id), *scope)).fetchone()
+    if not row:
+        conn.close(); return {"ok": False, "msg": "learning_not_found"}
+    item = dict(row)
+    if item.get("promoted_memory_id"):
+        conn.close()
+        return {"ok": True, "memory_id": int(item["promoted_memory_id"]), "already": True}
+    category = item.get("category") or "dream"
+    emoji = {"dream": "🌟", "travel": "✈️", "experience": "🎢", "learning": "📚",
+             "gift": "🎁", "home": "🏡"}.get(category, "🌟")
+    achieved = str(item.get("completed_at") or _d.today().isoformat())[:10]
+    notes = (item.get("notes") or "").strip()
+    marker = f"Dari bucket list · {category}"
+    notes = f"{notes}\n{marker}".strip() if notes else marker
+    cur = conn.execute(
+        "INSERT INTO relationship_memories(user_id,title,memory_date,notes,emoji,tags,is_favorite,updated_at)"
+        " VALUES(?,?,?,?,?,?,0,datetime('now'))",
+        (item.get("user_id") or user_id, item.get("title") or "Bucket list", achieved,
+         notes, emoji, _love_tags_norm(f"bucket, {category}")))
+    memory_id = cur.lastrowid
+    conn.execute("UPDATE relationship_bucket_items SET is_done=1,"
+                 " completed_at=COALESCE(completed_at, datetime('now')),"
+                 " promoted_memory_id=?, updated_at=datetime('now') WHERE id=?",
+                 (memory_id, int(item_id)))
+    conn.commit(); conn.close()
+    return {"ok": True, "memory_id": memory_id, "item_id": int(item_id)}
+
+
 def get_menstrual_settings(user_id):
     owner_id = _love_primary_user_id(user_id)
     conn = get_conn(); row = conn.execute("SELECT * FROM menstrual_settings WHERE user_id=?", (owner_id,)).fetchone()
@@ -13758,9 +14684,15 @@ def save_menstrual_settings(user_id, tracked_person, last_period_start, cycle_le
 
 def add_menstrual_cycle(user_id, start_date, end_date=None, notes=""):
     owner_id = _love_primary_user_id(user_id)
+    start_date = str(start_date or "").strip()
+    if not start_date:
+        return {"ok": False, "code": "start_date"}
+    end_date = (str(end_date).strip() or None) if end_date else None
+    notes = (notes or "").strip()
     conn = get_conn(); cur = conn.execute(
-        "INSERT INTO menstrual_cycles(user_id,start_date,end_date,notes) VALUES(?,?,?,?)",
-        (user_id, start_date, end_date, notes.strip()))
+        "INSERT INTO menstrual_cycles(user_id,start_date,end_date,notes,updated_at) "
+        "VALUES(?,?,?,?,datetime('now'))",
+        (user_id, start_date, end_date, notes))
     conn.execute("""
         INSERT INTO menstrual_settings(user_id,last_period_start) VALUES(?,?)
         ON CONFLICT(user_id) DO UPDATE SET last_period_start=excluded.last_period_start, updated_at=datetime('now')
@@ -13768,12 +14700,71 @@ def add_menstrual_cycle(user_id, start_date, end_date=None, notes=""):
     conn.commit(); conn.close(); return {"ok": True, "cycle_id": cur.lastrowid}
 
 
+def update_menstrual_cycle(user_id, cycle_id, start_date=None, end_date=None, notes=None):
+    """A11: edit riwayat siklus — dulu hanya bisa ditambah & dihapus.
+
+    Nilai `None` = jangan ubah. Tanggal selesai boleh dikosongkan (string kosong)
+    untuk menandai siklus masih berjalan.
+    """
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM menstrual_cycles WHERE id=?", (cycle_id,)).fetchone()
+    if not row:
+        conn.close(); return {"ok": False, "code": "not_found"}
+    scope = [int(x) for x in _love_scope_user_ids(user_id)]
+    if int(row["user_id"]) not in scope:
+        conn.close(); return {"ok": False, "code": "forbidden"}
+    fields, args = [], []
+    if start_date is not None:
+        start = str(start_date).strip()
+        if not start:
+            conn.close(); return {"ok": False, "code": "start_date"}
+        fields.append("start_date=?"); args.append(start)
+    if notes is not None:
+        fields.append("notes=?"); args.append(str(notes).strip())
+    if end_date is not None:
+        end = str(end_date).strip()
+        cur_start = str(start_date).strip() if start_date is not None else (row["start_date"] or "")
+        if end and cur_start and end < cur_start:
+            conn.close(); return {"ok": False, "code": "range"}
+        fields.append("end_date=?"); args.append(end or None)
+    if not fields:
+        conn.close(); return {"ok": False, "code": "no_fields"}
+    fields.append("updated_at=datetime('now')")
+    args.append(int(cycle_id))
+    conn.execute("UPDATE menstrual_cycles SET " + ", ".join(fields) + " WHERE id=?", args)
+    conn.commit()
+    out = dict(conn.execute("SELECT * FROM menstrual_cycles WHERE id=?", (cycle_id,)).fetchone())
+    conn.close()
+    out["length_days"] = _cycle_length_days(out.get("start_date"), out.get("end_date"))
+    return {"ok": True, "cycle_id": int(cycle_id), "cycle": out}
+
+
+def _cycle_length_days(start_date, end_date):
+    """Panjang siklus dalam hari (inklusif) atau None bila tanggal tak lengkap."""
+    try:
+        s = date.fromisoformat(str(start_date)[:10])
+        if not end_date:
+            return None
+        e = date.fromisoformat(str(end_date)[:10])
+        if e < s:
+            return None
+        return (e - s).days + 1
+    except (ValueError, TypeError):
+        return None
+
+
 def get_menstrual_cycles(user_id, limit=12):
     scope = _love_scope_user_ids(user_id); marks = ",".join("?" for _ in scope)
     conn = get_conn(); rows = conn.execute(
         f"SELECT * FROM menstrual_cycles WHERE user_id IN ({marks}) ORDER BY start_date DESC LIMIT ?",
         (*scope, limit)).fetchall()
-    conn.close(); return [dict(row) for row in rows]
+    conn.close()
+    out = []
+    for row in rows:
+        item = dict(row)
+        item["length_days"] = _cycle_length_days(item.get("start_date"), item.get("end_date"))
+        out.append(item)
+    return out
 
 
 def delete_menstrual_cycle(user_id, cycle_id):
@@ -14174,9 +15165,12 @@ def mirror_cloud_love_record(local_user_id,record_type,row):
         if existing:conn.execute("""UPDATE relationship_events SET user_id=?,title=?,event_date=?,category=?,notes=?,created_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,existing["id"]));local_id=existing["id"]
         else:local_id=conn.execute("""INSERT INTO relationship_events(user_id,title,event_date,category,notes,created_at,cloud_id,cloud_updated_at) VALUES(?,?,?,?,?,?,?,?)""",values).lastrowid
     elif record_type=="memory":
-        values=(uid,row.get("title") or "",row.get("memory_date"),row.get("notes") or "",row.get("created_at"),cloud_id,updated)
-        if existing:conn.execute("""UPDATE relationship_memories SET user_id=?,title=?,memory_date=?,notes=?,created_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,existing["id"]));local_id=existing["id"]
-        else:local_id=conn.execute("""INSERT INTO relationship_memories(user_id,title,memory_date,notes,created_at,cloud_id,cloud_updated_at) VALUES(?,?,?,?,?,?,?)""",values).lastrowid
+        # A10: emoji/tag/favorit ikut dari cloud (photo_id murni lokal).
+        values=(uid,row.get("title") or "",row.get("memory_date"),row.get("notes") or "",row.get("emoji") or "",
+                _love_tags_norm(row.get("tags")),1 if row.get("is_favorite") else 0,
+                row.get("created_at"),updated or row.get("created_at"),cloud_id,updated)
+        if existing:conn.execute("""UPDATE relationship_memories SET user_id=?,title=?,memory_date=?,notes=?,emoji=?,tags=?,is_favorite=?,created_at=?,updated_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,existing["id"]));local_id=existing["id"]
+        else:local_id=conn.execute("""INSERT INTO relationship_memories(user_id,title,memory_date,notes,emoji,tags,is_favorite,created_at,updated_at,cloud_id,cloud_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",values).lastrowid
     elif record_type=="checkin":
         values=(uid,row.get("checkin_date"),int(row.get("my_mood") or 3),int(row.get("partner_mood") or 3),int(row.get("connection_score") or 3),row.get("note") or "",row.get("created_at"),cloud_id,updated)
         same=existing or conn.execute("SELECT id FROM relationship_checkins WHERE user_id=? AND checkin_date=?",values[:2]).fetchone()
@@ -14192,9 +15186,12 @@ def mirror_cloud_love_record(local_user_id,record_type,row):
         if same:conn.execute("""UPDATE relationship_weekly_reviews SET user_id=?,week_start=?,appreciation=?,wins=?,support_needed=?,shared_intention=?,created_at=?,updated_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,same["id"]));local_id=same["id"]
         else:local_id=conn.execute("""INSERT INTO relationship_weekly_reviews(user_id,week_start,appreciation,wins,support_needed,shared_intention,created_at,updated_at,cloud_id,cloud_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",values).lastrowid
     elif record_type=="bucket_item":
-        values=(uid,row.get("title") or "",row.get("category") or "dream",row.get("target_date"),1 if row.get("is_done") else 0,row.get("created_at"),row.get("completed_at"),cloud_id,updated)
-        if existing:conn.execute("""UPDATE relationship_bucket_items SET user_id=?,title=?,category=?,target_date=?,is_done=?,created_at=?,completed_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,existing["id"]));local_id=existing["id"]
-        else:local_id=conn.execute("""INSERT INTO relationship_bucket_items(user_id,title,category,target_date,is_done,created_at,completed_at,cloud_id,cloud_updated_at) VALUES(?,?,?,?,?,?,?,?,?)""",values).lastrowid
+        # A10: catatan & prioritas ikut dari cloud.
+        values=(uid,row.get("title") or "",row.get("category") or "dream",row.get("target_date"),
+                row.get("notes") or "",int(row.get("priority") or 0),1 if row.get("is_done") else 0,
+                row.get("created_at"),row.get("completed_at"),updated or row.get("created_at"),cloud_id,updated)
+        if existing:conn.execute("""UPDATE relationship_bucket_items SET user_id=?,title=?,category=?,target_date=?,notes=?,priority=?,is_done=?,created_at=?,completed_at=?,updated_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,existing["id"]));local_id=existing["id"]
+        else:local_id=conn.execute("""INSERT INTO relationship_bucket_items(user_id,title,category,target_date,notes,priority,is_done,created_at,completed_at,updated_at,cloud_id,cloud_updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",values).lastrowid
     elif record_type=="cycle":
         values=(uid,row.get("start_date"),row.get("end_date"),row.get("notes") or "",row.get("created_at"),cloud_id,updated)
         if existing:conn.execute("""UPDATE menstrual_cycles SET user_id=?,start_date=?,end_date=?,notes=?,created_at=?,cloud_id=?,cloud_updated_at=? WHERE id=?""",(*values,existing["id"]));local_id=existing["id"]
@@ -15058,6 +16055,93 @@ def move_photo_to_love_album(user_id, source_album_id, target_album_id, photo_id
     conn.execute("INSERT OR IGNORE INTO love_album_items(album_id,photo_id) VALUES(?,?)", (target_album_id, photo_id))
     conn.commit(); conn.close()
     return {"ok": True}
+
+
+def set_love_album_cover(user_id, album_id, photo_id):
+    """A11: jadikan sebuah foto sebagai sampul album (0/kosong = hapus sampul).
+
+    Bila foto belum ada di album, foto otomatis dimasukkan — aksi "jadikan sampul"
+    dari grid galeri tidak boleh gagal hanya karena urutan klik.
+    """
+    album = get_love_album(album_id)
+    if not _love_album_accessible(user_id, album):
+        return {"ok": False, "code": "album"}
+    try:
+        pid = int(photo_id) if photo_id not in (None, "", 0, "0") else 0
+    except (TypeError, ValueError):
+        pid = 0
+    if not pid:
+        conn = get_conn()
+        conn.execute("UPDATE love_albums SET cover_photo_id=0, updated_at=datetime('now') WHERE id=?",
+                     (album_id,))
+        conn.commit(); conn.close()
+        return {"ok": True, "album_id": int(album_id), "photo_id": 0, "added": False}
+    if not _love_photo_visible_to(user_id, pid):
+        return {"ok": False, "code": "photo"}
+    conn = get_conn()
+    has = conn.execute("SELECT 1 FROM love_album_items WHERE album_id=? AND photo_id=?",
+                       (album_id, pid)).fetchone()
+    if not has:
+        conn.execute("INSERT OR IGNORE INTO love_album_items(album_id,photo_id) VALUES(?,?)",
+                     (album_id, pid))
+    conn.execute("UPDATE love_albums SET cover_photo_id=?, updated_at=datetime('now') WHERE id=?",
+                 (pid, album_id))
+    conn.commit(); conn.close()
+    return {"ok": True, "album_id": int(album_id), "photo_id": pid, "added": not bool(has)}
+
+
+def bulk_love_photos(user_id, photo_ids, action, album_id=None, visibility=None):
+    """A11: aksi massal galeri dalam SATU panggilan (hapus / visibilitas / pindah album).
+
+    Aturan aman: hanya foto milik user sendiri yang boleh dihapus / diubah
+    visibilitasnya (foto pasangan tidak bisa disentuh); pemindahan album cukup foto
+    yang terlihat oleh user. Tiap id yang gagal dilaporkan di `failed`.
+    """
+    ids = []
+    for raw in (photo_ids or []):
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {"ok": False, "code": "no_photos"}
+    if action not in ("delete", "visibility", "move"):
+        return {"ok": False, "code": "bad_action"}
+
+    affected, failed = 0, []
+    if action == "move":
+        try:
+            target = int(album_id) if album_id not in (None, "", 0, "0") else 0
+        except (TypeError, ValueError):
+            target = 0
+        if not target or not _love_album_accessible(user_id, get_love_album(target)):
+            return {"ok": False, "code": "album"}
+        for pid in ids:
+            if not _love_photo_visible_to(user_id, pid):
+                failed.append(pid); continue
+            res = move_photo_to_love_album(user_id, None, target, pid)
+            if res.get("ok"):
+                affected += 1
+            else:
+                failed.append(pid)
+    elif action == "visibility":
+        if visibility not in ("private", "shared"):
+            return {"ok": False, "code": "invalid"}
+        for pid in ids:
+            res = update_love_space_photo_visibility(user_id, pid, visibility)
+            if res.get("ok"):
+                affected += 1
+            else:
+                failed.append(pid)
+    else:  # delete
+        for pid in ids:
+            res = delete_love_space_photo(user_id, pid)
+            if res.get("ok"):
+                affected += 1
+            else:
+                failed.append(pid)
+    return {"ok": True, "action": action, "affected": affected,
+            "failed": failed, "requested": len(ids)}
 
 
 def get_love_album_photos(user_id, album_id):

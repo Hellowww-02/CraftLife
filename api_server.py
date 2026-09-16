@@ -1,8 +1,10 @@
 """CraftLife local HTTP API — wraps database.py for the React UI (Phase 0–1)."""
 from __future__ import annotations
 
+import base64
 import json
 import os
+import tempfile
 import re
 import threading
 import time as _time
@@ -311,7 +313,6 @@ WEB_I18N_KEYS = [
     "love_category",
     "love_category_date",
     "love_category_dream",
-    "love_category_gift",
     "love_category_milestone",
     "love_checkin_row",
     "love_checkin_today_done",
@@ -590,6 +591,593 @@ WEB_I18N_KEYS = [
     "music_lyrics_offset",
     "music_lyrics_offset_reset",
     "music_lyrics_match_duration",
+    # A01: lirik mengikuti lagu yang diputar (drawer).
+    "music_lyrics_now_for",
+    "music_lyrics_track_change_hint",
+    "music_lyrics_disabled_no_track",
+    "music_lyrics_scroll_paused",
+    # A02: perluasan & akurasi pencarian lirik.
+    "music_lyrics_candidates",
+    "music_lyrics_search_expand",
+    "music_lyrics_use",
+    "music_lyrics_duration_match",
+    "music_lyrics_duration_off",
+    "music_lyrics_version_warning",
+    "music_lyrics_source_lrclib",
+    "music_lyrics_source_ovh",
+    "music_lyrics_source_embedded",
+    "music_lyrics_source_user",
+    "music_lyrics_source_pick",
+    "music_lyrics_no_candidates",
+    "music_lyrics_index_hint",
+    "music_lyrics_score",
+    "music_lyrics_close",
+    # A03.5: unduhan/ekspor ke komputer.
+    "download_saved_title",
+    "download_saved_msg",
+    "download_started_msg",
+    "download_failed_title",
+    "download_failed_msg",
+    "download_folder_default",
+    "download_open_folder",
+    "download_open_failed",
+    "download_web_mode_note",
+    # A13: Year Wrapped (mata uang aktif user + pemilih tahun).
+    "wrapped_tasks_done",
+    "wrapped_net",
+    "wrapped_saving_rate",
+    "wrapped_by_type",
+    "wrapped_currency_note",
+    "wrapped_currency_note_idr",
+    "wrapped_pick_year",
+    "wrapped_copy",
+    "wrapped_download",
+    "wrapped_copied",
+    "wrapped_error",
+    "wrapped_type_habit",
+    "wrapped_type_daily",
+    "wrapped_type_todo",
+    "wrapped_type_sport",
+    "wrapped_type_other",
+    # A12: tab overview + Special Day → Reminder tahunan.
+    "reminders_repeat_yearly_hint",
+    "reminders_repeat_until_hint",
+    "love_score_short",
+    "love_checkin_today_short",
+    "love_days_ago",
+    "love_me",
+    "love_together_days",
+    "love_together_years",
+    "love_hero_title",
+    "love_hero_since",
+    "love_hero_no_date",
+    "love_empty_cta",
+    "love_rel_dating",
+    "love_rel_engaged",
+    "love_rel_married",
+    "love_overview_sub",
+    "love_next_special",
+    "love_special_none",
+    "love_special_today",
+    "love_special_tomorrow",
+    "love_in_days",
+    "love_years_count",
+    "love_create_reminder",
+    "love_reminder_created",
+    "love_reminder_created_detail",
+    "love_reminder_exists",
+    "love_reminder_no_date",
+    "love_reminder_bad_event",
+    "love_reminder_from_love",
+    "love_reminder_anniversary",
+    "love_reminder_birthday",
+    "love_reminder_repeat_yearly",
+    "love_reminder_repeat_once",
+    "love_reminder_hint",
+    "love_special_remind_days",
+    "love_special_days_list",
+    "love_special_source_profile",
+    "love_open_reminders",
+    "love_score_ring",
+    "love_score_breakdown",
+    "love_score_last_checkin",
+    "love_score_no_checkin",
+    "love_score_avg_my",
+    "love_score_avg_partner",
+    "love_stat_title",
+    "love_stat_memories",
+    "love_stat_bucket_done",
+    "love_stat_photos",
+    "love_stat_prompts",
+    "love_stat_checkins_month",
+    "love_stat_albums",
+    "love_stat_bucket_of",
+    "love_quick_title",
+    "love_quick_checkin",
+    "love_quick_checkin_done",
+    "love_quick_memory",
+    "love_quick_event",
+    "love_quick_bucket",
+    "love_quick_reminders",
+    "reminders_repeat_yearly",
+    "reminders_badge_yearly",
+    "reminders_source_love",
+    "dash_next_special",
+    "dash_next_special_today",
+    # A11: tab connection · cycle · gallery.
+    "love_cycle_no_fields",
+    "love_conn_streak",
+    "love_conn_streak_sub",
+    "love_conn_stat_total",
+    "love_conn_my_mood",
+    "love_conn_partner_mood",
+    "love_conn_score",
+    "love_conn_mood_trend",
+    "love_conn_range_30",
+    "love_conn_range_90",
+    "love_conn_trend_empty",
+    "love_conn_points",
+    "love_conn_score_trend",
+    "love_conn_ask_partner",
+    "love_conn_pool_count",
+    "love_conn_history",
+    "love_conn_search_ph",
+    "love_conn_filter_all",
+    "love_conn_only_favorites",
+    "love_conn_showing",
+    "love_conn_reuse",
+    "love_conn_no_match",
+    "love_conn_empty_history",
+    "love_conn_favorites",
+    "love_conn_favorites_empty",
+    "love_conn_use",
+    "love_conn_copied",
+    "love_prompt_daily",
+    "love_cycle_stat_count",
+    "love_cycle_stat_avg",
+    "love_cycle_stat_last",
+    "love_cycle_next",
+    "love_cycle_confidence",
+    "love_cycle_confidence_low",
+    "love_cycle_confidence_medium",
+    "love_cycle_confidence_high",
+    "love_cycle_ovulation",
+    "love_cycle_fertile",
+    "love_cycle_based_on",
+    "love_cycle_based_on_value",
+    "love_cycle_add_reminder",
+    "love_cycle_reminder_title",
+    "love_cycle_reminder_toast",
+    "love_cycle_history",
+    "love_cycle_history_summary",
+    "love_cycle_history_empty",
+    "love_cycle_add",
+    "love_cycle_save",
+    "love_cycle_save_edit",
+    "love_cycle_edit_title",
+    "love_cycle_notes",
+    "love_cycle_notes_ph",
+    "love_cycle_running",
+    "love_cycle_days_count",
+    "love_cycle_date_required",
+    "love_cycle_date_invalid",
+    "love_cycle_range_invalid",
+    "love_gallery_album_count",
+    "love_gallery_photos_short",
+    "love_gallery_album_cover",
+    "love_gallery_cover_saved",
+    "love_gallery_cover_need_album",
+    "love_gallery_select_mode",
+    "love_gallery_bulk_move",
+    "love_gallery_bulk_move_go",
+    "love_gallery_bulk_deleted",
+    "love_gallery_bulk_moved",
+    "love_gallery_bulk_visibility",
+    "love_gallery_none_selected",
+    "love_gallery_invalid_action",
+    "love_gallery_invalid_visibility",
+    "love_gallery_save_meta",
+    "love_gallery_caption_ph",
+    "love_gallery_add_to_album",
+    "love_gallery_no_match",
+    "love_gallery_zoom_hint",
+    "love_album_copy_to",
+    "love_album_move_to",
+    "love_album_remove",
+    "love_album_picked",
+    "love_album_invalid",
+    "love_actions",
+    # A10: tab memories & Bucket List (A10).
+    "love_memory_add_title",
+    "love_memory_edit_title",
+    "love_memory_create",
+    "love_memory_save",
+    "love_memory_saving",
+    "love_memory_emoji",
+    "love_memory_emoji_custom",
+    "love_memory_title",
+    "love_memory_title_ph",
+    "love_memory_title_required",
+    "love_memory_date_required",
+    "love_memory_tags",
+    "love_memory_tags_ph",
+    "love_memory_notes",
+    "love_memory_notes_ph",
+    "love_memory_link_photo",
+    "love_memory_photo_none",
+    "love_memory_photo_empty",
+    "love_memory_favorite",
+    "love_memory_favorite_on",
+    "love_memory_favorite_off",
+    "love_memory_count",
+    "love_memory_stat_total",
+    "love_memory_stat_fav",
+    "love_memory_stat_tagged",
+    "love_memory_stat_photo",
+    "love_memory_search_ph",
+    "love_memory_filter_year",
+    "love_memory_year_all",
+    "love_memory_tag_all",
+    "love_memory_sort",
+    "love_memory_sort_newest",
+    "love_memory_sort_oldest",
+    "love_memory_only_fav",
+    "love_memory_has_photo",
+    "love_memory_edited_at",
+    "love_memory_empty",
+    "love_memory_no_match",
+    "love_memory_delete_confirm",
+    "love_memory_updated",
+    "love_memory_added",
+    "love_bucket_add_title",
+    "love_bucket_edit_title",
+    "love_bucket_create",
+    "love_bucket_save",
+    "love_bucket_saving",
+    "love_bucket_title_ph",
+    "love_bucket_title_required",
+    "love_bucket_category",
+    "love_bucket_category_dream",
+    "love_bucket_category_travel",
+    "love_bucket_category_experience",
+    "love_bucket_category_learning",
+    "love_bucket_category_gift",
+    "love_bucket_category_home",
+    "love_bucket_target_date",
+    "love_bucket_target_optional",
+    "love_bucket_target_past",
+    "love_bucket_priority",
+    "love_bucket_priority_none",
+    "love_bucket_priority_n",
+    "love_bucket_notes",
+    "love_bucket_notes_ph",
+    "love_bucket_mark_done",
+    "love_bucket_mark_open",
+    "love_bucket_add",
+    "love_bucket_quick_ph",
+    "love_bucket_search_ph",
+    "love_bucket_filter_all",
+    "love_bucket_filter_open",
+    "love_bucket_filter_done",
+    "love_bucket_filter_late",
+    "love_bucket_stat_total",
+    "love_bucket_stat_done",
+    "love_bucket_stat_open",
+    "love_bucket_stat_overdue",
+    "love_bucket_progress",
+    "love_bucket_overdue",
+    "love_bucket_overdue_days",
+    "love_bucket_h_days",
+    "love_bucket_promote",
+    "love_bucket_promote_short",
+    "love_bucket_is_memory",
+    "love_bucket_promoted",
+    "love_bucket_empty",
+    "love_bucket_no_match",
+    "love_bucket_delete_confirm",
+    "love_bucket_updated",
+    "love_bucket_added",
+    "love_gallery_privacy_hint",
+    "love_category_travel",
+    "love_category_gift",
+    # A09: tab plans Love Space — dialog acara, catatan, Special Day & pengingat.
+    "love_event_add_title",
+    "love_event_edit_title",
+    "love_event_create",
+    "love_event_save",
+    "love_event_saving",
+    "love_event_date",
+    "love_event_category",
+    "love_event_location",
+    "love_event_location_ph",
+    "love_event_icon",
+    "love_event_icon_auto",
+    "love_event_icon_default",
+    "love_event_icon_custom",
+    "love_event_title_ph",
+    "love_event_title_required",
+    "love_event_date_required",
+    "love_event_notes",
+    "love_event_notes_ph",
+    "love_event_notes_hint",
+    "love_event_special",
+    "love_event_special_hint",
+    "love_event_recurring",
+    "love_event_remind_before",
+    "love_event_remind_none",
+    "love_event_remind_days",
+    "love_event_remind_short",
+    "love_event_upcoming",
+    "love_event_past",
+    "love_event_today",
+    "love_event_tomorrow",
+    "love_event_in_days",
+    "love_event_days_ago",
+    "love_event_in_past",
+    "love_event_next_yearly",
+    "love_event_pick_date",
+    "love_event_special_upcoming",
+    "love_event_special_count",
+    "love_event_search_ph",
+    "love_event_filter_all",
+    "love_event_only_special",
+    "love_event_empty",
+    "love_event_no_match",
+    "love_event_updated",
+    "love_event_added",
+    "love_category_anniversary",
+    "love_category_trip",
+    # A08: sitasi sumber, grounding & pemutar podcast dua host.
+    "play",
+    "pause",
+    "learning_citations_found",
+    "learning_citation_source_n",
+    "learning_open_source",
+    "learning_grounding_on",
+    "learning_sources_selected_count",
+    "learning_filter_sources",
+    "learning_podcast_title",
+    "learning_podcast_hosts_voices",
+    "learning_podcast_seek",
+    "learning_podcast_back15",
+    "learning_podcast_fwd15",
+    "learning_podcast_speed",
+    "learning_podcast_loop",
+    "learning_podcast_loop_short",
+    "learning_podcast_follow",
+    "learning_podcast_follow_short",
+    "learning_podcast_download",
+    "learning_podcast_download_short",
+    "learning_podcast_regenerate",
+    "learning_podcast_regenerate_short",
+    "learning_podcast_generating_hint",
+    "learning_podcast_generate_hint",
+    "learning_podcast_engine",
+    "learning_podcast_host",
+    "learning_podcast_now",
+    "learning_podcast_no_turns",
+    "learning_podcast_audio_failed",
+    "learning_podcast_audio_ready",
+    "learning_podcast_audio_ready_detail",
+    "learning_no_podcast",
+    # A07: shell Learning ala NotebookLM (rail · topbar · panel preset).
+    "learning_nb_switcher",
+    "learning_rail_expand",
+    "learning_rail_collapse",
+    "learning_workspace_short",
+    "learning_view_sources",
+    "learning_view_chat",
+    "learning_view_studio",
+    "learning_topbar_sources",
+    "learning_topbar_ready",
+    "learning_rename_short",
+    "learning_add_source_hint",
+    "learning_source_search_ph",
+    "learning_source_no_match",
+    "learning_source_used",
+    "learning_source_unused",
+    "learning_source_type_pdf",
+    "learning_source_type_doc",
+    "learning_source_type_text",
+    "learning_source_type_url",
+    "learning_source_type_youtube",
+    "learning_panel_narrow",
+    "learning_panel_medium",
+    "learning_panel_wide",
+    "learning_panel_collapse",
+    "learning_panel_width_hint",
+    "learning_panel_preset_hint",
+    "learning_suggestion_q1",
+    "learning_suggestion_q2",
+    "learning_suggestion_q3",
+    "learning_suggestion_q4",
+    # A06: daftar artefak Studio (list ke bawah) + aksi kartu.
+    "learning_artifacts",
+    "learning_artifacts_count",
+    "learning_artifact_open",
+    "learning_artifact_rename",
+    "learning_artifact_export_md",
+    "learning_artifact_duplicate",
+    "learning_artifact_delete",
+    "learning_artifact_items_quiz",
+    "learning_artifact_items_cards",
+    "learning_artifact_items_turns",
+    "learning_artifact_empty_title",
+    "learning_artifact_empty_hint",
+    "learning_artifact_filter_all",
+    "learning_artifact_sort_newest",
+    "learning_artifact_sort_oldest",
+    "learning_artifact_sort_type",
+    "learning_artifact_renamed",
+    "learning_artifact_now",
+    "learning_artifact_min_ago",
+    "learning_artifact_hour_ago",
+    "learning_artifact_day_ago",
+    "learning_artifact_items_words",
+    "learning_artifact_preview",
+    "learning_artifact_search_ph",
+    "learning_artifact_sort",
+    "learning_artifact_empty_filtered",
+    "learning_artifact_empty_content",
+    "learning_artifact_active",
+    "learning_artifact_edited",
+    "learning_artifact_open_hint",
+    "learning_artifact_not_latest",
+    "learning_artifact_rename_title",
+    "learning_artifact_rename_ph",
+    "learning_artifact_export_txt",
+    "learning_artifact_export_done",
+    "learning_artifact_export_failed",
+    "learning_artifact_duplicated",
+    "learning_artifact_deleted",
+    "learning_artifact_interactive",
+    "learning_not_found",
+    # A05: dialog konfigurasi per tipe Studio.
+    "learning_dialog_title",
+    "learning_dialog_config",
+    "learning_dialog_sources_summary",
+    "learning_dialog_no_sources",
+    "learning_dialog_advanced",
+    "learning_dialog_remember",
+    "learning_dialog_reset_default",
+    "learning_dialog_generate_now",
+    "learning_dialog_generating",
+    "learning_dialog_last_settings",
+    "learning_dialog_edit_settings",
+    "learning_dialog_open_hint",
+    "learning_dialog_quick_hint",
+    "learning_dialog_toggle_on",
+    "learning_dialog_toggle_off",
+    "learning_dialog_blurb_summary",
+    "learning_dialog_blurb_study_guide",
+    "learning_dialog_blurb_flashcards",
+    "learning_dialog_blurb_faq",
+    "learning_dialog_blurb_mindmap",
+    "learning_dialog_blurb_timeline",
+    "learning_dialog_blurb_quiz",
+    "learning_dialog_blurb_podcast",
+    "learning_opt_difficulty",
+    "learning_opt_difficulty_easy",
+    "learning_opt_difficulty_mixed",
+    "learning_opt_difficulty_hard",
+    "learning_opt_language",
+    "learning_opt_language_auto",
+    "learning_opt_language_hint",
+    "learning_opt_lang_id",
+    "learning_opt_lang_en",
+    "learning_opt_focus",
+    "learning_opt_focus_hint",
+    "learning_opt_card_style",
+    "learning_opt_card_style_term",
+    "learning_opt_card_style_qa",
+    "learning_opt_card_style_formula",
+    "learning_opt_host_style",
+    "learning_opt_host_casual",
+    "learning_opt_host_formal",
+    "learning_opt_host_debate",
+    "learning_opt_length",
+    "learning_opt_length_short",
+    "learning_opt_length_standard",
+    "learning_opt_length_deep",
+    "learning_opt_depth",
+    "learning_opt_depth_hint",
+    "learning_opt_branches",
+    "learning_opt_subs",
+    "learning_opt_sections",
+    "learning_opt_sections_hint",
+    "learning_opt_section_summary",
+    "learning_opt_section_concepts",
+    "learning_opt_section_examples",
+    "learning_opt_section_practice",
+    "learning_opt_section_conclusion",
+    "learning_opt_exercises",
+    "learning_opt_faq_count",
+    "learning_opt_answer_style",
+    "learning_opt_answer_brief",
+    "learning_opt_answer_detail",
+    "learning_opt_granularity",
+    "learning_opt_granularity_day",
+    "learning_opt_granularity_week",
+    "learning_opt_granularity_month",
+    "learning_opt_granularity_year",
+    "learning_opt_absolute_dates",
+    "learning_opt_absolute_dates_hint",
+    "learning_opt_summary_style",
+    "learning_opt_summary_bullets",
+    "learning_opt_summary_narrative",
+    "learning_opt_custom_instructions",
+    "learning_opt_custom_instructions_hint",
+    "ai_thinking",
+    "learning_gen_done_title",
+    "learning_gen_done_msg",
+    "learning_gen_flashcards",
+    "learning_gen_flashcards_done",
+    "learning_gen_flashcards_failed",
+    "learning_gen_audio_title",
+    "learning_gen_audio",
+    "learning_gen_audio_done",
+    "learning_gen_audio_failed",
+    # A04: kuis — dua counter PG/Essay, skor komposit, nilai mandiri.
+    "learning_quiz_mc_count",
+    "learning_quiz_essay_count",
+    "learning_quiz_total_count",
+    "learning_quiz_total_over",
+    "learning_quiz_total_zero",
+    "learning_quiz_preset_default",
+    "learning_quiz_preset_full",
+    "learning_quiz_preset_mc_only",
+    "learning_quiz_preset_essay_only",
+    "learning_quiz_answer_hint",
+    "learning_quiz_essay_self_mark",
+    "learning_quiz_essay_done",
+    "learning_quiz_essay_partial",
+    "learning_quiz_essay_missing",
+    "learning_quiz_score_detail",
+    "learning_quiz_score_hint",
+    "learning_quiz_review_again",
+    "learning_quiz_show_model_answers",
+    "learning_quiz_hide_model_answers",
+    "learning_quiz_count_title",
+    "learning_quiz_no_model_answer",
+    "learning_quiz_ready_title",
+    "learning_quiz_ready_msg",
+    "learning_quiz_generating",
+    "learning_flashcard_count_label",
+    # A03: import lirik manual — panduan, template, validasi, ekspor.
+    "music_lyrics_import_title",
+    "music_lyrics_import_drop",
+    "music_lyrics_import_format",
+    "music_lyrics_format_lrc_desc",
+    "music_lyrics_format_plain_desc",
+    "music_lyrics_format_tags_desc",
+    "music_lyrics_download_template",
+    "music_lyrics_validate",
+    "music_lyrics_validate_ok",
+    "music_lyrics_validate_plain",
+    "music_lyrics_validate_warn",
+    "music_lyrics_export",
+    "music_lyrics_copy_example",
+    "music_lyrics_import_guide",
+    "music_lyrics_import_tab",
+    "music_lyrics_guide_tab",
+    "music_lyrics_import_file",
+    "music_lyrics_import_save",
+    "music_lyrics_import_empty",
+    "music_lyrics_copied",
+    "music_lyrics_export_ok",
+    "music_lyrics_export_none",
+    "music_lyrics_export_unsaved",
+    "music_lyrics_meta_read",
+    "music_lyrics_breaks",
+    "music_lyrics_offset_applied",
+    "music_lyrics_warn_no_timestamps",
+    "music_lyrics_warn_untimed_lines",
+    "music_lyrics_warn_duplicate_timestamps",
+    "music_lyrics_warn_unknown_tags",
+    "music_lyrics_warn_too_few_lines",
+    "music_lyrics_warn_first_line_late",
+    "music_lyrics_warn_beyond_track_duration",
+    "music_lyrics_warn_offset_bad_value",
     "music_playlist_icon_change",
     "music_playlist_icon_emoji",
     "music_playlist_icon_photo",
@@ -1629,6 +2217,145 @@ def _server_now() -> dict:
     }
 
 
+# ── A03.5: berkas yang dibuat di sisi klien (tracker JSON, ekspor studio) ──────
+# Dulu UI memakai blob + <a download>, yang dibuang diam-diam oleh Qt WebEngine.
+# Kini berkas "dititipkan" ke server lalu diunduh sebagai ATTACHMENT HTTP biasa —
+# jalur yang pasti memicu unduhan + nama berkas benar.
+_DL_MAX_BYTES = 8 * 1024 * 1024
+_DL_TTL_SECONDS = 3600
+
+
+def _dl_stage_dir(uid) -> str:
+    d = os.path.join(tempfile.gettempdir(), "craftlife_downloads", str(uid or 0))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _dl_prune(folder: str) -> None:
+    """Buang berkas titipan yang lebih tua dari _DL_TTL_SECONDS (best-effort)."""
+    try:
+        now = _time.time()
+        for name in os.listdir(folder):
+            path = os.path.join(folder, name)
+            try:
+                if os.path.isfile(path) and (now - os.path.getmtime(path)) > _DL_TTL_SECONDS:
+                    os.remove(path)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
+def _dl_stage_file(uid, body: dict) -> dict:
+    """Simpan isi berkas dari UI → kembalikan id untuk diunduh via attachment."""
+    name = os.path.basename(str(body.get("name") or "craftlife-download").replace("\\", "/").split("/")[-1])
+    name = "".join(ch for ch in name if ch not in '<>:"/\\|?*' and ord(ch) >= 32).strip(" .") or "craftlife-download"
+    mime = str(body.get("mime") or "application/octet-stream").split(";")[0].strip()
+    raw = b""
+    if body.get("base64"):
+        try:
+            raw = base64.b64decode(str(body.get("base64")))
+        except Exception:
+            return {"ok": False, "error": "bad_base64"}
+    elif body.get("text") is not None:
+        raw = str(body.get("text")).encode("utf-8")
+    if not raw:
+        return {"ok": False, "error": "empty_content"}
+    if len(raw) > _DL_MAX_BYTES:
+        return {"ok": False, "error": "too_large", "maxBytes": _DL_MAX_BYTES}
+    folder = _dl_stage_dir(uid)
+    _dl_prune(folder)
+    file_id = f"{int(_time.time())}_{uuid.uuid4().hex[:12]}"
+    with open(os.path.join(folder, f"{file_id}.{name}"), "wb") as fh:
+        fh.write(raw)
+    return {"ok": True, "id": file_id, "name": name, "mime": mime, "size": len(raw)}
+
+
+# A06: Content-Type yang benar per ekstensi. Sebelumnya SEMUA berkas titipan
+# dikirim sebagai `application/octet-stream` (mime dari UI hilang), sehingga browser
+# tidak mengenali mis. .md/.csv/.lrc dan hanya menawarkannya sebagai unduhan mentah.
+_DL_MIME = {
+    ".md": "text/markdown", ".txt": "text/plain", ".csv": "text/csv",
+    ".json": "application/json", ".lrc": "text/plain", ".log": "text/plain",
+    ".pdf": "application/pdf", ".zip": "application/zip",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".m4a": "audio/mp4",
+}
+
+
+def _dl_mime_for(name: str) -> str:
+    """Tentukan Content-Type dari ekstensi berkas (fallback octet-stream)."""
+    return _DL_MIME.get(os.path.splitext(name or "")[1].lower(), "application/octet-stream")
+
+
+def _dl_serve_staged(uid, file_id: str):
+    """Ambil berkas titipan (id milik user ini saja) → (bytes, name, mime)."""
+    if not file_id or not re.fullmatch(r"\d+_[0-9a-f]{6,32}", file_id):
+        return None
+    folder = _dl_stage_dir(uid)
+    prefix = f"{file_id}."
+    for name in os.listdir(folder):
+        if name.startswith(prefix):
+            path = os.path.join(folder, name)
+            try:
+                with open(path, "rb") as fh:
+                    real = name[len(prefix):]
+                    return fh.read(), real, _dl_mime_for(real)
+            except Exception:
+                return None
+    return None
+
+
+def _download_mod():
+    """A03.5: akses helper unduhan shell (web_shell) tanpa memaksa PyQt6 terpasang.
+
+    web_shell mengimpor Qt secara opsional, jadi mode web/headless tetap aman:
+    folder unduhan + permintaan "buka folder" dihitung dari modul yang sama.
+    """
+    try:
+        import web_shell
+        return web_shell
+    except Exception:
+        return None
+
+
+def _downloads_info() -> dict:
+    mod = _download_mod()
+    if mod is None:
+        return {"ok": True, "active": False, "dir": "", "lastName": "", "lastPath": "",
+                "count": 0, "failures": 0, "note": "shell_unavailable"}
+    info = mod.download_info()
+    info["ok"] = True
+    try:
+        info["exists"] = os.path.isdir(info.get("dir") or "")
+    except Exception:
+        info["exists"] = False
+    return info
+
+
+def _open_downloads_folder(body: dict) -> dict:
+    """Buka folder unduhan (atau folder berkas tertentu) di file explorer pengguna."""
+    mod = _download_mod()
+    target = (body.get("path") or "").strip()
+    if target and not os.path.exists(target):
+        target = ""
+    if mod is None:
+        return {"ok": False, "error": "shell_unavailable"}
+    if not target:
+        target = mod.download_dir()
+    # Shell Qt aktif → minta GUI thread membukanya (aman dari thread server).
+    mgr = mod.get_download_manager()
+    if mgr is not None and getattr(mgr, "installed", False):
+        mod.request_open_folder(target)
+        return {"ok": True, "dir": target, "mode": "shell"}
+    opened = mod.open_folder_via_os(target)
+    return {"ok": bool(opened), "dir": target, "mode": "os" if opened else "none",
+            "error": "" if opened else "open_failed"}
+
+
 def _api_daily_reset(kind: str, uid: int):
     """Reset done_today lalu kembalikan list task (habits/dailies/todos)."""
     try:
@@ -2090,6 +2817,38 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_audio(file_path)
             return
 
+        # A08: pemutar podcast interaktif memakai elemen <audio> → berkas MP3
+        # dua host disajikan dengan Range (bisa seek & lompat antar giliran).
+        # Path TIDAK datang dari klien: diambil dari baris DB (notebook+generasi),
+        # jadi hanya audio milik notebook pengguna yang bisa diakses.
+        if path == "/api/learning/podcast/audio":
+            try:
+                nid = int((qs.get("notebook") or ["0"])[0] or 0)
+                gid = int((qs.get("id") or ["0"])[0] or 0)
+            except (TypeError, ValueError):
+                nid = gid = 0
+            uid_now = _state.get("user_id")
+            target = ""
+            if nid and gid and uid_now:
+                try:
+                    import studio_api as _sa
+                    nb_ok = any(str(n.get("id")) == str(nid) for n in (db.get_learning_notebooks(uid_now) or []))
+                    if nb_ok:
+                        row = db.get_learning_audio(nid, gid) or {}
+                        target = row.get("path") or ""
+                except Exception:
+                    target = ""
+            if not target:
+                target = ""
+            audio_root = ""
+            try:
+                import studio_api as _sa2
+                audio_root = _sa2.podcast_audio_dir()
+            except Exception:
+                audio_root = ""
+            self._serve_audio(target, extra_roots=[audio_root] if audio_root else [])
+            return
+
         if not _auth_ok(self) and path.startswith("/api/") and path != "/api/health":
             if path != "/api/i18n":
                 self._send(401, {"ok": False, "error": "unauthorized"})
@@ -2110,8 +2869,25 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"lang": lang, "messages": out})
             return
 
+        if path == "/api/system/download-file":
+            file_id = (qs.get("id") or [""])[0].strip()
+            got = _dl_serve_staged(_state.get("user_id"), file_id)
+            if not got:
+                self._send(404, {"ok": False, "error": "file_not_found"})
+                return
+            blob, fname, mime = got
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Disposition", f'attachment; filename="{fname.split("/")[-1]}"')
+            self.send_header("Content-Length", str(len(blob)))
+            self.end_headers()
+            self.wfile.write(blob)
+            return
         routes = {
             "/api/me": lambda: {"ok": True, "user": _row_user(db.get_user(uid))},
+            # A03.5: info folder unduhan + berkas terakhir (UI menampilkan lokasi).
+            "/api/system/downloads-info": _downloads_info,
             "/api/habits": lambda: _api_daily_reset("habits", uid),
             "/api/dailies": lambda: _api_daily_reset("dailies", uid),
             "/api/todos": lambda: _api_daily_reset("todos", uid),
@@ -2140,7 +2916,6 @@ class Handler(BaseHTTPRequestHandler):
                 "selectedTitle": (db.get_user(uid) or {}).get("selected_title") or "",
                 "titles": db.get_unlocked_titles(uid),
             },
-            "/api/year-wrapped": lambda: {"ok": True, "wrapped": db.get_year_wrapped(uid)},
             # Parity SettingsPage: versi app + path DB (label database group)
             "/api/catalog/avatar-classes": lambda: {
                 "ok": True,
@@ -2214,6 +2989,31 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True, "update": None, "latest": True,
                                  "error": str(e)})
             return
+        if path == "/api/year-wrapped":
+            # A13: laporan tahunan Wrapped. `?year=2025` memilih tahun lain
+            # (default: tahun berjalan). Angka ekonomi tetap IDR mentah — konversi
+            # ke mata uang aktif user WAJIB lewat satu-satunya formatter resmi
+            # (web/src/utils/currency.ts) agar tidak ada "Rp" hardcoded di UI.
+            try:
+                tahun = int((qs.get("year") or [0])[0] or 0) or None
+            except (TypeError, ValueError):
+                tahun = None
+            if tahun is not None and (tahun < 1970 or tahun > 2999):
+                tahun = None
+            try:
+                wrapped = db.get_year_wrapped(uid, tahun)
+            except Exception as exc:
+                self._send(200, {"ok": False, "msg": str(exc)})
+                return
+            if wrapped is None:
+                self._send(200, {"ok": False, "msg": "year_wrapped_unavailable"})
+                return
+            # Bahasa user dipakai server untuk label hari istimewa dsb. — tidak
+            # ada di sini; Wrapped sepenuhnya di-i18n di klien.
+            self._send(200, {"ok": True, "wrapped": wrapped,
+                             "years": db.get_wrapped_years(uid)})
+            return
+
         if path == "/api/holidays":
             year = int((qs.get("year") or [0])[0] or 0) or None
             try:
@@ -2385,6 +3185,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         extra = studio_api.handle_get(path, uid, qs)
         if extra is not None:
+            # A03: unduhan berkas dari studio_api (template/ekspor lirik) memakai
+            # marker yang sama dengan life_api: {"__file_bytes__": bytes, ...}.
+            file_bytes = extra.get("__file_bytes__") if isinstance(extra, dict) else None
+            if file_bytes is not None:
+                fname = extra.get("name") or "export.txt"
+                mime = extra.get("mime") or "application/octet-stream"
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", mime + "; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{fname.split("/")[-1]}"')
+                self.send_header("Content-Length", str(len(file_bytes)))
+                self.end_headers()
+                self.wfile.write(file_bytes)
+                return
             self._send(200, extra)
             return
         if path.startswith("/api/cloud"):
@@ -2471,6 +3285,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True, "result": result if isinstance(result, dict) else {"ok": True}})
             except Exception as e:
                 self._send(400, {"ok": False, "error": str(e)})
+            return
+        if path == "/api/system/stage-file":
+            # A03.5: UI menitipkan berkas (JSON/txt) agar diunduh sebagai attachment.
+            self._send(200, _dl_stage_file(_state.get("user_id"), body))
+            return
+        if path == "/api/system/open-downloads":
+            # A03.5: tombol "Buka folder" setelah ekspor — file explorer pengguna.
+            self._send(200, _open_downloads_folder(body))
             return
         if path in ("/api/auth/login", "/api/auth/register"):
             try:
@@ -3304,25 +4126,35 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send(404, {"ok": False, "error": "not_found"})
 
-    def _serve_audio(self, file_path: str):
+    def _serve_audio(self, file_path: str, extra_roots=None):
         """Serve a local audio file with HTTP Range support (for <audio> seek).
 
-        Only files inside the CraftLife Music library dir are reachable; nothing
-        is uploaded/streamed over the internet beyond the local loopback.
+        Only files inside the CraftLife Music library dir (+ `extra_roots` yang
+        eksplisit, mis. `learning_audio` untuk podcast A08) yang bisa diakses;
+        tidak ada berkas yang diunggah ke internet — semuanya tetap lokal.
         """
         import mimetypes
         from http import HTTPStatus
+        roots = []
         try:
             import music_downloader as md
-            lib_dir = os.path.realpath(md.get_download_dir())
+            roots.append(os.path.realpath(md.get_download_dir()))
         except Exception:
+            pass
+        for extra in (extra_roots or []):
+            try:
+                if extra:
+                    roots.append(os.path.realpath(extra))
+            except Exception:
+                continue
+        if not roots:
             self._send(404, {"ok": False, "error": "no_music_dir"})
             return
         if not file_path:
             self._send(404, {"ok": False, "error": "bad_path"})
             return
         real = os.path.realpath(file_path)
-        if not real.startswith(lib_dir + os.sep):
+        if not any(real.startswith(root + os.sep) for root in roots):
             self._send(403, {"ok": False, "error": "forbidden"})
             return
         if not os.path.isfile(real):

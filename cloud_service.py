@@ -600,11 +600,13 @@ class CloudService:
             db.mirror_cloud_love_cycle_settings(local_user_id,row);done+=1
         specs={
             "events":("event",("title","event_date","category","notes")),
-            "memories":("memory",("title","memory_date","notes")),
+            # A10: emoji/tag/favorit ikut dimigrasikan ke cloud.
+            "memories":("memory",("title","memory_date","notes","emoji","tags","is_favorite")),
             "checkins":("checkin",("checkin_date","my_mood","partner_mood","connection_score","note")),
             "prompt_responses":("prompt_response",("prompt_key","category","prompt_text","my_answer","partner_answer","response_date")),
             "weekly_reviews":("weekly_review",("week_start","appreciation","wins","support_needed","shared_intention")),
-            "bucket_items":("bucket_item",("title","category","target_date","is_done")),
+            # A10: catatan & prioritas ikut dimigrasikan ke cloud.
+            "bucket_items":("bucket_item",("title","category","target_date","notes","priority","is_done")),
             "cycles":("cycle",("start_date","end_date","notes")),
         }
         for key,(record_type,fields) in specs.items():

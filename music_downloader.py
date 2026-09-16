@@ -150,6 +150,11 @@ import uuid
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
 
+# A02: cache metadata berkas (path → (mtime, meta)) — batch track-meta tidak membaca
+# ulang tag berulang kali saat drawer lirik/music view meminta metadata yang sama.
+_META_CACHE: dict = {}
+_META_LOCK = threading.Lock()
+
 
 def search_music(query: str) -> list:
     results = []
@@ -208,17 +213,119 @@ def _read_metadata(path: str) -> dict:
     return meta
 
 
-def list_library() -> list:
+AUDIO_EXTS = (".mp3", ".m4a", ".ogg", ".wav", ".opus", ".flac")
+
+# A02: batas listing library (dulu keras 80 → berkas lama kehilangan metadata →
+# lirik tidak punya DURASI → pencarian lirik salah versi). Dapat diatur operator.
+DEFAULT_LIB_LIMIT = 500
+
+
+def lib_limit() -> int:
+    """Batas jumlah berkas di /api/music/library (env CRAFTLIFE_MUSIC_LIB_LIMIT)."""
+    try:
+        val = int(os.environ.get("CRAFTLIFE_MUSIC_LIB_LIMIT") or DEFAULT_LIB_LIMIT)
+    except (TypeError, ValueError):
+        val = DEFAULT_LIB_LIMIT
+    return max(1, min(val, 5000))
+
+
+def _meta_cache_get(path: str, mtime: float):
+    hit = _META_CACHE.get(path)
+    if hit and abs(hit[0] - mtime) < 1e-6:
+        return hit[1]
+    return None
+
+
+def _meta_cache_put(path: str, mtime: float, meta: dict) -> dict:
+    with _META_LOCK:
+        if len(_META_CACHE) > 4000:      # jaga memori tetap kecil
+            _META_CACHE.clear()
+        _META_CACHE[path] = (mtime, meta)
+    return meta
+
+
+def _item_for(path: Path) -> dict:
+    """Satu baris library: nama/path/size + metadata (title/artist/album/duration)."""
+    st = path.stat()
+    item = {"name": path.name, "path": str(path), "size": st.st_size, "mtime": st.st_mtime}
+    item.update(_read_metadata(str(path)))
+    item["durationMs"] = int(round(float(item.get("duration") or 0) * 1000))
+    return item
+
+
+def list_library(limit=None) -> list:
+    """Daftar berkas audio di folder library, terbaru dulu.
+
+    A02: ``limit`` default = ``lib_limit()`` (500, env ``CRAFTLIFE_MUSIC_LIB_LIMIT``),
+    bukan lagi keras 80. Setiap item memuat ``album``/``duration``/``durationMs``/
+    ``mtime`` supaya pencarian lirik selalu punya durasi untuk mencocokkan versi.
+    """
     folder = Path(get_download_dir())
     out = []
     if not folder.is_dir():
         return out
+    if limit is None:
+        limit = lib_limit()
     for p in sorted(folder.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
-        if p.suffix.lower() in (".mp3", ".m4a", ".ogg", ".wav", ".opus", ".flac"):
-            item = {"name": p.name, "path": str(p), "size": p.stat().st_size}
-            item.update(_read_metadata(str(p)))
-            out.append(item)
-    return out[:80]
+        if p.suffix.lower() in AUDIO_EXTS:
+            try:
+                out.append(_item_for(p))
+            except Exception:
+                continue
+    return out[: int(limit)]
+
+
+def get_track_meta(file_path: str) -> dict:
+    """Metadata 1 berkas (title/artist/album/duration) dengan cache berbasis mtime.
+
+    Dipakai bila jalur playlist melewati batas listing library. Berkas di LUAR folder
+    library tidak dibaca tag-nya (keamanan: API tidak boleh memprobe filesystem bebas);
+    hanya nama berkas yang dikembalikan.
+    """
+    try:
+        real = Path(os.path.realpath(file_path))
+    except Exception:
+        return {}
+    if not real.is_file():
+        return {}
+    try:
+        inside = str(real).startswith(str(Path(os.path.realpath(get_download_dir()))) + os.sep)
+    except Exception:
+        inside = False
+    if not inside:
+        return {"name": real.name, "path": str(real), "title": real.stem, "artist": "",
+                "album": "", "duration": 0, "durationMs": 0}
+    try:
+        st = real.stat()
+    except Exception:
+        return {}
+    cached = _meta_cache_get(str(real), st.st_mtime)
+    if cached is not None:
+        return dict(cached)
+    meta = {"name": real.name, "path": str(real), "size": st.st_size, "mtime": st.st_mtime}
+    meta.update(_read_metadata(str(real)))
+    meta["durationMs"] = int(round(float(meta.get("duration") or 0) * 1000))
+    return dict(_meta_cache_put(str(real), st.st_mtime, meta))
+
+
+def get_track_meta_many(paths, max_paths: int = 200) -> list:
+    """Batch metadata (dedupe, urutan dipertahankan, maks ``max_paths`` per request)."""
+    out = []
+    seen = set()
+    for raw in paths or []:
+        p = str(raw or "").strip()
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        if len(out) >= int(max_paths):
+            break
+        try:
+            meta = get_track_meta(p)
+        except Exception:
+            meta = {}
+        if meta:
+            out.append(meta)
+    return out
 
 
 def start_download_job(url: str) -> str:

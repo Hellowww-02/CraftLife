@@ -156,7 +156,8 @@ def map_reminder(row: dict) -> dict:
     dt = str(row.get("reminder_datetime") or "")
     time = dt[11:16] if len(dt) >= 16 else (row.get("time") or "08:00")
     rep = (row.get("repeat_type") or "none").lower()
-    if rep not in ("none", "daily", "weekly", "custom"):
+    # A12: 'yearly' ikut dikenali (ulang tahun / anniversary dari Love Space).
+    if rep not in ("none", "daily", "weekly", "yearly", "custom"):
         rep = "none"
     return {
         "id": str(row.get("id")),
@@ -170,6 +171,10 @@ def map_reminder(row: dict) -> dict:
         "triggered": bool(row.get("triggered")),
         "sound": row.get("sound_type") or "default",
         "soundFile": row.get("sound_file") or "",
+        # A12: batas akhir pengulangan + asal pengingat (mis. `love_event:12`)
+        # supaya daftar Reminder bisa menampilkan badge "Tahunan" & sumbernya.
+        "repeatUntil": row.get("repeat_until") or "",
+        "sourceRef": row.get("source_ref") or "",
     }
 
 
@@ -1541,6 +1546,10 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             repeat_type=body.get("repeat") or "none",
             repeat_days=body.get("repeatDays") or "",
         )
+        # A12: `repeatUntil` (opsional) — batas akhir pengulangan.
+        until = (body.get("repeatUntil") or "").strip()
+        if until and result.get("ok"):
+            db.update_reminder(result.get("reminder_id"), uid, repeat_until=until)
         return {"result": result}
 
     if len(parts) >= 4 and parts[1] == "reminders":
@@ -1557,7 +1566,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 rep = rem.get("repeat_type", "none")
                 if rep and rep != "none":
                     next_dt = db.get_next_reminder_datetime(
-                        rem["reminder_datetime"], rep, rem.get("repeat_days", "")
+                        rem["reminder_datetime"], rep, rem.get("repeat_days", ""),
+                        rem.get("repeat_until")
                     )
                     if next_dt:
                         db.update_reminder(rid, uid, reminder_datetime=next_dt,
@@ -1578,11 +1588,19 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 "sound_type": st,
                 "sound_file": (body.get("soundFile") or None) if st == "custom" else None,
                 "triggered": 0,
-                "repeat_type": body.get("repeat") or "none",
-                "repeat_days": body.get("repeatDays") or "",
             }
+            # A12 (temuan regresi): `repeat`/`repeatDays` BERSIFAT OPSIONAL pada update.
+            # Sebelumnya keduanya selalu ditulis ("none"/"") sehingga memperbarui judul
+            # atau batas akhir sebuah pengingat TAHUNAN menghapus pengulangannya
+            # diam-diam — kini hanya diubah bila memang dikirim body.
+            if "repeat" in body:
+                kwargs["repeat_type"] = body.get("repeat") or "none"
+            if "repeatDays" in body:
+                kwargs["repeat_days"] = body.get("repeatDays") or ""
             if dt:
                 kwargs["reminder_datetime"] = dt
+            if "repeatUntil" in body:
+                kwargs["repeat_until"] = (body.get("repeatUntil") or None)
             db.update_reminder(rid, uid, **{k: v for k, v in kwargs.items() if v is not None})
             return {"result": {"ok": True}}
         if parts[3] == "toggle":
