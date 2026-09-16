@@ -691,8 +691,12 @@ export interface ReminderItem {
   description: string;
   datetime: string; // "YYYY-MM-DD HH:mm:ss"
   time: string; // HH:mm (turunan datetime, kompat lama)
-  repeat: 'none' | 'daily' | 'weekly' | 'custom';
+  // A12: 'yearly' ditambahkan agar pengingat tahunan (ulang tahun/anniversary)
+  // dari Love Space bisa dikenali UI Reminder.
+  repeat: 'none' | 'daily' | 'weekly' | 'yearly' | 'custom';
   repeatDays: string; // "0,2,4" — index hari (0=Senin .. 6=Minggu), utk repeat custom
+  repeatUntil?: string; // A12: batas akhir pengulangan (YYYY-MM-DD) — opsional
+  sourceRef?: string;   // A12: asal pengingat, mis. `love_event:12` / `love_profile:start_date`
   isActive: boolean; // kolom is_active (🔔/🔕) — BUKAN not-triggered
   triggered: boolean; // sudah pernah berbunyi (✅ di list PyQt)
   sound: 'default' | 'beep1' | 'beep2' | 'custom';

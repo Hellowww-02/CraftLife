@@ -1002,6 +1002,171 @@ select.ct-input option { background: var(--ct-bg2); color: var(--ct-text); }
 }
 .ct-palette-item:hover, .ct-palette-item:focus-visible { transform: translateX(4px); }
 
+/* ── 7b. LEARNING SHELL — tata letak ala NotebookLM, identitas CraftLife (A07) ──
+   Prinsip: permukaan gelap berlapis, border 1px halus, radius besar, TANPA
+   backdrop-filter di atas scene (aturan anti-flicker R10), animasi hanya saat
+   interaksi. Aksen tetap warna CraftLife (emerald/violet) — bukan biru Google. */
+.ct-nlm {
+  --ct-nlm-rail: color-mix(in srgb, var(--ct-bg) 82%, #000 18%);
+  --ct-nlm-surface: color-mix(in srgb, var(--ct-bg2) 88%, white 3%);
+  --ct-nlm-surface-2: color-mix(in srgb, var(--ct-bg2) 94%, white 6%);
+  --ct-nlm-line: color-mix(in srgb, var(--ct-border) 78%, transparent);
+  --ct-nlm-line-soft: color-mix(in srgb, var(--ct-border) 46%, transparent);
+  --ct-nlm-dim: color-mix(in srgb, var(--ct-muted) 92%, transparent);
+}
+.ct-nlm-rail {
+  background: var(--ct-nlm-rail);
+  border-right: 1px solid var(--ct-nlm-line-soft);
+}
+/* A15 — rail notebook kiri: satu avatar per notebook (emoji user ATAU inisial, tidak
+   dua-duanya) dan kerapian tata letak. Kelas di bawah ini TANPA `@layer` sehingga
+   mengalahkan utility Tailwind di elemen yang sama — karena itu varian ukuran/visibilitas
+   dinyatakan di sini (`.is-row`, `.is-sm`) alih-alih memakai `!important`. */
+.ct-nlm-railbtn.is-row {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  text-align: left;
+}
+.ct-nlm-railbtn.is-sm { width: 2rem; height: 2rem; }
+.ct-nlm-railbtn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ct-primary) 70%, transparent);
+  outline-offset: 2px;
+}
+@media (max-width: 1023.98px) {
+  /* Di layar sempit rail menjadi bottom-bar: border kanan → border atas. */
+  .ct-nlm-rail {
+    border-right: 0;
+    border-top: 1px solid var(--ct-nlm-line-soft);
+    width: 100%;
+  }
+}
+.ct-nlm-panel {
+  background: var(--ct-nlm-surface);
+  border: 1px solid var(--ct-nlm-line);
+  border-radius: var(--ct-r-lg);
+  box-shadow: var(--ct-elev-1);
+}
+.ct-nlm-card {
+  background: color-mix(in srgb, var(--ct-bg) 55%, transparent);
+  border: 1px solid var(--ct-nlm-line);
+  border-radius: var(--ct-r-md);
+  transition: border-color var(--ct-t-fast) var(--ct-ease),
+              background-color var(--ct-t-fast) var(--ct-ease),
+              transform var(--ct-t-fast) var(--ct-ease);
+}
+.ct-nlm-card:hover {
+  border-color: color-mix(in srgb, var(--ct-primary) 55%, var(--ct-nlm-line));
+  background: color-mix(in srgb, var(--ct-bg) 42%, transparent);
+}
+.ct-nlm-card.is-active {
+  border-color: color-mix(in srgb, var(--ct-primary) 72%, transparent);
+  background: color-mix(in srgb, var(--ct-primary) 12%, var(--ct-bg));
+}
+.ct-nlm-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.1rem 0.4rem; border-radius: 0.5rem;
+  font-size: 0.625rem; font-weight: 700; letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--ct-primary) 18%, transparent);
+  color: color-mix(in srgb, var(--ct-light) 90%, white 10%);
+}
+.ct-nlm-chip.is-muted {
+  background: color-mix(in srgb, var(--ct-muted) 16%, transparent);
+  color: var(--ct-muted);
+}
+.ct-nlm-chip.is-ok {
+  background: color-mix(in srgb, #34d399 20%, transparent);
+  color: #6ee7b7;
+}
+.ct-nlm-num {                                  /* angka/badge memakai font mono */
+  font-family: var(--ct-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.ct-nlm-topbar {
+  background: color-mix(in srgb, var(--ct-nlm-surface) 88%, transparent);
+  border: 1px solid var(--ct-nlm-line-soft);
+  border-radius: var(--ct-r-lg);
+}
+.ct-nlm-tab {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.7rem; border-radius: 0.65rem;
+  font-size: 0.72rem; font-weight: 700; color: var(--ct-nlm-dim);
+  border: 1px solid transparent;
+  transition: background-color var(--ct-t-fast) var(--ct-ease), color var(--ct-t-fast) var(--ct-ease);
+}
+.ct-nlm-tab:hover { background: color-mix(in srgb, var(--ct-text) 7%, transparent); color: var(--ct-text); }
+.ct-nlm-tab.is-active {
+  background: color-mix(in srgb, var(--ct-primary) 20%, transparent);
+  border-color: color-mix(in srgb, var(--ct-primary) 55%, transparent);
+  color: var(--ct-text);
+}
+.ct-nlm-railbtn {
+  position: relative;
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  width: 2.5rem; height: 2.5rem; border-radius: 0.75rem;
+  color: var(--ct-nlm-dim);
+  transition: background-color var(--ct-t-fast) var(--ct-ease), color var(--ct-t-fast) var(--ct-ease);
+}
+.ct-nlm-railbtn:hover { background: color-mix(in srgb, var(--ct-text) 8%, transparent); color: var(--ct-text); }
+.ct-nlm-railbtn.is-active {
+  background: color-mix(in srgb, var(--ct-primary) 22%, transparent);
+  color: var(--ct-text);
+}
+.ct-nlm-suggestion {
+  text-align: left;
+  border: 1px solid var(--ct-nlm-line);
+  border-radius: var(--ct-r-md);
+  background: color-mix(in srgb, var(--ct-bg) 48%, transparent);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.72rem; color: var(--ct-t2);
+  transition: border-color var(--ct-t-fast) var(--ct-ease), transform var(--ct-t-fast) var(--ct-ease);
+}
+.ct-nlm-suggestion:hover {
+  border-color: color-mix(in srgb, var(--ct-primary) 60%, transparent);
+  transform: translateY(-1px);
+}
+.ct-nlm-bubble-ai {
+  background: color-mix(in srgb, var(--ct-bg2) 72%, transparent);
+  border: 1px solid var(--ct-nlm-line);
+  border-bottom-left-radius: 0.35rem;
+}
+.ct-nlm-bubble-user {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--ct-primary) 92%, white 8%) 0%,
+    color-mix(in srgb, var(--ct-primary) 78%, var(--ct-accent2) 22%) 100%);
+  color: #fff; border-bottom-right-radius: 0.35rem;
+}
+.ct-nlm-avatar {
+  display: flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 0.7rem;
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--ct-primary) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ct-primary) 38%, transparent);
+  color: var(--ct-text);
+}
+.ct-nlm-scroll { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ct-muted) 40%, transparent) transparent; }
+.ct-nlm-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.ct-nlm-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ct-muted) 35%, transparent);
+  border-radius: 999px;
+}
+.ct-nlm-title-input {
+  background: transparent; border: 1px solid transparent; border-radius: 0.5rem;
+  padding: 0.15rem 0.35rem; font-weight: 700; color: var(--ct-text);
+  transition: border-color var(--ct-t-fast) var(--ct-ease), background-color var(--ct-t-fast) var(--ct-ease);
+  min-width: 6rem; max-width: 100%;
+}
+.ct-nlm-title-input:hover { border-color: var(--ct-nlm-line); }
+.ct-nlm-title-input:focus {
+  outline: none; background: color-mix(in srgb, var(--ct-bg) 60%, transparent);
+  border-color: color-mix(in srgb, var(--ct-primary) 65%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ct-nlm-suggestion:hover { transform: none; }
+}
+
 /* ── 8. GUARDS — aksesibilitas & performa ──────────────────────────────── */
 /* Transparency-sensitive users / device lemah: scene dimatikan total */
 @media (prefers-reduced-transparency: reduce) {

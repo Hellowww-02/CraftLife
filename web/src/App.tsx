@@ -6,6 +6,7 @@ import { ActiveView } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer } from './components/ToastContainer';
+import { DownloadToaster } from './components/DownloadToaster';
 import { UndoToast } from './components/UndoToast';
 import { LevelUpModal } from './components/LevelUpModal';
 import { CommandPalette } from './components/CommandPalette';
@@ -105,7 +106,8 @@ const MainLayout: React.FC = () => {
         return <MusicView />;
       case 'love':
       case 'lovespace':
-        return <LoveSpaceView />;
+        // A12: aksi cepat tab overview Love Space bisa melompat halaman.
+        return <LoveSpaceView onNavigate={(v) => setActiveView(v as ActiveView)} />;
       case 'friends':
         return <FriendsView />;
       case 'guild':
@@ -160,6 +162,7 @@ const MainLayout: React.FC = () => {
       </div>
 
       <ToastContainer />
+      <DownloadToaster />
       <UndoToast />
       <QuickAddDialog />
       <LevelUpModal />
