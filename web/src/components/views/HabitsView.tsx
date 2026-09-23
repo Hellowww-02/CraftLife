@@ -213,7 +213,14 @@ export const HabitsView: React.FC = () => {
                   </div>
                 </div>
 
-                <h3 className="font-bold text-sm text-slate-100">{habit.title}</h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-sm text-slate-100">{habit.title}</h3>
+                  {habit.doneToday && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 rounded-full px-2 py-0.5">
+                      <Check className="w-3 h-3" /> {t('habit_done_today', 'Sudah dikerjakan')}
+                    </span>
+                  )}
+                </div>
                 {habit.notes && <p className="text-xs text-slate-400 mt-1 leading-relaxed">{habit.notes}</p>}
               </div>
 
@@ -235,7 +242,8 @@ export const HabitsView: React.FC = () => {
                     <button
                       id={`btn-habit-pos-${habit.id}`}
                       onClick={() => triggerHabit(habit.id, true)}
-                      className="ct-btn ct-btn-success ct-btn-sm"
+                      disabled={habit.doneToday}
+                      className="ct-btn ct-btn-success ct-btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Plus className="w-3.5 h-3.5" /> {t('habit_good', 'Good')}
                     </button>
@@ -244,7 +252,8 @@ export const HabitsView: React.FC = () => {
                     <button
                       id={`btn-habit-neg-${habit.id}`}
                       onClick={() => triggerHabit(habit.id, false)}
-                      className="ct-btn ct-btn-danger ct-btn-sm"
+                      disabled={habit.doneToday}
+                      className="ct-btn ct-btn-danger ct-btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <X className="w-3.5 h-3.5" /> {t('habit_bad', 'Bad')}
                     </button>

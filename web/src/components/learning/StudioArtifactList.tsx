@@ -22,6 +22,7 @@ import {
   Search, ArrowDownUp, Pencil, Copy, Trash2, Download, ExternalLink, ChevronDown,
   FileText, Layers, Clock, ListChecks, X, Check, Inbox,
 } from 'lucide-react';
+import { parseDataTable, parseInfographic, parseSlideDeck } from './StudioNewViews';
 
 export interface ArtifactItem {
   id: string;
@@ -46,7 +47,7 @@ export interface StudioArtifactListProps {
   onRename: (artifact: ArtifactItem, title: string) => void;
   onDuplicate: (artifact: ArtifactItem) => void;
   onDelete: (artifact: ArtifactItem) => void;
-  onExport: (artifact: ArtifactItem, format: 'md' | 'txt') => void;
+  onExport: (artifact: ArtifactItem, format: 'md' | 'txt' | 'csv' | 'html') => void;
   onSelectType?: (type: string) => void;
 }
 
@@ -63,6 +64,13 @@ const TYPE_META: Record<string, { icon: string; scope: string }> = {
   faq: { icon: '❓', scope: 'words' },
   timeline: { icon: '🕒', scope: 'words' },
   summary: { icon: '📄', scope: 'words' },
+  'briefing-doc': { icon: '📋', scope: 'words' },
+  briefing_doc: { icon: '📋', scope: 'words' },
+  'data-table': { icon: '📊', scope: 'rows' },
+  data_table: { icon: '📊', scope: 'rows' },
+  infographic: { icon: '🎨', scope: 'points' },
+  'slide-deck': { icon: '📽️', scope: 'slides' },
+  slide_deck: { icon: '📽️', scope: 'slides' },
 };
 
 const normalizeType = (t: string) => {
@@ -101,6 +109,9 @@ function itemLabel(a: ArtifactItem, tr: StudioArtifactListProps['tr']): string {
   if (meta.scope === 'quiz') return tr('learning_artifact_items_quiz', { n: a.itemCount || 0 }, '{n} soal');
   if (meta.scope === 'cards') return tr('learning_artifact_items_cards', { n: a.itemCount || 0 }, '{n} kartu');
   if (meta.scope === 'turns') return tr('learning_artifact_items_turns', { n: a.itemCount || 0 }, '{n} giliran');
+  if (meta.scope === 'rows') return tr('learning_artifact_items_rows', { n: a.itemCount || 0 }, '{n} baris');
+  if (meta.scope === 'slides') return tr('learning_artifact_items_slides', { n: a.itemCount || 0 }, '{n} slide');
+  if (meta.scope === 'points') return tr('learning_artifact_items_points', { n: a.itemCount || 0 }, '{n} poin');
   return tr('learning_artifact_items_words', { n: a.words || 0 }, '{n} kata');
 }
 
@@ -146,6 +157,11 @@ export const ArtifactPreview: React.FC<{
       return { speaker: sp.trim().replace('HOST_A', 'Alex').replace('HOST_B', 'Sam'), line: rest.join('|').trim() };
     });
   }, [type, raw]);
+
+  // C05: pratinjau ringkas 3 tipe JSON baru.
+  const table = useMemo(() => (type === 'data-table' ? parseDataTable(raw) : null), [type, raw]);
+  const info = useMemo(() => (type === 'infographic' ? parseInfographic(raw) : null), [type, raw]);
+  const deck = useMemo(() => (type === 'slide-deck' ? parseSlideDeck(raw) : null), [type, raw]);
 
   if (quiz) {
     return (
@@ -212,6 +228,51 @@ export const ArtifactPreview: React.FC<{
     );
   }
 
+  if (table) {
+    return (
+      <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <table className="w-full text-[10px] text-slate-200">
+          <thead><tr>{table.columns.map((c, i) => (<th key={i} className="text-left font-bold px-2 py-1.5 bg-slate-900 text-violet-200 border-b border-slate-800">{c}</th>))}</tr></thead>
+          <tbody>{table.rows.slice(0, 8).map((r, i) => (<tr key={i} className={i % 2 ? 'bg-slate-950/40' : ''}>{r.map((c, j) => (<td key={j} className="px-2 py-1 border-b border-slate-800/60">{c}</td>))}</tr>))}</tbody>
+        </table>
+        {table.rows.length > 8 && <p className="text-[9px] text-slate-500 px-2 py-1">+{table.rows.length - 8}</p>}
+      </div>
+    );
+  }
+
+  if (deck) {
+    return (
+      <ol className="space-y-1">
+        {deck.slides.map((s, i) => (
+          <li key={i} className="text-[11px] text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl px-2.5 py-1.5">
+            <span className="font-bold text-violet-300">{i + 1}.</span> {s.title}
+            <span className="text-slate-500"> · {s.bullets.length}</span>
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  if (info) {
+    return (
+      <div className="space-y-1.5">
+        {info.stats.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {info.stats.map((s, i) => (
+              <span key={i} className="px-2 py-1 rounded-lg bg-violet-600/20 border border-violet-500/40 text-[10px] font-bold text-violet-100">{s.value} · <span className="font-normal text-violet-300">{s.label}</span></span>
+            ))}
+          </div>
+        )}
+        {info.points.map((p, i) => (
+          <div key={i} className="bg-slate-950/60 border border-slate-800 rounded-xl p-2">
+            <p className="text-[11px] font-bold text-slate-200">{i + 1}. {p.heading}</p>
+            <p className="text-[10px] text-slate-400">{p.text}</p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (type === 'mindmap') {
     try {
       return <pre className="text-[10px] text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 overflow-x-auto">{JSON.stringify(JSON.parse(strip(raw)), null, 2)}</pre>;
@@ -263,7 +324,9 @@ const StudioArtifactList: React.FC<StudioArtifactListProps> = ({
 
   const typeLabel = (t: string) => {
     const n = normalizeType(t);
-    return tr(`learning_studio_${n === 'podcast' ? 'podcast_script' : n === 'mindmap' ? 'mindmap' : n === 'study-guide' ? 'guide' : n}`, {}, n);
+    const key = n === 'podcast' ? 'podcast_script' : n === 'mindmap' ? 'mindmap' : n === 'study-guide' ? 'guide'
+      : ({ 'briefing-doc': 'briefing_doc', 'data-table': 'data_table', infographic: 'infographic', 'slide-deck': 'slide_deck' } as Record<string, string>)[n] || n;
+    return tr(`learning_studio_${key}`, {}, n);
   };
 
   const startRename = (a: ArtifactItem) => {
@@ -406,6 +469,24 @@ const StudioArtifactList: React.FC<StudioArtifactListProps> = ({
                 >
                   <Download className="w-3 h-3" />{tr('learning_artifact_export_txt', {}, 'Ekspor .txt')}
                 </button>
+                {t === 'data-table' && (
+                  <button
+                    disabled={busy}
+                    onClick={() => onExport(a, 'csv')}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
+                  >
+                    <Download className="w-3 h-3" />{tr('learning_artifact_export_csv', {}, 'Ekspor .csv')}
+                  </button>
+                )}
+                {t === 'slide-deck' && (
+                  <button
+                    disabled={busy}
+                    onClick={() => onExport(a, 'html')}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
+                  >
+                    <Download className="w-3 h-3" />{tr('learning_artifact_export_html', {}, 'Ekspor .html')}
+                  </button>
+                )}
                 <button
                   disabled={busy}
                   onClick={() => onDuplicate(a)}

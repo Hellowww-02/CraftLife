@@ -38,6 +38,15 @@ export const HealthFoodView: React.FC = () => {
 
   // ── Date selector (parity _build_date_selector; ▶ disabled pada hari ini) ──
   const [day, setDay] = useState(today);
+
+  // C08: ikuti rollover tengah malam bila user sedang melihat today lama.
+  const prevTodayHf = useRef(today);
+  useEffect(() => {
+    const prev = prevTodayHf.current;
+    prevTodayHf.current = today;
+    if (prev !== today && day === prev) setDay(today);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
   const [dayData, setDayData] = useState<any>(null);
   const [hist, setHist] = useState<any>(null);
   const loadDay = useCallback(() => {

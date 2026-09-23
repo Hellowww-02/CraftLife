@@ -7,7 +7,7 @@
  * prop `used`/`onToggleUsed`.
  */
 import React from 'react';
-import { Eye, Trash2, FileText, FileType2, Link2, Video, AlignLeft } from 'lucide-react';
+import { Eye, Trash2, FileText, FileType2, Link2, Video, AlignLeft, FileSpreadsheet, Presentation, FileImage, FileAudio, BookOpen, Paperclip } from 'lucide-react';
 
 export interface SourceItem {
   id: string;
@@ -15,6 +15,12 @@ export interface SourceItem {
   type: string;
   wordCount: number;
   createdAt?: string;
+  /** C02: metadata berkas asli (kosong bila sumber teks/URL). */
+  fileName?: string;
+  fileSize?: number;
+  hasFile?: boolean;
+  /** C03: ringkasan panduan (AI tersimpan, else potongan). */
+  summary?: string;
 }
 
 export interface SourceCardProps {
@@ -32,6 +38,12 @@ export function sourceTypeMeta(type: string): { icon: React.ReactNode; labelKey:
   const t = String(type || 'text').toLowerCase();
   if (t.includes('pdf')) return { icon: <FileText className="w-4 h-4" />, labelKey: 'learning_source_type_pdf', fallback: 'PDF' };
   if (t.includes('doc')) return { icon: <FileType2 className="w-4 h-4" />, labelKey: 'learning_source_type_doc', fallback: 'Dokumen' };
+  if (t.includes('xlsx') || t.includes('xls') || t.includes('sheet')) return { icon: <FileSpreadsheet className="w-4 h-4" />, labelKey: 'learning_source_type_sheet', fallback: 'Spreadsheet' };
+  if (t.includes('pptx') || t.includes('slides') || t.includes('presentation')) return { icon: <Presentation className="w-4 h-4" />, labelKey: 'learning_source_type_slides', fallback: 'Presentasi' };
+  if (t.includes('csv') || t.includes('tsv')) return { icon: <FileSpreadsheet className="w-4 h-4" />, labelKey: 'learning_source_type_csv', fallback: 'CSV' };
+  if (t.includes('image') || t.includes('img') || t.includes('png') || t.includes('jpg') || t.includes('jpeg') || t.includes('webp')) return { icon: <FileImage className="w-4 h-4" />, labelKey: 'learning_source_type_image', fallback: 'Gambar' };
+  if (t.includes('audio') || t.includes('mp3') || t.includes('wav') || t.includes('m4a')) return { icon: <FileAudio className="w-4 h-4" />, labelKey: 'learning_source_type_audio', fallback: 'Audio' };
+  if (t.includes('epub') || t.includes('book')) return { icon: <BookOpen className="w-4 h-4" />, labelKey: 'learning_source_type_book', fallback: 'E-book' };
   if (t.includes('url') || t.includes('link')) return { icon: <Link2 className="w-4 h-4" />, labelKey: 'learning_source_type_url', fallback: 'Tautan' };
   if (t.includes('youtube') || t.includes('yt')) return { icon: <Video className="w-4 h-4" />, labelKey: 'learning_source_type_youtube', fallback: 'YouTube' };
   return { icon: <AlignLeft className="w-4 h-4" />, labelKey: 'learning_source_type_text', fallback: 'Teks' };
@@ -45,6 +57,15 @@ function shortDate(value?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return raw.slice(0, 10);
   return d.toLocaleDateString();
+}
+
+/** Ukuran berkas ringkas (B/KB/MB). */
+function fmtSize(n: number): string {
+  if (!n || n <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = n; let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 const SourceCard: React.FC<SourceCardProps> = ({ source, used = true, onToggleUsed, onOpen, onDelete, active, tr }) => {
@@ -64,7 +85,17 @@ const SourceCard: React.FC<SourceCardProps> = ({ source, used = true, onToggleUs
             <span className="ct-nlm-chip is-muted">{typeLabel}</span>
             <span className="ct-nlm-num">{source.wordCount || 0} {tr('words', {}, 'kata')}</span>
             {shortDate(source.createdAt) && <span>{shortDate(source.createdAt)}</span>}
+            {source.hasFile && (
+              <span className="ct-nlm-chip inline-flex items-center gap-1 max-w-full" title={source.fileName || ''}>
+                <Paperclip className="w-2.5 h-2.5 shrink-0" />
+                <span className="truncate max-w-[7rem]">{source.fileName || typeLabel}</span>
+                {Number(source.fileSize) > 0 && <span className="ct-nlm-num shrink-0">{fmtSize(Number(source.fileSize))}</span>}
+              </span>
+            )}
           </div>
+          {source.summary ? (
+            <p className="ct-guide-clamp mt-1 text-[11px] leading-snug text-slate-400">{source.summary}</p>
+          ) : null}
         </div>
         {/* Chip grounding — interaktif mulai A08; sekarang menampilkan status saja. */}
         <button

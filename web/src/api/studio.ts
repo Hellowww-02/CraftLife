@@ -1,6 +1,11 @@
 import { apiGet, apiPost, authToken, apiBase, apiUploadFile } from './client';
 
 export const studio = {
+  // C07: auto-updater — check / download (poll status) / apply.
+  updateCheck: () => apiGet<any>('/api/update/check'),
+  updateDownload: () => apiPost<any>('/api/update/download', {}),
+  updateStatus: () => apiGet<any>('/api/update/status'),
+  updateApply: () => apiPost<any>('/api/update/apply', {}),
   addNotebook: (title: string, description?: string, icon?: string) =>
     apiPost<any>('/api/learning/notebooks', { title, description, icon }),
   deleteNotebook: (id: string) => apiPost<any>(`/api/learning/notebooks/${id}/delete`, {}),
@@ -19,24 +24,40 @@ export const studio = {
     apiPost<any>('/api/learning/generations/rename', { notebookId, generationId, title }),
   duplicateGeneration: (notebookId: string, generationId: string) =>
     apiPost<any>('/api/learning/generations/duplicate', { notebookId, generationId }),
-  exportGeneration: (notebookId: string, generationId: string, format: 'md' | 'txt' = 'md') =>
+  exportGeneration: (notebookId: string, generationId: string, format: 'md' | 'txt' | 'csv' | 'html' = 'md') =>
     apiGet<any>(
       `/api/learning/generations/export?notebookId=${encodeURIComponent(notebookId)}` +
       `&generationId=${encodeURIComponent(generationId)}&format=${format}`,
     ),
   uploadLearningSource: async (notebookId: string, file: File) => {
-    // Parity LearningPage._add_source_files: upload mentah lalu server ekstrak.
+    // C02: upload mentah (nama+mime asli ikut) lalu server ekstrak + simpan berkas.
     const up = await apiUploadFile<any>('learning_source', file);
     const inner = up && typeof up.result === 'object' && up.result ? up.result : up;
     if (!inner || inner.ok === false || !inner.path) return inner;
-    return apiPost<any>(`/api/learning/notebooks/${notebookId}/upload-source`, { path: inner.path });
+    return apiPost<any>(`/api/learning/notebooks/${notebookId}/upload-source`, {
+      path: inner.path,
+      orig_name: file.name,
+      mime: file.type || '',
+    });
   },
+  // C02: ekstrak ulang dari berkas asli + URL unduh berkas asli (owner-only).
+  reextractSource: (notebookId: string, sourceId: string) =>
+    apiPost<any>(`/api/learning/notebooks/${notebookId}/sources/${sourceId}/re-extract`, {}),
+  learningSourceFileUrl: (sourceId: string) => `/api/learning/sources/${sourceId}/file`,
   learningSourceContent: (notebookId: string, sourceId: string) =>
     apiPost<any>('/api/learning/source-content', { notebookId, sourceId }),
   addSource: (notebookId: string, title: string, content: string, type?: string) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/sources`, { title, content, type }),
+  // C03: sumber URL — server yang fetch (website/YouTube terdeteksi otomatis).
+  addSourceFromUrl: (notebookId: string, opts: { url: string; type: string; title?: string }) =>
+    apiPost<any>(`/api/learning/notebooks/${notebookId}/sources`, opts),
   deleteSource: (notebookId: string, sourceId: string) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/sources/${sourceId}/delete`, {}),
+  // C04: catatan tersimpan dari jawaban AI.
+  addNote: (notebookId: string, title: string, content: string) =>
+    apiPost<any>(`/api/learning/notebooks/${notebookId}/notes`, { title, content }),
+  deleteNote: (notebookId: string, noteId: string) =>
+    apiPost<any>(`/api/learning/notebooks/${notebookId}/notes/${noteId}/delete`, {}),
   // A08: `sourceIds` = sumber terpilih (grounding) — kosong berarti pakai semua sumber.
   chat: (notebookId: string, text: string, sourceIds?: string[]) =>
     apiPost<any>(`/api/learning/notebooks/${notebookId}/chat`, { text, sourceIds: sourceIds || [] }),
@@ -259,9 +280,11 @@ export const studio = {
   },
   // P62: pembersihan DB bulanan (history tracker).
   cleanupStatus: () => apiGet<any>('/api/settings/cleanup'),
-  cleanupSet: (payload: { retentionDays?: number; auto?: boolean }) =>
+  cleanupSet: (payload: { retentionDays?: number; auto?: boolean; schedule?: string }) =>
     apiPost<any>('/api/settings/cleanup', { action: 'set', ...payload }),
   cleanupRun: () => apiPost<any>('/api/settings/cleanup', { action: 'run' }),
+  cleanupCheckpoint: () => apiPost<any>('/api/settings/cleanup', { action: 'checkpoint' }),
+  cleanupVacuum: () => apiPost<any>('/api/settings/cleanup', { action: 'vacuum' }),
   uploadMusicFile: async (file: File) => {
     // Parity MusicPage._add_files/_select_folder: file masuk folder library
     // musik server lalu direferensikan playlist berdasar path absolut.

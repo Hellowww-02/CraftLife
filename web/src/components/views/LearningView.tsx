@@ -37,11 +37,12 @@ import StudioArtifactList, { ArtifactItem } from '../learning/StudioArtifactList
 import LearningShell from '../learning/LearningShell';
 import NotebookRail, { LearningViewKey } from '../learning/NotebookRail';
 import SourcesRail from '../learning/SourcesRail';
-import ChatPanel from '../learning/ChatPanel';
+import ChatPanel, { buildSuggestions } from '../learning/ChatPanel';
 import PodcastPlayer from '../learning/PodcastPlayer';
+import { DataTableView, InfographicView, SlideDeckView } from '../learning/StudioNewViews';
 
-// Parity LearningPage._STUDIO_TYPES — 8 generator dalam urutan PyQt.
-type StudioType = 'summary' | 'study-guide' | 'flashcards' | 'faq' | 'mindmap' | 'timeline' | 'quiz' | 'podcast';
+// C05: 12 generator (8 lama + 4 baru di akhir, urutan lama tidak berubah).
+type StudioType = 'summary' | 'study-guide' | 'flashcards' | 'faq' | 'mindmap' | 'timeline' | 'quiz' | 'podcast' | 'briefing-doc' | 'data-table' | 'infographic' | 'slide-deck';
 const STUDIO_TYPES: { type: StudioType; icon: string; labelKey: string; default: string[] }[] = [
   { type: 'summary', icon: '📄', labelKey: 'learning_studio_summary', default: [] },
   { type: 'study-guide', icon: '📘', labelKey: 'learning_studio_guide', default: [] },
@@ -51,6 +52,10 @@ const STUDIO_TYPES: { type: StudioType; icon: string; labelKey: string; default:
   { type: 'timeline', icon: '🕒', labelKey: 'learning_studio_timeline', default: [] },
   { type: 'quiz', icon: '📝', labelKey: 'learning_studio_quiz', default: [] },
   { type: 'podcast', icon: '🎙️', labelKey: 'learning_studio_podcast_script', default: [] },
+  { type: 'briefing-doc', icon: '📋', labelKey: 'learning_studio_briefing_doc', default: [] },
+  { type: 'data-table', icon: '📊', labelKey: 'learning_studio_data_table', default: [] },
+  { type: 'infographic', icon: '🎨', labelKey: 'learning_studio_infographic', default: [] },
+  { type: 'slide-deck', icon: '📽️', labelKey: 'learning_studio_slide_deck', default: [] },
 ];
 
 // Parity LearningPage._clamp_font: ukuran font 10..30, default 13.
@@ -217,6 +222,14 @@ export const LearningView: React.FC = () => {
   const [newSourceTitle, setNewSourceTitle] = useState('');
   const [newSourceContent, setNewSourceContent] = useState('');
   const [newSourceType, setNewSourceType] = useState<'text' | 'doc' | 'pdf' | 'url'>('text');
+  // C03: mode dialog tambah sumber (teks tempel vs URL website/YouTube).
+  const [newSourceMode, setNewSourceMode] = useState<'text' | 'website' | 'youtube'>('text');
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [savingSource, setSavingSource] = useState(false);
+  const [sourceErr, setSourceErr] = useState('');
+  // C04: modal catatan tersimpan + kartu yang dibuka.
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [expandedNote, setExpandedNote] = useState<string | null>(null);
   const [geminiKey, setGeminiKey] = useState('');
 
   // ── Parity LearningPage: font chat/studio, rename, upload source, history ──
@@ -228,8 +241,11 @@ export const LearningView: React.FC = () => {
   const [renameIcon, setRenameIcon] = useState('📚');
   const [studioTopic, setStudioTopic] = useState('');
   const [selectedGen, setSelectedGen] = useState<any | null>(null);
-  const [viewingSource, setViewingSource] = useState<{ title: string; content: string } | null>(null);
-  const [uploadingSource, setUploadingSource] = useState(false);
+  const [viewingSource, setViewingSource] = useState<{
+    id: string; title: string; content: string;
+    fileName: string; mimeType: string; fileSize: number; hasFile: boolean;
+  } | null>(null);
+  const [reextracting, setReextracting] = useState(false);
   // A07: judul notebook di topbar bisa diganti langsung (inline-rename).
   // Draf disinkronkan setiap kali notebook aktif berganti (lihat useEffect di bawah).
   const [nbTitleDraft, setNbTitleDraft] = useState('');
@@ -356,7 +372,7 @@ export const LearningView: React.FC = () => {
 
   // Ekspor artefak: server menyiapkan berkas (staged) → diunduh lewat jalur unduhan
   // A03.5 (`/api/system/download-file`) sehingga berkas benar-benar sampai ke komputer.
-  const handleExportArtifact = async (a: ArtifactItem, format: 'md' | 'txt') => {
+  const handleExportArtifact = async (a: ArtifactItem, format: 'md' | 'txt' | 'csv' | 'html') => {
     if (!activeNotebook) return;
     try {
       const res = await studio.exportGeneration(activeNotebook.id, a.id, format);
@@ -376,17 +392,26 @@ export const LearningView: React.FC = () => {
     }
   };
 
-  const handleUploadSource = async (file: File) => {
-    if (!activeNotebook || !file) return;
-    setUploadingSource(true);
+  // C02: unggah SATU berkas untuk antrean SourcesRail (refresh/toast di handleQueueDone).
+  const uploadOneSource = async (file: File): Promise<{ ok: boolean; msg?: string }> => {
+    if (!activeNotebook || !file) return { ok: false, msg: 'learning_not_found' };
     try {
       const r = await studio.uploadLearningSource(activeNotebook.id, file);
       const res = r?.result || r;
-      if (res?.ok === false) { showToast('damage', tr(res?.msg || 'learning_source_empty_file', 'File tidak berisi teks yang dapat dibaca.'), ''); return; }
-      showToast('success', tr('learning_source_added', 'Source ditambahkan'), file.name);
-      refreshNotebooks();
-    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
-    finally { setUploadingSource(false); }
+      if (res?.ok === false) return { ok: false, msg: String(res?.msg || 'learning_source_empty_file') };
+      const warns = (res as any)?.warnings;
+      if (Array.isArray(warns) && warns.length) {
+        // Berkas tersimpan tapi butuh API key (gambar/audio) — beri tahu sekali per berkas.
+        showToast('info', tr(String(warns[0]), 'Berkas tersimpan; tambah API key lalu Ekstrak ulang.'), file.name);
+      }
+      return { ok: true };
+    } catch (e) { return { ok: false, msg: String((e as any)?.message || e) }; }
+  };
+
+  const handleQueueDone = (okCount: number, failCount: number) => {
+    refreshNotebooks();
+    if (okCount > 0) showToast('success', trq('learning_queue_ok', { n: okCount }, '{n} sumber ditambahkan'), '');
+    if (failCount > 0) showToast('damage', trq('learning_queue_fail', { n: failCount }, '{n} gagal'), '');
   };
 
   const handleViewSource = async (sourceId: string) => {
@@ -396,8 +421,104 @@ export const LearningView: React.FC = () => {
       const res = r?.result || r;
       if (!res?.ok) { showToast('damage', tr(res?.msg || 'learning_not_found', 'Tidak ditemukan.'), ''); return; }
       const src = res.source || res;
-      setViewingSource({ title: src.title || 'Source', content: src.content || '' });
+      setViewingSource({
+        id: String(src.id || sourceId),
+        title: src.title || 'Source',
+        content: src.content || '',
+        fileName: src.file_name || src.fileName || '',
+        mimeType: src.mime_type || src.mimeType || '',
+        fileSize: Number(src.file_size ?? src.fileSize) || 0,
+        hasFile: Boolean(src.file_path || src.hasFile),
+      });
     } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  // C02: ekstrak ulang dari berkas asli (mis. setelah isi API key untuk gambar/audio).
+  const handleReextract = async () => {
+    if (!activeNotebook || !viewingSource || reextracting) return;
+    setReextracting(true);
+    try {
+      const r = await studio.reextractSource(activeNotebook.id, viewingSource.id);
+      const res = r?.result || r;
+      if (res?.ok === false) { showToast('damage', tr(res?.msg || 'learning_not_found', 'Tidak ditemukan.'), ''); return; }
+      showToast('success', tr('learning_reextracted', 'Ekstraksi diperbarui'), '');
+      refreshNotebooks();
+      handleViewSource(viewingSource.id);
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+    finally { setReextracting(false); }
+  };
+
+  const fmtFileSize = (n: number) => {
+    if (!n || n <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let v = n; let i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+    return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+  };
+
+  // C04: simpan jawaban AI jadi catatan (judul = baris bermakna pertama).
+  const handleSaveNote = async (text: string) => {
+    if (!activeNotebook || !text.trim()) return;
+    const lines = text.split('\n').map((l) => l.trim()).filter((l) => l);
+    let firstLine = '';
+    for (const l of lines) {
+      let t = l;
+      while (t && '#*>-0123456789. '.includes(t[0])) t = t.slice(1);
+      t = t.trim();
+      if (t) { firstLine = t; break; }
+    }
+    try {
+      const r = await studio.addNote(activeNotebook.id, firstLine.slice(0, 60) || tr('learning_notes_title', 'Catatan'), text);
+      const res = r?.result || r;
+      if (res?.ok === false) { showToast('damage', tr(res?.msg || 'learning_not_found', 'Tidak ditemukan.'), ''); return; }
+      showToast('success', tr('learning_note_saved', 'Catatan disimpan'), '');
+      refreshNotebooks();
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  const handleCopyNote = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      showToast('success', tr('learning_note_copied', 'Catatan disalin'), '');
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!activeNotebook) return;
+    if (!window.confirm(tr('learning_note_delete_confirm', 'Hapus catatan ini?'))) return;
+    try {
+      await studio.deleteNote(activeNotebook.id, noteId);
+      setExpandedNote((prev) => (prev === noteId ? null : prev));
+      refreshNotebooks();
+    } catch (e) { showToast('damage', String((e as any)?.message || e), ''); }
+  };
+
+  // C03: simpan sumber — teks via jalur lama, URL via fetch server (async + error).
+  const handleSaveSource = async () => {
+    if (!activeNotebook || savingSource) return;
+    if (newSourceMode === 'text') {
+      if (!newSourceTitle.trim() || !newSourceContent.trim()) return;
+      addNotebookSource(activeNotebook.id, newSourceTitle.trim(), newSourceContent.trim(), newSourceType);
+      setShowNewSourceModal(false); setNewSourceTitle(''); setNewSourceContent(''); setSourceErr('');
+      return;
+    }
+    const url = newSourceUrl.trim();
+    let urlOk = url.length >= 12;
+    try {
+      const pu = new URL(url);
+      urlOk = urlOk && (pu.protocol === 'http:' || pu.protocol === 'https:');
+    } catch { urlOk = false; }
+    if (!urlOk) { setSourceErr(tr('learning_url_invalid', 'URL tidak valid')); return; }
+    setSavingSource(true); setSourceErr('');
+    try {
+      const r = await studio.addSourceFromUrl(activeNotebook.id, { url, type: newSourceMode, title: newSourceTitle.trim() });
+      const res = r?.result || r;
+      if (res?.ok === false) { setSourceErr(tr(res?.msg || 'learning_source_fetch_failed', 'Sumber tidak dapat diambil.')); return; }
+      showToast('success', tr('learning_source_added', 'Source ditambahkan'), newSourceTitle.trim() || url);
+      refreshNotebooks();
+      setShowNewSourceModal(false); setNewSourceTitle(''); setNewSourceUrl(''); setSourceErr('');
+    } catch (e) { setSourceErr(String((e as any)?.message || e)); }
+    finally { setSavingSource(false); }
   };
 
   // Ekspor hasil Studio ke .txt via download browser (parity _export_studio
@@ -763,12 +884,22 @@ export const LearningView: React.FC = () => {
     if (activeStudioType === 'mindmap') {
       return <MindMapView raw={(activeNotebook as any).mindMap} lang={lang} fontSize={studioFontSize} />;
     }
+    // C05: 3 tipe JSON baru memakai slot server (terbaru, pola mindmap).
+    if (activeStudioType === 'data-table') {
+      return <DataTableView data={(activeNotebook as any).dataTable} tr={trq} />;
+    }
+    if (activeStudioType === 'infographic') {
+      return <InfographicView data={(activeNotebook as any).infographic} tr={trq} />;
+    }
+    if (activeStudioType === 'slide-deck') {
+      return <SlideDeckView data={(activeNotebook as any).slideDeck} tr={trq} />;
+    }
     if (selectedGen) {
       return (
         <div className="space-y-2"><div className="text-[10px] uppercase tracking-wider text-violet-400">{selectedGen.gtype} · {selectedGen.topic || '-'} · {selectedGen.createdAt || ''}</div><ReactMarkdown>{String(selectedGen.content || '')}</ReactMarkdown></div>
       );
     }
-    return (<>{['studyGuide', 'faq', 'timeline', 'summary'].map((f) => ((activeNotebook as any)[f] ? <ReactMarkdown key={f}>{String((activeNotebook as any)[f])}</ReactMarkdown> : null))}</>);
+    return (<>{['studyGuide', 'faq', 'timeline', 'summary', 'briefingDoc'].map((f) => ((activeNotebook as any)[f] ? <ReactMarkdown key={f}>{String((activeNotebook as any)[f])}</ReactMarkdown> : null))}</>);
   };
 
   // AI Chat Handler
@@ -968,6 +1099,10 @@ export const LearningView: React.FC = () => {
       if (kind === 'faq') payload.faq = data.faq || data.result?.faq || data.raw;
       if (kind === 'timeline') payload.timeline = data.timeline || data.result?.timeline || data.raw;
       if (kind === 'summary') payload.summary = data.summary || data.result?.summary || data.raw;
+      if (kind === 'briefing-doc') payload.briefingDoc = data.briefingDoc || data.result?.briefingDoc || data.raw;
+      if (kind === 'data-table') payload.dataTable = data.dataTable || data.result?.dataTable;
+      if (kind === 'infographic') payload.infographic = data.infographic || data.result?.infographic;
+      if (kind === 'slide-deck') payload.slideDeck = data.slideDeck || data.result?.slideDeck;
       updateNotebook(activeNotebook.id, payload);
       setActiveStudioType(kind as StudioType);
       showToast('success', tr('learning_gen_done_title', 'Selesai'), trv('learning_gen_done_msg', '{type} siap dipakai.', { type: kind }));
@@ -1126,8 +1261,6 @@ export const LearningView: React.FC = () => {
               onCreate={() => setShowNewNbModal(true)}
               onRename={openRenameDialog}
               onDelete={() => { if (notebooks.length > 1 && window.confirm(tr('learning_delete_confirm', 'Hapus notebook ini?'))) deleteNotebook(activeNotebook.id); }}
-              view={view}
-              onView={setView}
               lang={lang}
               onLang={handleLanguageChange}
               tr={trq}
@@ -1185,11 +1318,15 @@ export const LearningView: React.FC = () => {
                 type: String((src as any).type || 'text'),
                 wordCount: Number(src.wordCount) || 0,
                 createdAt: (src as any).createdAt,
+                fileName: (src as any).fileName || '',
+                fileSize: Number((src as any).fileSize) || 0,
+                hasFile: Boolean((src as any).hasFile),
+                summary: (src as any).summary || '',
               }))}
-              uploading={uploadingSource}
+              uploadOne={uploadOneSource}
+              onQueueDone={handleQueueDone}
               usedIds={usedSourceIds}
               onToggleUsed={toggleSourceUsed}
-              onUpload={handleUploadSource}
               onAddPaste={() => setShowNewSourceModal(true)}
               onOpenSource={handleViewSource}
               onDeleteSource={(id) => deleteNotebookSource(activeNotebook.id, id)}
@@ -1219,6 +1356,10 @@ export const LearningView: React.FC = () => {
                   .finally(() => updateNotebook(activeNotebook.id, { chatHistory: [] }));
               }}
               onSuggestion={(text) => { setChatInput(''); handleSendChat(text); }}
+              suggestions={buildSuggestions((activeNotebook.sources || []).map((s: any) => s.title), trq)}
+              onSaveNote={handleSaveNote}
+              notesCount={((activeNotebook as any).savedNotes || []).length}
+              onOpenNotes={() => { setExpandedNote(null); setShowNotesModal(true); }}
               sourcesUsed={usedSourceIds.length}
               sourcesTotal={(activeNotebook.sources || []).length}
               onOpenSources={() => setView('sources')}
@@ -1246,7 +1387,7 @@ export const LearningView: React.FC = () => {
 
                 {/* Topic input */}
                 <input type="text" value={studioTopic} onChange={(e) => setStudioTopic(e.target.value)} placeholder={tr('learning_topic_label', 'Topik (kosongkan = semua):')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200" />
-                {/* 8-type generator grid (parity studio_grid) — A05: klik = BUKA DIALOG
+                {/* C05: grid 12 tipe — A05: klik = BUKA DIALOG
                     konfigurasi tipe tersebut; tombol ⚡ = generate langsung dengan
                     pengaturan terakhir (perilaku lama tetap tersedia untuk power user). */}
                 <div className="grid grid-cols-2 gap-2">
@@ -1395,17 +1536,76 @@ export const LearningView: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: View Source (parity LearningPage._view_source) */}
+      {/* Modal: View Source (parity LearningPage._view_source + berkas asli C02) */}
       {viewingSource && (
         <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
             <h3 className="font-bold text-lg text-slate-100 mb-3 shrink-0">{viewingSource.title}</h3>
+            {/* Kartu berkas asli */}
+            <div className="shrink-0 mb-3 flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">{tr('learning_source_file', 'Berkas asli')}</span>
+              {viewingSource.hasFile ? (
+                <>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-200" title={viewingSource.fileName}>
+                    {viewingSource.fileName || viewingSource.title}
+                    {viewingSource.fileSize > 0 && <span className="ml-1.5 text-slate-500 ct-nlm-num">· {fmtFileSize(viewingSource.fileSize)}</span>}
+                  </span>
+                  <button
+                    onClick={() => downloadApiFile(studio.learningSourceFileUrl(viewingSource.id), viewingSource.fileName || 'source')}
+                    className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1 text-[10px] shrink-0"
+                  >
+                    <Download className="w-3 h-3" />{tr('learning_source_download', 'Unduh asli')}
+                  </button>
+                  <button
+                    onClick={handleReextract}
+                    disabled={reextracting}
+                    className="ct-btn ct-btn-secondary ct-btn-sm flex items-center gap-1 text-[10px] shrink-0 disabled:opacity-50"
+                  >
+                    {reextracting ? '…' : tr('learning_reextract', 'Ekstrak ulang')}
+                  </button>
+                </>
+              ) : (
+                <span className="text-[11px] text-slate-500">{tr('learning_nofile', 'Sumber ini tidak punya berkas asli')}</span>
+              )}
+            </div>
             <div className="overflow-y-auto pr-1 flex-1"><pre className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300 font-mono bg-slate-950/60 border border-slate-800 rounded-xl p-4">{viewingSource.content}</pre></div>
             <div className="flex justify-end mt-4 shrink-0"><button onClick={() => setViewingSource(null)} className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white">{tr('btn_close', 'Tutup')}</button></div>
           </div>
         </div>
       )}
 
+      {/* Modal C04: Catatan tersimpan */}
+      {showNotesModal && activeNotebook && (
+        <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <h3 className="font-bold text-lg text-slate-100 mb-3 shrink-0">{tr('learning_notes_title', 'Catatan tersimpan')}</h3>
+            <div className="overflow-y-auto pr-1 flex-1 space-y-2">
+              {(((activeNotebook as any).savedNotes || []).length === 0) && (
+                <p className="text-[12px] text-slate-500 text-center py-6">{tr('learning_notes_empty', 'Belum ada catatan.')}</p>
+              )}
+              {((activeNotebook as any).savedNotes || []).map((n: any) => {
+                const open = expandedNote === String(n.id);
+                const body = String(n.content || '');
+                return (
+                  <div key={n.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                    <button onClick={() => setExpandedNote(open ? null : String(n.id))} className="block w-full text-left">
+                      <h4 className="font-bold text-[12px] text-slate-100 truncate">{n.title || tr('learning_notes_title', 'Catatan')}</h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{n.createdAt || ''}</p>
+                      {!open && <p className="ct-guide-clamp text-[11px] text-slate-400 mt-1">{body}</p>}
+                    </button>
+                    {open && <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300 font-mono mt-2 max-h-64 overflow-y-auto">{body}</pre>}
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => handleCopyNote(body)} className="ct-btn ct-btn-secondary ct-btn-sm text-[10px]">{tr('learning_note_copy', 'Salin')}</button>
+                      <button onClick={() => handleDeleteNote(String(n.id))} className="ct-btn ct-btn-secondary ct-btn-sm text-[10px] text-rose-300">{tr('learning_delete', 'Hapus')}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end mt-4 shrink-0"><button onClick={() => setShowNotesModal(false)} className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white">{tr('btn_close', 'Tutup')}</button></div>
+          </div>
+        </div>
+      )}
       {/* Modal: New Source */}
       {showNewSourceModal && (
         <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1413,12 +1613,13 @@ export const LearningView: React.FC = () => {
             <h3 className="font-bold text-lg text-slate-100">{tr('add_study_source', 'Add Study Source')}</h3>
             <div className="space-y-3 text-sm">
               <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('source_title', 'Source Title')}</label><input type="text" value={newSourceTitle} onChange={(e) => setNewSourceTitle(e.target.value)} placeholder={tr('learning_source_title_ph', 'e.g. Chapter 1 Notes, Article summary')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_type_label', 'Type')}</label><div className="flex gap-2">{(['text', 'doc', 'pdf', 'url'] as const).map((tt) => (<button key={tt} onClick={() => setNewSourceType(tt)} className={`ct-socket px-3 py-1.5 uppercase text-xs font-bold rounded-lg ${newSourceType === tt ? 'ct-glow bg-violet-600/30 border-violet-500 text-violet-300' : 'text-slate-400'}`}>{tt}</button>))}</div></div>
-              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('content_text', 'Content / Text')}</label><textarea rows={6} value={newSourceContent} onChange={(e) => setNewSourceContent(e.target.value)} placeholder={tr('learning_source_content_ph', 'Paste notes, textbook paragraphs, or document content here...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 text-xs focus:outline-none focus:border-violet-500 font-mono" /></div>
+              <div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_type_label', 'Type')}</label><div className="flex gap-2">{(['text', 'website', 'youtube'] as const).map((mm) => (<button key={mm} onClick={() => { setNewSourceMode(mm); setSourceErr(''); }} className={`ct-socket px-3 py-1.5 text-xs font-bold rounded-lg ${newSourceMode === mm ? 'ct-glow bg-violet-600/30 border-violet-500 text-violet-300' : 'text-slate-400'}`}>{mm === 'text' ? tr('learning_add_text', 'Teks') : mm === 'website' ? tr('learning_add_website', 'Website') : tr('learning_add_youtube', 'YouTube')}</button>))}</div></div>
+              {newSourceMode === 'text' && (<div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('learning_type_label', 'Type')}</label><div className="flex gap-2">{(['text', 'doc', 'pdf', 'url'] as const).map((tt) => (<button key={tt} onClick={() => setNewSourceType(tt)} className={`ct-socket px-3 py-1.5 uppercase text-xs font-bold rounded-lg ${newSourceType === tt ? 'ct-glow bg-violet-600/30 border-violet-500 text-violet-300' : 'text-slate-400'}`}>{tt}</button>))}</div></div>)}
+              {newSourceMode === 'text' ? (<div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('content_text', 'Content / Text')}</label><textarea rows={6} value={newSourceContent} onChange={(e) => setNewSourceContent(e.target.value)} placeholder={tr('learning_source_content_ph', 'Paste notes, textbook paragraphs, or document content here...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 text-xs focus:outline-none focus:border-violet-500 font-mono" /></div>) : (<div><label className="block text-xs font-bold text-slate-400 mb-1">{newSourceMode === 'youtube' ? tr('learning_add_youtube', 'YouTube') : tr('learning_add_website', 'Website')} URL</label><input type="url" value={newSourceUrl} onChange={(e) => setNewSourceUrl(e.target.value)} placeholder={tr('learning_url_ph', 'https://…')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /><p className="text-[10px] text-slate-500 mt-1">{trq('learning_add_url_prompt', { type: newSourceMode === 'youtube' ? tr('learning_add_youtube', 'YouTube') : tr('learning_add_website', 'Website') }, 'Tempel URL')}</p>{sourceErr && (<p className="text-[11px] text-rose-400 mt-1">{sourceErr}</p>)}</div>)}
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setShowNewSourceModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
-              <button onClick={() => { if (!newSourceTitle.trim() || !newSourceContent.trim() || !activeNotebook) return; addNotebookSource(activeNotebook.id, newSourceTitle.trim(), newSourceContent.trim(), newSourceType); setShowNewSourceModal(false); setNewSourceTitle(''); setNewSourceContent(''); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{tr('save_source', 'Save Source')}</button>
+              <button onClick={() => { setShowNewSourceModal(false); setSourceErr(''); }} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+              <button onClick={handleSaveSource} disabled={savingSource} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-xs font-semibold text-white rounded-xl">{savingSource ? tr('learning_fetching_source', 'Mengambil…') : newSourceMode === 'text' ? tr('save_source', 'Save Source') : tr('learning_fetch_save', 'Ambil & simpan')}</button>
             </div>
           </div>
         </div>

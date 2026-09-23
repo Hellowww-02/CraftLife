@@ -8,7 +8,9 @@
  */
 import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Bot, Send, Sparkles, Trash2, User, BookMarked } from 'lucide-react';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import { Bot, Send, Sparkles, Trash2, User, BookMarked, BookmarkPlus, StickyNote } from 'lucide-react';
 import { Citation, citationMarkdownComponents, linkifyCitations } from './CitationChip';
 
 export interface ChatMessage {
@@ -36,6 +38,13 @@ export interface ChatPanelProps {
   onOpenSources?: () => void;
   /** A08: klik chip sitasi → buka isi sumber penuh. */
   onOpenSource?: (sourceId: string) => void;
+  /** C04: saran kontekstual (dari judul sumber); kosong → 4 saran generik. */
+  suggestions?: string[];
+  /** C04: simpan jawaban AI jadi catatan (teks jawaban). */
+  onSaveNote?: (text: string) => void;
+  /** C04: buka daftar catatan tersimpan + jumlahnya. */
+  notesCount?: number;
+  onOpenNotes?: () => void;
   tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string;
 }
 
@@ -46,9 +55,31 @@ const SUGGESTIONS: { key: string; fallback: string }[] = [
   { key: 'learning_suggestion_q4', fallback: 'Buatkan kuis dari materi ini' },
 ];
 
+/** C04: saran kontekstual dari judul sumber (maks 4 kartu; kosong bila tak ada sumber). */
+export function buildSuggestions(
+  titles: string[],
+  tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string,
+): string[] {
+  const clean = (titles || []).map((t) => String(t || '').trim()).filter(Boolean).slice(0, 2);
+  if (!clean.length) return [];
+  const short = (t: string) => (t.length > 42 ? `${t.slice(0, 41).trimEnd()}…` : t);
+  const a = short(clean[0]);
+  const out = [
+    tr('learning_suggest_concept', { title: a }, `Jelaskan konsep utama dari "${a}"`),
+    tr('learning_suggest_summary', { title: a }, `Buat rangkuman singkat dari "${a}"`),
+  ];
+  if (clean[1]) {
+    const b = short(clean[1]);
+    out.push(tr('learning_suggest_compare', { a, b }, `Bandingkan "${a}" dengan "${b}"`));
+  }
+  out.push(tr('learning_suggest_quiz', { title: a }, `Buatkan kuis dari "${a}"`));
+  return out.slice(0, 4);
+}
+
 const ChatPanel: React.FC<ChatPanelProps> = ({
   messages, input, onInput, onSend, loading, font, onFont, onClear, onSuggestion,
   sourcesUsed = 0, sourcesTotal = 0, onOpenSources, onOpenSource, tr,
+  suggestions, onSaveNote, notesCount = 0, onOpenNotes,
 }) => {
   const listRef = useRef<HTMLDivElement | null>(null);
   const markdownRef = useRef<HTMLDivElement | null>(null);
@@ -88,6 +119,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           <button onClick={() => onFont(1)} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_font_chat', {}, 'Font Chat AI')}>
             {tr('learning_font_increase', {}, 'A+')}
           </button>
+          {onOpenNotes && (
+            <button onClick={onOpenNotes} className="ct-btn ct-btn-secondary ct-btn-sm inline-flex items-center gap-1" title={tr('learning_notes_title', {}, 'Catatan tersimpan')}>
+              <StickyNote className="w-3.5 h-3.5" />
+              <span className="ct-nlm-num">{notesCount || 0}</span>
+            </button>
+          )}
           <button onClick={onClear} className="ct-btn ct-btn-secondary ct-btn-sm" title={tr('learning_clear_chat', {}, 'Bersihkan chat')}>
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -110,11 +147,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             </p>
             {/* Kartu saran ala NotebookLM */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4 w-full max-w-xl">
-              {SUGGESTIONS.map((s) => (
-                <button key={s.key} onClick={() => onSuggestion(tr(s.key, {}, s.fallback))} className="ct-nlm-suggestion">
+              {(suggestions && suggestions.length > 0
+                ? suggestions.map((text) => ({ key: text, label: text }))
+                : SUGGESTIONS.map((s) => ({ key: s.key, label: tr(s.key, {}, s.fallback) }))
+              ).map((s) => (
+                <button key={s.key} onClick={() => onSuggestion(s.label)} className="ct-nlm-suggestion">
                   <span className="flex items-start gap-2">
                     <Sparkles className="w-3.5 h-3.5 mt-0.5 text-[var(--ct-light)] shrink-0" />
-                    <span>{tr(s.key, {}, s.fallback)}</span>
+                    <span>{s.label}</span>
                   </span>
                 </button>
               ))}
@@ -137,6 +177,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                 className="prose prose-invert prose-sm max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1"
               >
                 <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
                   components={msg.sender === 'ai'
                     ? citationMarkdownComponents(msg.citations || [], onOpenSource, tr)
                     : undefined}
@@ -160,6 +202,17 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       {c.index}. {c.title}
                     </button>
                   ))}
+                </span>
+              )}
+              {msg.sender === 'ai' && onSaveNote && (
+                <span className="block mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onSaveNote(msg.text)}
+                    className="ct-btn ct-btn-secondary ct-btn-sm inline-flex items-center gap-1 text-[10px]"
+                  >
+                    <BookmarkPlus className="w-3 h-3" />{tr('learning_save_note', {}, 'Simpan jadi catatan')}
+                  </button>
                 </span>
               )}
               {msg.timestamp && (

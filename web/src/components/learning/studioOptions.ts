@@ -18,7 +18,11 @@ export type StudioKind =
   | 'mindmap'
   | 'timeline'
   | 'quiz'
-  | 'podcast';
+  | 'podcast'
+  | 'briefing-doc'
+  | 'data-table'
+  | 'infographic'
+  | 'slide-deck';
 
 export type OptionKind = 'number' | 'choice' | 'toggle' | 'multi' | 'text';
 
@@ -59,7 +63,7 @@ export interface StudioMeta {
   apiKind: string;
 }
 
-/** Parity LearningPage._STUDIO_TYPES — 8 generator, urutan sama dengan grid UI. */
+/** C05: 12 generator (8 lama + briefing-doc, data-table, infographic, slide-deck). */
 export const STUDIO_META: Record<StudioKind, StudioMeta> = {
   summary: {
     icon: '📄', labelKey: 'learning_studio_summary', labelFallback: 'Summary',
@@ -100,6 +104,26 @@ export const STUDIO_META: Record<StudioKind, StudioMeta> = {
     icon: '🎙️', labelKey: 'learning_studio_podcast_script', labelFallback: 'Audio Overview',
     blurbKey: 'learning_dialog_blurb_podcast',
     blurbFallback: 'Dialog dua host membahas materi.', apiKind: 'podcast',
+  },
+  'briefing-doc': {
+    icon: '📋', labelKey: 'learning_studio_briefing_doc', labelFallback: 'Briefing Doc',
+    blurbKey: 'learning_dialog_blurb_briefing_doc',
+    blurbFallback: 'Laporan terstruktur + sumber dirujuk.', apiKind: 'briefing-doc',
+  },
+  'data-table': {
+    icon: '📊', labelKey: 'learning_studio_data_table', labelFallback: 'Data Table',
+    blurbKey: 'learning_dialog_blurb_data_table',
+    blurbFallback: 'Tabel perbandingan dari sumber.', apiKind: 'data-table',
+  },
+  infographic: {
+    icon: '🎨', labelKey: 'learning_studio_infographic', labelFallback: 'Infografik',
+    blurbKey: 'learning_dialog_blurb_infographic',
+    blurbFallback: 'Poin kunci divisualkan.', apiKind: 'infographic',
+  },
+  'slide-deck': {
+    icon: '📽️', labelKey: 'learning_studio_slide_deck', labelFallback: 'Slide Deck',
+    blurbKey: 'learning_dialog_blurb_slide_deck',
+    blurbFallback: 'Tayangan slide per bagian.', apiKind: 'slide-deck',
   },
 };
 
@@ -286,6 +310,47 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
     LANGUAGE,
     FOCUS,
   ],
+  'briefing-doc': [
+    {
+      id: 'length', kind: 'choice',
+      labelKey: 'learning_opt_length', labelFallback: 'Panjang',
+      choices: [
+        { value: 'short', labelKey: 'learning_opt_length_short', labelFallback: 'Singkat' },
+        { value: 'standard', labelKey: 'learning_opt_length_standard', labelFallback: 'Standar' },
+        { value: 'deep', labelKey: 'learning_opt_length_deep', labelFallback: 'Mendalam' },
+      ],
+    },
+    LANGUAGE,
+    FOCUS,
+  ],
+  'data-table': [
+    {
+      id: 'tableRows', kind: 'number', min: 3, max: 15,
+      labelKey: 'learning_opt_table_rows', labelFallback: 'Jumlah baris',
+    },
+    LANGUAGE,
+    FOCUS,
+  ],
+  infographic: [
+    {
+      id: 'infoPoints', kind: 'number', min: 3, max: 10,
+      labelKey: 'learning_opt_info_points', labelFallback: 'Jumlah poin',
+    },
+    LANGUAGE,
+    FOCUS,
+  ],
+  'slide-deck': [
+    {
+      id: 'slideCount', kind: 'number', min: 4, max: 15,
+      labelKey: 'learning_opt_slide_count', labelFallback: 'Jumlah slide',
+    },
+    {
+      id: 'slideBullets', kind: 'number', min: 2, max: 6,
+      labelKey: 'learning_opt_slide_bullets', labelFallback: 'Poin per slide',
+    },
+    LANGUAGE,
+    FOCUS,
+  ],
 };
 
 /** Nilai default per tipe (sama dengan default dialog). */
@@ -311,6 +376,10 @@ export function studioDefaults(kind: StudioKind): Record<string, any> {
   if (kind === 'faq') { out.faqCount = 8; out.style = 'detail'; out.language = 'auto'; }
   if (kind === 'timeline') { out.granularity = 'month'; out.absoluteDates = true; out.language = 'auto'; }
   if (kind === 'summary') { out.length = 'standard'; out.style = 'bullets'; out.language = 'auto'; }
+  if (kind === 'briefing-doc') { out.length = 'standard'; out.language = 'auto'; }
+  if (kind === 'data-table') { out.tableRows = 8; out.language = 'auto'; }
+  if (kind === 'infographic') { out.infoPoints = 6; out.language = 'auto'; }
+  if (kind === 'slide-deck') { out.slideCount = 8; out.slideBullets = 4; out.language = 'auto'; }
   return out;
 }
 
@@ -410,6 +479,23 @@ export function buildStudioPayload(kind: StudioKind, cfg: Record<string, any>): 
     case 'summary':
       if (cfg.length) body.length = cfg.length;
       if (cfg.style) body.style = cfg.style;
+      common();
+      break;
+    case 'briefing-doc':
+      if (cfg.length) body.length = cfg.length;
+      common();
+      break;
+    case 'data-table':
+      body.tableRows = Math.max(3, Math.min(15, Number(cfg.tableRows) || 8));
+      common();
+      break;
+    case 'infographic':
+      body.infoPoints = Math.max(3, Math.min(10, Number(cfg.infoPoints) || 6));
+      common();
+      break;
+    case 'slide-deck':
+      body.slideCount = Math.max(4, Math.min(15, Number(cfg.slideCount) || 8));
+      body.slideBullets = Math.max(2, Math.min(6, Number(cfg.slideBullets) || 4));
       common();
       break;
   }

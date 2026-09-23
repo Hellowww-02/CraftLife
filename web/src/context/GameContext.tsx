@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { t as i18nT } from '../i18n';
 import { startPomoAlarm, stopPomoAlarm } from '../utils/pomoAlarm';
+import { computeDateKey } from '../utils/serverClock';
 import { playReminderSound, ReminderSound, startReminderLoop, stopReminderLoop } from '../utils/sound';
 import confetti from 'canvas-confetti';
 import {
@@ -363,6 +364,10 @@ interface GameContextType {
   removeToast: (id: string) => void;
   showToast: (type: 'success' | 'damage' | 'level_up' | 'info' | 'boss', title: string, message: string) => void;
 
+  // C07: auto-updater — info rilis yg ditawarkan ke dialog global (sekali per sesi).
+  pendingUpdate: { version: string; notes?: string; size_bytes?: number } | null;
+  setPendingUpdate: (u: { version: string; notes?: string; size_bytes?: number } | null) => void;
+
   // Calculated Stats
   activeBuffs: string[];
   activeBuffsDetail: { key: string; [k: string]: string | number }[];
@@ -454,10 +459,11 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const serverDateKey = useCallback(() => {
     const base = serverClockBase.current;
     if (!base) return '';
-    const ms = (base.epoch * 1000) + (Date.now() - base.receivedAt) + (base.tzOffsetMin * 60000);
-    try { return new Date(ms).toISOString().slice(0, 10); } catch { return ''; }
+    return computeDateKey(base.epoch, base.receivedAt, base.tzOffsetMin, Date.now());
   }, []);
-  const today = serverNow?.date || serverDateKey() || (() => { try { return new Date().toISOString().slice(0, 10); } catch { return ''; } })();
+  // C08: today = STATE ticking (diperbarui tiap heartbeat dari jam server).
+  // Fallback UTC dihapus dari jalur utama: '' hingga base jam ada (UI gate di hydrated).
+  const [today, setToday] = useState<string>('');
   const serverClockOffsetMs = serverNow ? (serverNow.epoch * 1000 + serverNow.tzOffsetMin * 60000) - Date.now() : 0;
   /** Return Date kalender (field lokal=zona app). Lihat catatan nowDate di nilai konteks. */
   const nowDate = useCallback((): Date | null => {
@@ -568,6 +574,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [lastDelete, setLastDelete] = useState<{ trashId: string; label: string } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{ version: string; notes?: string; size_bytes?: number } | null>(null);
 
   const fetchBootstrap = useCallback(async () => {
     setApiError(null);
@@ -581,6 +588,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setServerNow(data.serverNow);
         serverClockBase.current = { epoch: data.serverNow.epoch, receivedAt: Date.now(), tzOffsetMin: data.serverNow.tzOffsetMin || 0 };
         lastServerDate.current = data.serverNow.date;
+        if (data.serverNow?.date) setToday(data.serverNow.date);
       }
       if (data?.user) {
         setUser((prev) => ({
@@ -631,6 +639,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (data.lang === 'id' || data.lang === 'en') setLang(data.lang);
       applyBootstrapCatalogs(data);
       await loadMessages(data.lang === 'en' ? 'en' : 'id');
+      // C07: tawarkan update sekali per sesi bila bootstrap membawa flag.
+      try {
+        const upd = (data as any)?.updateCheck;
+        const ver = upd && typeof upd.version === 'string' ? upd.version : '';
+        const offered = sessionStorage.getItem('craftlife_update_offered') || '';
+        if (ver && offered !== ver) {
+          setPendingUpdate({ version: ver, notes: upd.notes || '', size_bytes: upd.size_bytes || 0 });
+        }
+      } catch {
+        /* abaikan */
+      }
       setHydrated(true);
     } catch (e) {
       // P2: TIDAK ada lagi fallback data demo — tampilkan error gate (App.tsx).
@@ -644,25 +663,64 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     fetchBootstrap();
   }, [fetchBootstrap]);
 
-  // ── Day-rollover heartbeat (parity TaskPage.load): bila app dibiarkan terbuka
-  //    melewati tengah malam (zona app), server.date berubah → reset harian task
-  //    harus dijalankan lagi. Dihitung lokal dari jam server (serverDateKey);
-  //    jika tanggal berbeda dari bootstrap terakhir → re-bootstrap (reset done_today).
+  // Penampung applyLive utk heartbeat (applyLive dideklarasi setelah efek ini).
+  const applyLiveRef = useRef<((res: any) => boolean) | null>(null);
+
+  // ── C08 heartbeat: today ticking lokal tiap 30 dtk (tanpa fetch); rollover →
+  //    refresh task ringan; drift dikoreksi via /api/clock tiap 5 mnt (gantikan
+  //    re-bootstrap 60 dtk). Tanggal HANYA ditandai setelah rollover sukses —
+  //    gagal = dicoba lagi tick berikut (retry).
   useEffect(() => {
+    let disposed = false;
+    let rolling = false;
+    const doRollover = async (key: string) => {
+      if (rolling) return;
+      rolling = true;
+      try {
+        const res = await apiPost<any>('/api/tasks/rollover', {});
+        if (disposed) return;
+        if (res?.ok) {
+          applyLiveRef.current?.(res);
+          if (res?.serverNow?.epoch) {
+            setServerNow(res.serverNow);
+            serverClockBase.current = { epoch: res.serverNow.epoch, receivedAt: Date.now(), tzOffsetMin: res.serverNow.tzOffsetMin || 0 };
+          }
+          lastServerDate.current = key;
+          setToday(key);
+        }
+      } catch {
+        /* retry otomatis tick berikut (lastServerDate tidak diubah) */
+      } finally {
+        rolling = false;
+      }
+    };
     const tick = () => {
       const key = serverDateKey();
-      if (key && lastServerDate.current && key !== lastServerDate.current) {
-        lastServerDate.current = key;
-        fetchBootstrap();
-      } else if (key && !lastServerDate.current) {
+      if (!key) return; // base belum ada = bootstrap belum sukses → jangan tandai
+      setToday((prev) => (prev === key ? prev : key));
+      if (lastServerDate.current && key !== lastServerDate.current) {
+        doRollover(key);
+      } else if (!lastServerDate.current) {
         lastServerDate.current = key;
       }
     };
+    const pingClock = async () => {
+      try {
+        const res = await apiGet<any>('/api/clock');
+        if (disposed) return;
+        if (res?.serverNow?.epoch) {
+          setServerNow(res.serverNow);
+          serverClockBase.current = { epoch: res.serverNow.epoch, receivedAt: Date.now(), tzOffsetMin: res.serverNow.tzOffsetMin || 0 };
+        }
+      } catch {
+        /* abaikan — tick lokal tetap jalan */
+      }
+    };
+    tick();
     const t = window.setInterval(tick, 30000);
-    // re-bootstrap sekali setelah 60s agar jam/offset tetap fresh
-    const t2 = window.setTimeout(fetchBootstrap, 60000);
-    return () => { window.clearInterval(t); window.clearTimeout(t2); };
-  }, [fetchBootstrap, serverDateKey]);
+    const c = window.setInterval(pingClock, 5 * 60 * 1000);
+    return () => { disposed = true; window.clearInterval(t); window.clearInterval(c); };
+  }, [serverDateKey]);
 
   const retryBootstrap = useCallback(() => {
     fetchBootstrap();
@@ -792,6 +850,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (msg) showToast(res.levelUp ? 'level_up' : 'success', msg, '');
     return true;
   }, [showToast]);
+  applyLiveRef.current = applyLive;
 
 
   // Compute Active Buffs from Equipped Items & Active Pet
@@ -1876,6 +1935,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         hydrated,
         apiError,
         retryBootstrap,
+        pendingUpdate,
+        setPendingUpdate,
         lang,
         setLang,
         soundEnabled,

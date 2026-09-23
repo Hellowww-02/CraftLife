@@ -1,71 +1,34 @@
 /**
- * LearningShell.tsx — kerangka tata letak Learning Page ala NotebookLM (A07).
+ * LearningShell.tsx — kerangka 3 panel Learning Page ala NotebookLM (C01).
  *
- * Struktur (>= 1024px):
- *   [ rail notebook ] [ topbar + kolom tengah (Sumber ⇄ Chat) ] [ kolom Studio ]
- * Di bawah 1024px: rail menjadi bottom-bar dan tiap kolom menjadi TAB penuh
- * (Sumber / Chat / Studio) — sekali lagi tanpa scroll ganda.
+ * Desktop (≥1024px):
+ *   [ rail notebook ] [ panel Sumber ] ‖ [ panel Chat ] ‖ [ panel Studio ]
+ *   - Divider ‖ bisa **diseret** untuk mengubah lebar (menggantikan tombol preset
+ *     Sempit/Sedang/Lebar yang dihapus di C01 atas permintaan user).
+ *   - Panel Sumber & Studio bisa **di-collapse** (tombol di divider atau klik-ganda
+ *     divider); strip ramping dengan tombol muncul untuk membukanya kembali.
+ *   - Preferensi (lebar px + buka/tutup) tersimpan di localStorage `cl_learning_layout`
+ *     format v2; format preset v1 dan key legacy dimigrasi otomatis (shellState.ts).
+ * Mobile (<1024px): rail menjadi bottom-bar dan tiap kolom menjadi TAB penuh
+ * (Sumber / Chat / Studio).
  *
- * Resize manual (drag pembatas) digantikan **preset lebar + collapse** karena drag di
- * WebEngine rawan: pengguna memilih Sempit / Sedang / Lebar, atau menyembunyikan panel.
- * Preferensi disimpan di `localStorage` key `cl_learning_layout`, dan **migrasi otomatis**
- * dari key lama `cl_learning_panel_widths` (lebar piksel → preset terdekat).
+ * Drag aman WebEngine: pointer events + listener window (tanpa HTML5 DnD), tanpa
+ * `backdrop-filter`, tanpa animasi selama drag, `user-select: none` hanya saat drag.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { PanelRightClose, PanelRightOpen, Columns3 } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { LearningViewKey } from './NotebookRail';
-
-export type StudioWidth = 'narrow' | 'medium' | 'wide';
-
-const WIDTHS: Record<StudioWidth, number> = { narrow: 320, medium: 420, wide: 560 };
-const PRESET_ORDER: StudioWidth[] = ['narrow', 'medium', 'wide'];
-const LS_KEY = 'cl_learning_layout';
-const LS_LEGACY_KEY = 'cl_learning_panel_widths';
-/** Lebar rail kiri: sempit 72px (ikon saja) / melebar 220px (ikon + judul). */
-const RAIL_COLLAPSED = 72;
-const RAIL_EXPANDED = 220;
-
-export interface LearningShellState {
-  studioWidth: StudioWidth;
-  studioOpen: boolean;
-  railExpanded: boolean;
-}
-
-/** Baca preferensi tata letak (+ migrasi dari format lama berbasis piksel). */
-export function loadShellState(): LearningShellState {
-  const fallback: LearningShellState = { studioWidth: 'medium', studioOpen: true, railExpanded: false };
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const v = JSON.parse(raw) as Partial<LearningShellState>;
-      return {
-        studioWidth: (PRESET_ORDER as string[]).includes(String(v.studioWidth)) ? (v.studioWidth as StudioWidth) : fallback.studioWidth,
-        studioOpen: v.studioOpen !== false,
-        railExpanded: v.railExpanded === true,
-      };
-    }
-    // Migrasi key lama: `{src, stu}` dalam piksel → preset terdekat.
-    const legacy = localStorage.getItem(LS_LEGACY_KEY);
-    if (legacy) {
-      const v = JSON.parse(legacy) as { stu?: unknown };
-      const px = Number(v.stu);
-      if (Number.isFinite(px)) {
-        let best: StudioWidth = 'medium';
-        let dist = Infinity;
-        for (const k of PRESET_ORDER) {
-          const d = Math.abs(WIDTHS[k] - px);
-          if (d < dist) { dist = d; best = k; }
-        }
-        return { ...fallback, studioWidth: best };
-      }
-    }
-  } catch { /* abaikan — pakai default */ }
-  return fallback;
-}
-
-export function saveShellState(state: LearningShellState): void {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* abaikan */ }
-}
+import {
+  LearningShellState,
+  ShellPanel,
+  clampSrcPx,
+  clampStuPx,
+  loadShellState,
+  saveShellState,
+  STRIP_W,
+  RAIL_COLLAPSED,
+  RAIL_EXPANDED,
+} from './shellState';
 
 export interface LearningShellProps {
   rail: React.ReactNode;
@@ -73,7 +36,7 @@ export interface LearningShellProps {
   sources: React.ReactNode;
   chat: React.ReactNode;
   studio: React.ReactNode;
-  /** View aktif (dipakai rail + tab mobile; di desktop 'studio' tetap menampilkan studio). */
+  /** Tab aktif — hanya dipakai di mobile; di desktop ketiga panel tampil sejajar. */
   view: LearningViewKey;
   onView: (v: LearningViewKey) => void;
   tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string;
@@ -81,50 +44,131 @@ export interface LearningShellProps {
   onStateChange?: (state: LearningShellState) => void;
 }
 
+interface SplitterProps {
+  which: ShellPanel;
+  dragging: boolean;
+  dragHint: string;
+  toggleLabel: string;
+  onDragStart: (which: ShellPanel) => (e: React.PointerEvent) => void;
+  onToggle: () => void;
+}
+
+/** Divider seret antar panel + tombol collapse di tengahnya. */
+const Splitter: React.FC<SplitterProps> = ({
+  which, dragging, dragHint, toggleLabel, onDragStart, onToggle,
+}) => (
+  <div
+    role="separator"
+    aria-orientation="vertical"
+    aria-label={dragHint}
+    title={dragHint}
+    data-testid={which === 'src' ? 'splitter-sources' : 'splitter-studio'}
+    className={`ct-nlm-splitter max-lg:hidden${dragging ? ' is-drag' : ''}`}
+    onPointerDown={onDragStart(which)}
+    onDoubleClick={onToggle}
+  >
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      title={toggleLabel}
+      aria-label={toggleLabel}
+      data-testid={which === 'src' ? 'collapse-sources' : 'collapse-studio'}
+      className="ct-nlm-splitbtn"
+    >
+      {which === 'src' ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelRightClose className="w-3.5 h-3.5" />}
+    </button>
+  </div>
+);
+
+interface StripProps {
+  which: ShellPanel;
+  showLabel: string;
+  shortLabel: string;
+  onShow: () => void;
+}
+
+/** Strip ramping pengganti panel yang di-collapse (desktop saja). */
+const ClosedStrip: React.FC<StripProps> = ({ which, showLabel, shortLabel, onShow }) => (
+  <button
+    type="button"
+    onClick={onShow}
+    title={showLabel}
+    aria-label={showLabel}
+    data-testid={which === 'src' ? 'strip-sources' : 'strip-studio'}
+    className="ct-nlm-strip max-lg:hidden"
+    style={{ width: `${STRIP_W}px` }}
+  >
+    {which === 'src' ? <PanelLeftOpen className="w-4 h-4 shrink-0" /> : <PanelRightOpen className="w-4 h-4 shrink-0" />}
+    <span className="ct-nlm-strip-label">{shortLabel}</span>
+  </button>
+);
+
 const LearningShell: React.FC<LearningShellProps> = ({
   rail, topbar, sources, chat, studio, view, onView, tr, onStateChange,
 }) => {
   const initial = useMemo(loadShellState, []);
-  const [studioWidth, setStudioWidth] = useState<StudioWidth>(initial.studioWidth);
-  const [studioOpen, setStudioOpen] = useState(initial.studioOpen);
+  const [srcPx, setSrcPx] = useState(initial.srcPx);
+  const [stuPx, setStuPx] = useState(initial.stuPx);
+  const [srcOpen, setSrcOpen] = useState(initial.srcOpen);
+  const [stuOpen, setStuOpen] = useState(initial.stuOpen);
   const [railExpanded, setRailExpanded] = useState(initial.railExpanded);
+  const [dragging, setDragging] = useState<ShellPanel | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  // Cermin ref agar handler drag memakai lebar terbaru tanpa re-subscribe listener.
+  const widthsRef = useRef({ srcPx, stuPx, srcOpen, stuOpen });
+  widthsRef.current = { srcPx, stuPx, srcOpen, stuOpen };
 
   useEffect(() => {
-    const state = { studioWidth, studioOpen, railExpanded };
+    const state: LearningShellState = { v: 2, srcPx, stuPx, srcOpen, stuOpen, railExpanded };
     saveShellState(state);
     onStateChange?.(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studioWidth, studioOpen, railExpanded]);
+  }, [srcPx, stuPx, srcOpen, stuOpen, railExpanded]);
 
-  // Kolom tengah: desktop menampilkan Sumber atau Chat (toggle), mobile memakai `view`.
-  const centerIsChat = view === 'chat';
+  const railW = railExpanded ? RAIL_EXPANDED : RAIL_COLLAPSED;
 
-  // Lebar efektif kolom studio: dijaga agar kolom tengah tetap ≥ 360px (desktop).
-  const [studioPx, setStudioPx] = useState(WIDTHS[studioWidth]);
-  useEffect(() => {
-    const fit = () => {
-      const total = shellRef.current?.getBoundingClientRect().width ?? 0;
-      if (!total || window.innerWidth < 1024) { setStudioPx(WIDTHS[studioWidth]); return; }
-      const rail = railExpanded ? RAIL_EXPANDED : RAIL_COLLAPSED;
-      const maxAllowed = Math.max(WIDTHS.narrow, total - rail - 360 - 24);
-      setStudioPx(Math.min(WIDTHS[studioWidth], maxAllowed));
+  const startDrag = (which: ShellPanel) => (e: React.PointerEvent) => {
+    // Hanya tombol utama; abaikan klik kanan / tombol tengah.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const start = { ...widthsRef.current };
+    const total = shellRef.current?.getBoundingClientRect().width ?? 0;
+    setDragging(which);
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (which === 'src') {
+        // Panel Sumber tumbuh ke kanan; ruang panel Studio (atau strip-nya) dilindungi.
+        const stuW = start.stuOpen ? start.stuPx : STRIP_W;
+        setSrcPx(clampSrcPx(start.srcPx + dx, total, railW + stuW));
+      } else {
+        const srcW = start.srcOpen ? start.srcPx : STRIP_W;
+        setStuPx(clampStuPx(start.stuPx - dx, total, railW + srcW));
+      }
     };
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  }, [studioWidth, railExpanded, studioOpen]);
-
-  const cycleWidth = () => {
-    const i = PRESET_ORDER.indexOf(studioWidth);
-    setStudioWidth(PRESET_ORDER[(i + 1) % PRESET_ORDER.length]);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      document.body.style.userSelect = prevSelect;
+      setDragging(null);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
+
+  const centerIsChat = view === 'chat';
+  const dragHint = tr('learning_drag_hint', {}, 'Drag to resize panels');
 
   return (
     <div
       ref={shellRef}
       className="ct-nlm flex flex-col lg:flex-row gap-3 lg:gap-4 lg:h-[calc(100vh-190px)] lg:min-h-[560px]"
-      style={{ '--rail-w': `${railExpanded ? RAIL_EXPANDED : RAIL_COLLAPSED}px` } as React.CSSProperties}
+      style={{ '--rail-w': `${railW}px` } as React.CSSProperties}
     >
       {/* Rail kiri (desktop) / bottom-bar (mobile) */}
       <div className="order-2 lg:order-1 lg:h-full">
@@ -133,62 +177,85 @@ const LearningShell: React.FC<LearningShellProps> = ({
           : rail}
       </div>
 
-      {/* Kolom tengah */}
-      <div className={`order-1 lg:order-2 flex-1 min-w-0 flex-col gap-3 ${view === 'studio' ? 'hidden lg:flex' : 'flex'}`}>
+      {/* Kolom kanan: topbar + 3 panel */}
+      <div className="order-1 lg:order-2 flex-1 min-w-0 flex flex-col gap-3 min-h-0">
         {topbar}
 
-        {/* Tab Sumber ⇄ Chat (desktop) */}
-        <div className="hidden lg:flex items-center gap-1.5">
-          <button
-            onClick={() => onView('sources')}
-            className={`ct-nlm-tab ${!centerIsChat ? 'is-active' : ''}`}
-          >
-            {tr('learning_view_sources', {}, 'Sumber')}
-          </button>
-          <button
-            onClick={() => onView('chat')}
-            className={`ct-nlm-tab ${centerIsChat ? 'is-active' : ''}`}
-          >
-            {tr('learning_view_chat', {}, 'Chat')}
-          </button>
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              onClick={cycleWidth}
-              className="ct-nlm-tab"
-              title={tr('learning_panel_width_hint', {}, 'Lebar panel Studio')}
+        {/* Desktop: Sumber ‖ Chat ‖ Studio sejajar */}
+        <div className="hidden lg:flex flex-1 min-h-0 items-stretch">
+          {srcOpen ? (
+            <section
+              aria-label={tr('learning_view_sources', {}, 'Sources')}
+              data-testid="panel-sources"
+              className="min-h-0 min-w-0 flex flex-col"
+              style={{ width: `${srcPx}px`, flex: '0 0 auto' }}
             >
-              <Columns3 className="w-3.5 h-3.5" />
-              {studioWidth === 'narrow' ? tr('learning_panel_narrow', {}, 'Sempit')
-                : studioWidth === 'wide' ? tr('learning_panel_wide', {}, 'Lebar')
-                  : tr('learning_panel_medium', {}, 'Sedang')}
-            </button>
-            <button
-              onClick={() => { setStudioOpen((v) => !v); onView(studioOpen ? (centerIsChat ? 'chat' : 'sources') : 'studio'); }}
-              className={`ct-nlm-tab ${studioOpen ? 'is-active' : ''}`}
-              title={studioOpen ? tr('learning_panel_collapse', {}, 'Sembunyikan panel') : tr('learning_view_studio', {}, 'Studio')}
+              <div className="ct-nlm-scroll flex-1 min-h-0 overflow-y-auto">{sources}</div>
+            </section>
+          ) : (
+            <ClosedStrip
+              which="src"
+              showLabel={tr('learning_src_show', {}, 'Show Sources panel')}
+              shortLabel={tr('learning_view_sources', {}, 'Sources')}
+              onShow={() => setSrcOpen(true)}
+            />
+          )}
+          {srcOpen && (
+            <Splitter
+              which="src"
+              dragging={dragging === 'src'}
+              dragHint={dragHint}
+              toggleLabel={tr('learning_src_hide', {}, 'Hide Sources panel')}
+              onDragStart={startDrag}
+              onToggle={() => setSrcOpen(false)}
+            />
+          )}
+
+          <section
+            aria-label={tr('learning_view_chat', {}, 'Chat')}
+            data-testid="panel-chat"
+            className="min-h-0 min-w-0 flex-1 flex flex-col"
+          >
+            {chat}
+          </section>
+
+          {stuOpen && (
+            <Splitter
+              which="stu"
+              dragging={dragging === 'stu'}
+              dragHint={dragHint}
+              toggleLabel={tr('learning_studio_hide', {}, 'Hide Studio panel')}
+              onDragStart={startDrag}
+              onToggle={() => setStuOpen(false)}
+            />
+          )}
+          {stuOpen ? (
+            <section
+              aria-label={tr('learning_view_studio', {}, 'Studio')}
+              data-testid="panel-studio"
+              className="min-h-0 min-w-0 flex flex-col"
+              style={{ width: `${stuPx}px`, flex: '0 0 auto' }}
             >
-              {studioOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-              {tr('learning_view_studio', {}, 'Studio')}
-            </button>
-          </div>
+              <div className="ct-nlm-scroll flex-1 min-h-0 overflow-y-auto">{studio}</div>
+            </section>
+          ) : (
+            <ClosedStrip
+              which="stu"
+              showLabel={tr('learning_studio_show', {}, 'Show Studio panel')}
+              shortLabel={tr('learning_view_studio', {}, 'Studio')}
+              onShow={() => setStuOpen(true)}
+            />
+          )}
         </div>
 
-        {/* Isi kolom tengah */}
-        <div className="flex-1 min-h-0">
-          {centerIsChat ? chat : sources}
+        {/* Mobile: satu view penuh */}
+        <div className="lg:hidden flex-1 min-h-0">
+          {view === 'studio' ? studio : centerIsChat ? chat : sources}
         </div>
       </div>
 
-      {/* Kolom Studio */}
-      <div
-        className={`order-3 flex-col min-w-0 lg:h-full ${view === 'studio' ? 'flex' : 'hidden lg:flex'} ${studioOpen ? '' : 'lg:hidden'}`}
-        style={{ width: `${studioPx}px`, maxWidth: '100%' }}
-      >
-        <div className="ct-nlm-scroll flex-1 min-h-0 overflow-y-auto">{studio}</div>
-      </div>
-
-      {/* Tab mobile (bottom) — rail sudah menjadi bottom-bar, tab ini mengatur kolom tengah */}
-      <div className="order-4 lg:hidden flex gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
+      {/* Tab mobile (bottom) */}
+      <div className="order-3 lg:hidden flex gap-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800">
         {(['sources', 'chat', 'studio'] as const).map((k) => (
           <button
             key={k}

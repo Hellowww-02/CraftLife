@@ -65,8 +65,11 @@ const MaintenanceSection: React.FC = () => {
   const [state, setState] = useState<{
     retentionDays: number; auto: boolean; lastPurgeAt: string;
     totalRows: number; dbSizeBytes: number; cutoff: string;
+    schedule: string; dbTotalBytes: number;
+    tableSizes: { name: string; bytes: number; rows: number }[];
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [opMsg, setOpMsg] = useState('');
 
   const load = () => apiGet<any>('/api/settings/cleanup')
     .then((d) => { if (d?.cleanup) setState(d.cleanup); })
@@ -86,6 +89,33 @@ const MaintenanceSection: React.FC = () => {
     apiPost<any>('/api/settings/cleanup', { action: 'set', auto: !state.auto })
       .then(() => { load(); })
       .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
+  const setSchedule = (schedule: string) => {
+    setBusy(true);
+    apiPost<any>('/api/settings/cleanup', { action: 'set', schedule })
+      .then(() => { load(); })
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  };
+  const runOp = (action: 'checkpoint' | 'vacuum') => {
+    setBusy(true);
+    setOpMsg('');
+    apiPost<any>('/api/settings/cleanup', { action })
+      .then((d) => {
+        const rep = d?.result?.report;
+        if (rep?.ok) {
+          setOpMsg(t('settings_maintenance_done', 'Selesai: {before} → {after} (hemat {freed})')
+            .replace('{before}', fmtBytes(rep.beforeBytes || 0))
+            .replace('{after}', fmtBytes(rep.afterBytes || 0))
+            .replace('{freed}', fmtBytes(rep.freedBytes || 0)));
+        } else {
+          setOpMsg(t('settings_maintenance_failed', 'Gagal: {error}')
+            .replace('{error}', String(rep?.error || d?.result?.msg || action)));
+        }
+        load();
+      })
+      .catch((e) => setOpMsg(String((e as any)?.message || e)))
       .finally(() => setBusy(false));
   };
   const runCleanup = () => {
@@ -162,10 +192,27 @@ const MaintenanceSection: React.FC = () => {
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-bold text-slate-300">{t('settings_cleanup_schedule', 'Jadwal otomatis')}</span>
+        {(['daily', 'weekly', 'monthly'] as const).map((s) => (
+          <button
+            key={s}
+            type="button"
+            disabled={busy}
+            onClick={() => setSchedule(s)}
+            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors disabled:opacity-40 ${
+              state.schedule === s ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50' : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+            }`}
+          >
+            {t(`settings_schedule_${s}`, s)}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer">
           <input type="checkbox" checked={state.auto} onChange={toggleAuto} disabled={busy} className="accent-emerald-500 w-4 h-4" />
-          {t('settings_cleanup_auto', 'Bersihkan otomatis tiap bulan')}
+          {t('settings_cleanup_auto', 'Bersihkan otomatis')}
         </label>
         <button
           type="button"
@@ -176,12 +223,47 @@ const MaintenanceSection: React.FC = () => {
           <Trash2 className="w-3.5 h-3.5" /> {t('settings_cleanup_now', 'Bersihkan Sekarang')}
         </button>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => runOp('checkpoint')}
+          disabled={busy}
+          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40"
+        >
+          {t('settings_checkpoint_now', 'Checkpoint WAL')}
+        </button>
+        <button
+          type="button"
+          onClick={() => { if (window.confirm(t('settings_cleanup_confirm', 'Bersihkan riwayat tracker lama sekarang? Backup otomatis dibuat dulu.'))) runOp('vacuum'); }}
+          disabled={busy}
+          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold disabled:opacity-40"
+        >
+          {t('settings_vacuum_now', 'VACUUM')}
+        </button>
+        {opMsg && <span className="text-[11px] text-slate-300">{opMsg}</span>}
+      </div>
+
+      {(state.tableSizes?.length || 0) > 0 && (
+        <div className="space-y-1">
+          <div className="text-[11px] font-bold text-slate-300">{t('settings_cleanup_tables', 'Ukuran per tabel')} · {t('settings_cleanup_total', 'Total')}: <span className="ct-num text-emerald-300">{fmtBytes(state.dbTotalBytes || state.dbSizeBytes)}</span></div>
+          <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-800 divide-y divide-slate-800/60">
+            {(state.tableSizes || []).map((tb) => (
+              <div key={tb.name} className="flex items-center gap-2 px-2.5 py-1 text-[11px]">
+                <span className="text-slate-300 font-mono truncate flex-1">{tb.name}</span>
+                <span className="ct-num text-slate-500">{tb.rows}</span>
+                <span className="ct-num text-slate-200 w-16 text-right">{fmtBytes(tb.bytes)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export const SettingsView: React.FC = () => {
-  const { user, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast, today, activeTheme, setActiveTheme } = useGame();
+  const { user, soundEnabled, setSoundEnabled, lang, setLang, resetAllData, showToast, today, activeTheme, setActiveTheme, setPendingUpdate } = useGame();
 
   const [cloud, setCloud] = useState<CloudStatus | null>(null);
   const [cloudBusy, setCloudBusy] = useState(false);
@@ -308,13 +390,14 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  /** Parity update group → /api/update/check */
+  /** C07: cek update — bila ada, buka dialog global; error tampil jelas. */
   const handleCheckUpdate = async () => {
     try {
       const res = await apiGet<any>('/api/update/check');
-      if (res?.update) {
-        const ver = res.update.version || res.update.latest || '';
-        showToast('success', t('update_available', 'Update tersedia: v{version}').replace('{version}', String(ver)), '');
+      if (res?.error) {
+        showToast('info', t('update_check_failed', 'Gagal memeriksa update: {error}').replace('{error}', String(res.error)), '');
+      } else if (res?.update?.version) {
+        setPendingUpdate({ version: String(res.update.version), notes: res.update.notes || '', size_bytes: res.update.size_bytes || 0 });
       } else {
         showToast('success', t('update_latest', 'Kamu sudah di versi terbaru.'), '');
       }

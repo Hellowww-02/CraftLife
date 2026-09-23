@@ -223,6 +223,18 @@ export const LoveSpaceView: React.FC<{ onNavigate?: (view: string) => void }> = 
   const [profPartner, setProfPartner] = useState(loveSpace.partnerName || '');
   const [profMy, setProfMy] = useState((loveSpace as any).myName || '');
   const [profStart, setProfStart] = useState((loveSpace as any).startDate || loveSpace.anniversaryDate || today);
+
+  // C08: ikuti rollover tengah malam bila nilai masih mengikuti today lama.
+  const prevTodayLove = useRef(today);
+  useEffect(() => {
+    const prev = prevTodayLove.current;
+    prevTodayLove.current = today;
+    if (prev !== today) {
+      if (upDate === prev) setUpDate(today);
+      if (profStart === prev) setProfStart(today);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
   const [profMyGender, setProfMyGender] = useState((loveSpace as any).myGender || 'male');
   const [profMyAge, setProfMyAge] = useState((loveSpace as any).myAge || 25);
   const [profMyBirth, setProfMyBirth] = useState((loveSpace as any).myBirthdate || '');

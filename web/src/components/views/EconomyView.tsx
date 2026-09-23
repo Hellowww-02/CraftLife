@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useGame } from '../../context/GameContext';
 import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart, Package, Search, FolderOpen, Pencil } from 'lucide-react';
 import { DualLineChart, DonutChart } from '../charts';
@@ -62,6 +62,19 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   // debt tab = hutang saja (payable); piutang → tab Catatan Hutang (parity PyQt).
   const [debtTotal, setDebtTotal] = useState<number>(200000);
   const [debtDueDate, setDebtDueDate] = useState(today);
+
+  // C08: ikuti rollover tengah malam bila field masih bernilai today lama.
+  const prevTodayEco = useRef(today);
+  useEffect(() => {
+    const prev = prevTodayEco.current;
+    prevTodayEco.current = today;
+    if (prev !== today) {
+      if (subDue === prev) setSubDue(today);
+      if (txDate === prev) setTxDate(today);
+      if (debtDueDate === prev) setDebtDueDate(today);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
   const [debtFormNotes, setDebtFormNotes] = useState('');
 
   // Installment input for pay

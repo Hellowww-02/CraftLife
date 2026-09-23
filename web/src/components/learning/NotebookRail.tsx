@@ -2,8 +2,13 @@
  * NotebookRail.tsx — rail kiri ala NotebookLM (A07, dirapikan di A15).
  *
  * Isi rail: pemilih notebook (ikon/emoji **yang benar-benar diinput user**, notebook aktif
- * ditandai), tombol **+ Notebook**, aksi ganti nama/hapus (mode melebar), navigasi
- * **Sumber / Chat / Studio**, dan pemilih bahasa id/en.
+ * ditandai), tombol **+ Notebook**, aksi ganti nama/hapus (mode melebar), dan pemilih
+ * bahasa id/en.
+ *
+ * C01: navigasi Sumber/Chat/Studio dihapus dari rail — di desktop ketiga panel kini
+ * tampil sejajar dengan divider seret + collapse di LearningShell (ala NotebookLM),
+ * sehingga tombol penukar tidak lagi bermakna. Di mobile, tab strip LearningShell
+ * yang mengatur view (seperti sebelumnya).
  *
  * A15 — perbaikan HANYA di rail kiri:
  *  · **Ikon sesuai input user.** Dulu rail menggambar emoji *dan* avatar inisial sekaligus
@@ -40,8 +45,6 @@ export interface NotebookRailProps {
   onCreate: () => void;
   onRename: () => void;
   onDelete: () => void;
-  view: LearningViewKey;
-  onView: (v: LearningViewKey) => void;
   lang: 'id' | 'en';
   onLang: (l: 'id' | 'en') => void;
   tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string;
@@ -68,14 +71,8 @@ export function notebookGlyph(nb: { icon?: string; title?: string }): { kind: 'i
 
 const NotebookRail: React.FC<NotebookRailProps> = ({
   notebooks, activeId, expanded, onToggleExpanded, onSelect, onCreate, onRename, onDelete,
-  view, onView, lang, onLang, tr,
+  lang, onLang, tr,
 }) => {
-  const views: { key: LearningViewKey; icon: React.ReactNode; labelKey: string; fallback: string }[] = [
-    { key: 'sources', icon: <FileText className="w-4 h-4" />, labelKey: 'learning_view_sources', fallback: 'Sumber' },
-    { key: 'chat', icon: <Bot className="w-4 h-4" />, labelKey: 'learning_view_chat', fallback: 'Chat' },
-    { key: 'studio', icon: <Sparkles className="w-4 h-4" />, labelKey: 'learning_view_studio', fallback: 'Studio' },
-  ];
-
   const activeNb = notebooks.find((n) => String(n.id) === String(activeId));
 
   /** Satu avatar notebook — emoji user atau inisial; tidak pernah dua-duanya. */
@@ -208,27 +205,6 @@ const NotebookRail: React.FC<NotebookRailProps> = ({
       )}
 
       <div className="hidden lg:block w-full h-px bg-[var(--ct-nlm-line-soft)] my-0.5" />
-
-      {/* Navigasi view — khusus desktop; di layar sempit tab strip LearningShell
-          sudah menangani Sumber/Chat/Studio (menghindari dua kontrol kembar). */}
-      <div className="hidden lg:flex flex-col gap-1.5 w-full">
-        {views.map((it) => (
-          <button
-            key={it.key}
-            onClick={() => onView(it.key)}
-            title={tr(it.labelKey, {}, it.fallback)}
-            aria-current={view === it.key ? 'true' : undefined}
-            className={`ct-nlm-railbtn ${expanded ? 'is-row' : ''} ${view === it.key ? 'is-active' : ''}`}
-          >
-            {it.icon}
-            {expanded && (
-              <span className="min-w-0 flex-1 truncate text-left text-[11px] font-bold">
-                {tr(it.labelKey, {}, it.fallback)}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
 
       <div className="hidden lg:block flex-1" />
 
