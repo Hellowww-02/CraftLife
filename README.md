@@ -9,7 +9,7 @@
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.6.3-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.6.4-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -34,9 +34,18 @@ sync and online social features, but the app never requires it.
 
 - **Local first** — one SQLite database, stored on your machine, updated in place.
 - **No fake success** — online actions only complete after the server confirms.
-- **Two languages** — every screen ships in Indonesian and English (4,325 strings).
+- **Two languages** — every screen ships in Indonesian and English (4,409 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
+
+## ✨ What's New in v1.6.4
+
+| Area | Highlights |
+|------|------------|
+| 📚 Learning | True 3-panel NotebookLM-style shell with draggable splitters and collapse; multi-file upload (23 types, drag-and-drop) with originals kept; website and YouTube sources with transcripts; 4 new Studio outputs (Briefing Doc, Data Table, Infographic, Slide Deck) with CSV/HTML export; KaTeX math in AI chat |
+| ✅ Habits & date | Real fail streaks (counts no longer resurrect) with a done-today indicator; server-clock "today" that ticks and rolls over at midnight without a full reload |
+| 🗄️ Database | Self-care: scheduled auto-cleanup independent of retention, per-table sizes, one-click checkpoint/VACUUM with before/after reports |
+| 🔄 Updater | Auto-update that actually works: verified downloads with progress, release notes, countdown dialog, and a logged, abort-safe apply step |
 
 ## Features
 
@@ -44,8 +53,9 @@ sync and online social features, but the app never requires it.
 talents, rebirth, titles, command palette (Ctrl+K), onboarding wizard, and a
 Year Wrapped report in your own currency.
 
-**Habits, dailies & quests** — Positive/negative habits, recurring dailies with
-fail and freeze, one-time quests, folders, templates, drag-to-reorder with undo.
+**Habits, dailies & quests** — Positive/negative habits with true streaks and a
+done-today indicator, recurring dailies with fail and freeze, one-time quests,
+folders, templates, drag-to-reorder with undo.
 
 **Body** — Workout log with reps chart, food database with meals and macros,
 health logs (steps, sleep, weight, height, mood) with 7-day trends, water goals,
@@ -55,9 +65,11 @@ and a global Pomodoro timer with alarm.
 investments, subscriptions, multi-currency display, and a supplies inventory.
 
 **Notes & learning** — Notes with folders, archive, attachments, and LaTeX
-preview. A NotebookLM-style learning space: notebooks, sources, Gemini chat with
-source citations, quizzes, flashcards, summaries, study guides, timelines, and a
-two-host Audio Overview podcast.
+preview. A NotebookLM-style learning space: 3-panel shell (sources, chat,
+studio) with draggable splitters, 23-type multi-upload with originals kept,
+website and YouTube sources, Gemini chat with source citations, quizzes,
+flashcards, summaries, study guides, timelines, Briefing Doc, Data Table,
+Infographic and Slide Deck outputs, and a two-host Audio Overview podcast.
 
 **Music** — Local library with playlists and custom icons, downloads, a
 cross-page mini player, and synced lyrics that follow the track — with scored
@@ -77,8 +89,8 @@ notification center.
 
 **Account & settings** — Local login with lockout protection, backup codes, and
 optional app lock. Cloud link with explicit conflict resolution. Themes, font
-scale, high contrast, sound toggle, tracker export/import, monthly database
-cleanup, and in-app updates.
+scale, high contrast, sound toggle, tracker export/import, scheduled database
+self-care, and working in-app updates.
 
 ## Getting started
 
@@ -190,8 +202,8 @@ CraftLife/
 ├── cloud_api.py          Cloud HTTP surface for the UI
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
-├── translations.py       UI strings, Indonesian + English (4,325 keys)
-├── updater.py            Auto-update from GitHub Releases (v1.6.3, SHA-256)
+├── translations.py       UI strings, Indonesian + English (4,409 keys)
+├── updater.py            Auto-update from GitHub Releases (v1.6.4, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
 ├── mathtools.py          Math text and LaTeX conversion
@@ -211,9 +223,9 @@ CraftLife/
 │   ├── src/components/   Shared UI, learning, love, music, notes, wrapped parts
 │   ├── src/context/GameContext.tsx  Global app state
 │   ├── src/api/          Typed API clients (client, life, studio, rpg, cloud)
-│   ├── src/utils/        currency, serverTime, theme, sound, pomoAlarm
+│   ├── src/utils/        currency, serverClock, serverTime, theme, sound, pomoAlarm
 │   └── src/i18n/         Generated messages.json (do not edit by hand)
-├── supabase/             16 migrations + attachment-maintenance function + tests
+├── supabase/             17 migrations + attachment-maintenance function + tests
 └── *.md                  This file plus roadmaps and reports (see below)
 ```
 
@@ -225,6 +237,10 @@ Design docs and phase reports kept in the repo:
 |----------|----------|
 | [UPDATE_RULES.md](UPDATE_RULES.md) | How update sessions are run (process reference) |
 | [UPDATE_ROADMAP_A01_A14_v1.6.3.md](UPDATE_ROADMAP_A01_A14_v1.6.3.md) | v1.6.3 plan with per-phase evidence |
+| [UPDATE_ROADMAP_C01_C09_v1.6.4.md](UPDATE_ROADMAP_C01_C09_v1.6.4.md) | v1.6.4 plan with per-phase evidence |
+| [OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md) | Release operator runbook (build → zip → tag → publish → verify) |
+| [RELEASE_NOTES_v1.6.4.md](RELEASE_NOTES_v1.6.4.md) | v1.6.4 GitHub Release notes |
+| [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |
 | [UPDATE_ROADMAP_P47_P63.md](UPDATE_ROADMAP_P47_P63.md) | v1.6.0 fix roadmap |
 | [2026-09-08-P47-P63-PHASE-SUMMARY.md](2026-09-08-P47-P63-PHASE-SUMMARY.md) | v1.6.0 consolidated phase report |
 | [2026-09-11-P63-finalize-v1.6.0.md](2026-09-11-P63-finalize-v1.6.0.md) | v1.6.0 release log |
@@ -267,7 +283,8 @@ The script regenerates the web i18n files, builds the UI, runs PyInstaller, and
 places the result in `dist\CraftLife\`. Do not use `--optimize 2` or `--strip`
 (the AI SDK crashes on missing docstrings).
 
-To ship an auto-update:
+To ship an auto-update (full runbook:
+[OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md)):
 
 1. Zip the **contents** of `dist\CraftLife\` (no `.env`, no `craftlife.db*`).
 2. Draft a GitHub Release with a tag newer than `APP_VERSION`, attach the zip
@@ -290,6 +307,10 @@ To ship an auto-update:
 
 Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/releases).
 
+- **v1.6.4 "Study & Stability"** (23 Sep 2026) — NotebookLM-style Learning
+  shell, 23-type multi-upload, URL/YouTube sources, 4 new Studio outputs, KaTeX
+  math; real habit fail streaks; ticking server-clock date with midnight
+  rollover; database self-care; and an auto-updater that actually works.
 - **v1.6.3 "Quality of Life+"** (16 Sep 2026) — Lyrics follow the track, scored
   lyric search, documented lyric import; download/export overhaul; Learning with
   answerable quizzes, per-generator dialogs, artifact list, NotebookLM-style
@@ -304,6 +325,8 @@ Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/
 
 ## Roadmap
 
+- ✅ Commit Phase C (C01–C09) — v1.6.4 "Study & Stability" (Learning · Database
+  & Updater · Date Utilities).
 - Closed-app push notifications, attachment malware scanning, deeper anti-cheat
   for server-scored features, Linux/macOS packaging.
 - Cloud-side: applying migrations live, scheduled attachment purge.
@@ -339,6 +362,6 @@ the exact error. Never attach `.env`, `craftlife.db`, or API keys.
 
 **Complete real quests. Keep your data. Level up your life.**
 
-*CraftLife v1.6.3 — "Quality of Life+"*
+*CraftLife v1.6.4 — "Study & Stability"*
 
 </div>

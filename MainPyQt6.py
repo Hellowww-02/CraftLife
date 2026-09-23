@@ -1203,11 +1203,19 @@ class _UpdateWorker(QObject):
 
     def run(self):
         import updater
-        zip_path = updater.download_release(
-            self.info,
-            progress_cb=lambda done, total: self.progress.emit(done, total),
-        )
-        updater.apply_downloaded(zip_path, self.info.get("version", ""))
+        try:
+            zip_path = updater.download_release(
+                self.info,
+                progress_cb=lambda done, total: self.progress.emit(done, total),
+            )
+            updater.apply_downloaded(zip_path, self.info.get("version", ""))
+        except Exception as e:
+            # C07 §10: JANGAN telan error — teruskan ke dialog via failed.
+            try:
+                self.failed.emit(str(e) or "update_failed")
+            except Exception:
+                pass
+            return
         self.succeeded.emit()
 
 

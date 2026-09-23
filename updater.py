@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zipfile
 from datetime import datetime, timezone
@@ -94,7 +95,44 @@ from pathlib import Path
 #   mengikuti token `--rail-w` (72/220 px), judul `truncate`, tombol **+ Notebook** ikut melebar, daftar
 #   panjang bisa digulir. Dialog Ganti nama juga bisa mengganti emoji (pemilih `NB_EMOJI` dipakai bersama).
 #   i18n: key baru `learning_icon_label` → total 4.325.
-APP_VERSION = "1.6.3"
+# v1.6.4 (dalam pengerjaan) — commit phase C01–C09:
+#   C01 (selesai 2026-09-22): Learning shell baru ala NotebookLM — 3 panel sejajar
+#   (Sumber ‖ Chat ‖ Studio) dengan divider seret + collapse (pengganti tombol preset
+#   Sempit/Sedang/Lebar), preferensi v2 + migrasi otomatis, mobile tab tetap.
+#   i18n: +5 key → total 4.330.
+#   C02 (selesai 2026-09-22): multi-upload (input multiple + drag-and-drop + antrean
+#   berurutan) 23 tipe berkas — dokumen terstruktur (xlsx/xls/pptx/csv/epub/rtf),
+#   gambar via vision AI + audio via transkrip Gemini (butuh API key, else penanda);
+#   berkas asli disimpan di learning_sources/<uid>/ + bisa diunduh/diekstrak-ulang;
+#   migrasi SQLite otomatis (5 kolom + indeks); hapus sumber hanya menyentuh berkas
+#   kelolaan app. i18n: +23 key → total 4.353.
+#   C02-revisi (2026-09-22, hybrid): berkas asli pdf/gambar dilampirkan ke Gemini
+#   saat chat/generate (maks 3, ≤20 MB); PDF scan lolos upload + warning; impor gagal
+#   bersihkan yatim. i18n: +1 key → total 4.354.
+#   C03 (selesai 2026-09-22): sumber URL di Web UI (website fetch+bersih, YouTube
+#   transkrip API ganda + judul oEmbed, deteksi otomatis server-side); panduan 1–2
+#   kalimat per sumber (AI backfill malas + kolom summary). i18n: +6 → total 4.360.
+#   C04 (selesai 2026-09-22): saran chat kontekstual dari judul sumber + simpan
+#   jawaban AI jadi catatan (lihat/salin/hapus per notebook). Field `savedNotes`.
+#   i18n: +12 key → total 4.372.
+#   C05 (selesai 2026-09-22): 4 output Studio baru (Briefing Doc, Data Table,
+#   Infografik, Slide Deck) + ekspor CSV/HTML + warning AFC terminal dihilangkan
+#   (disable eksplisit). i18n: +20 key → total 4.392.
+#   Revisi C05 (2026-09-22): rumus LaTeX chat AI dirender KaTeX.
+#   C06 (selesai 2026-09-22): database self-care — respons camelCase (ukuran tampil),
+#   jadwal auto-clean mandiri, auto-clean perdana, rincian per tabel, checkpoint/
+#   VACUUM manual + periodik. i18n: +10 key → total 4.402.
+#   C07 (selesai 2026-09-23): auto-updater berfungsi — flatten staging multi-level
+#   (dist/CraftLife/), abort bila exe absen + _update_apply.log, checksum digest
+#   GitHub, check verbose (beda 'terbaru' vs 'gagal cek'), unduh latar untuk web.
+#   i18n: +6 key → total 4.408.
+#   C08 (selesai 2026-09-23): tanggal sinkron (today ticking, rollover ringan,
+#   sync halaman) + streak habits benar (fail_streak nyata, mapping murni) +
+#   indikator done. i18n: +1 key → total 4.409.
+#   C09 (selesai 2026-09-23): finalisasi & rilis v1.6.4 — bump versi, sinkron
+#   i18n 4 arah (4.409), README REVISI, RELEASE_NOTES, rekap fase, verifikasi
+#   penuh + smoke hidup, satu commit + tag v1.6.4.
+APP_VERSION = "1.6.4"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 
@@ -116,6 +154,11 @@ def parse_version(value: str):
 
 def is_newer(remote: str, local: str) -> bool:
     return parse_version(remote) > parse_version(local)
+
+
+def _clean_tag(tag: str) -> str:
+    """C07 §10: bersihkan tag rilis ('v1.6.4' -> '1.6.4'; toleran 'v.1.6.3')."""
+    return re.sub(r"^[vV\s.]+", "", str(tag or "")).strip()
 
 
 def app_root() -> Path:
@@ -199,17 +242,22 @@ def _fetch_from_github(timeout: int = 10) -> dict | None:
     if resp.status_code != 200:
         return None
     rel = resp.json()
-    version = (rel.get("tag_name") or "").lstrip("vV")
+    version = _clean_tag(rel.get("tag_name"))
     if not version:
         return None
     assets = rel.get("assets") or []
     zip_asset = next((a for a in assets if (a.get("name") or "").lower().endswith(".zip")), None)
+    # C07 §10: GitHub menyertakan digest "sha256:..." per aset — pakai untuk verifikasi.
+    sha256 = ""
+    digest = str((zip_asset or {}).get("digest") or "")
+    if digest.lower().startswith("sha256:"):
+        sha256 = digest.split(":", 1)[1].strip().lower()
     return {
         "version": version,
         "notes": (rel.get("body") or "")[:4000],
         "storage_path": zip_asset.get("name") if zip_asset else "",
         "download_url": zip_asset.get("browser_download_url") if zip_asset else None,
-        "sha256": "",
+        "sha256": sha256,
         "size_bytes": zip_asset.get("size") if zip_asset else 0,
     }
 
@@ -228,13 +276,10 @@ def _fetch_from_supabase(timeout: int = 10) -> dict | None:
     return data
 
 
-def check_for_update(timeout: int = 10):
-    """Return release dict bila ada versi lebih baru (dengan backoff anti-loop);
-    selain itu None (diam saat offline / sudah dicoba baru-baru ini)."""
-    try:
-        info = _fetch_from_github(timeout) if UPDATE_SOURCE == "github" else _fetch_from_supabase(timeout)
-    except Exception:
-        return None
+def _check_inner(timeout: int = 10):
+    """Inti pemeriksaan update — melempar Exception agar pemanggil bisa
+    membedakan 'tidak ada update' dari 'gagal memeriksa' (C07 §10)."""
+    info = _fetch_from_github(timeout) if UPDATE_SOURCE == "github" else _fetch_from_supabase(timeout)
     if not info or not info.get("version"):
         return None
     version = str(info.get("version"))
@@ -252,6 +297,37 @@ def check_for_update(timeout: int = 10):
         except Exception:
             pass
     return info
+
+
+def check_for_update(timeout: int = 10):
+    """Return release dict bila ada versi lebih baru (dengan backoff anti-loop);
+    selain itu None (diam saat offline / sudah dicoba baru-baru ini)."""
+    try:
+        return _check_inner(timeout)
+    except Exception:
+        return None
+
+
+def check_update_status(timeout: int = 10) -> dict:
+    """Varian verbose untuk Web UI: {"update": info|None, "error": str|None}.
+
+    Error jaringan/timeout dikembalikan sebagai pesan jelas agar UI tidak
+    mengklaim 'sudah terbaru' saat sebenarnya gagal memeriksa (C07).
+    """
+    try:
+        return {"update": _check_inner(timeout), "error": None}
+    except Exception as e:
+        msg = str(e) or "update_check_failed"
+        low = msg.lower()
+        if "timed out" in low or "timeout" in low:
+            msg = "timeout: %s" % msg
+        elif ("urlopen" in low or "nodename nor servname" in low
+                or "getaddrinfo" in low or "connection" in low
+                or "max retries" in low or "name resolution" in low):
+            msg = "network_unreachable: %s" % msg
+        elif low == "updater_not_configured":
+            msg = "network_unavailable: %s" % msg
+        return {"update": None, "error": msg}
 
 
 def download_release(info: dict, progress_cb=None) -> Path:
@@ -289,53 +365,121 @@ def download_release(info: dict, progress_cb=None) -> Path:
 
 
 def _flatten_staging(staging: Path) -> None:
-    entries = [p for p in staging.iterdir() if p.name != "__MACOSX"]
-    if len(entries) == 1 and entries[0].is_dir():
-        inner = entries[0]
-        for item in inner.iterdir():
-            shutil.move(str(item), str(staging / item.name))
+    """C07 §10: naikkan isi paket berlapis (maks 4 level).
+
+    Mengenali tata letak rilis resmi (isi dist/CraftLife di root zip, yang bisa
+    ikut terzip sebagai folder 'dist/CraftLife/') + unwrap legacy satu-folder.
+    Berhenti segera bila CraftLife.exe sudah di root staging.
+    """
+    for _ in range(4):
         try:
-            inner.rmdir()
+            entries = [p for p in staging.iterdir()
+                       if p.name != "__MACOSX" and not p.name.startswith(".")]
         except OSError:
-            pass
+            return
+        if any(p.is_file() and p.name.lower() == "craftlife.exe" for p in entries):
+            return
+        nested = staging / "dist" / "CraftLife"
+        if nested.is_dir():
+            for item in nested.iterdir():
+                shutil.move(str(item), str(staging / item.name))
+            shutil.rmtree(staging / "dist", ignore_errors=True)
+            continue
+        dirs = [p for p in entries if p.is_dir()]
+        files = [p for p in entries if p.is_file()]
+        if len(dirs) == 1 and not files:
+            inner = dirs[0]
+            for item in inner.iterdir():
+                shutil.move(str(item), str(staging / item.name))
+            try:
+                inner.rmdir()
+            except OSError:
+                pass
+            continue
+        return
 
 
 def _staging_dir() -> Path:
     return app_root() / "_update_staging"
 
 
-def apply_downloaded(zip_path: Path, version: str) -> None:
-    """Ekstrak paket baru, siapkan staging, lalu (Windows) jalankan updater batch."""
-    staging = _staging_dir()
-    if staging.exists():
-        shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(zip_path) as z:
-        z.extractall(staging)
-    _flatten_staging(staging)
+def _apply_log_path() -> Path:
+    return app_root() / "_update_apply.log"
+
+
+def _apply_log(msg: str) -> None:
+    """C07 §10: catat jejak apply agar kegagalan update bisa didiagnosis."""
     try:
-        zip_path.unlink(missing_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        with open(_apply_log_path(), "a", encoding="utf-8") as fh:
+            fh.write(f"[{ts} UTC] {msg}\n")
     except OSError:
         pass
 
-    if os.name == "nt":
-        bat = _write_updater_bat(staging)
-        _launch_detached(f'cmd /c "{bat}"')
-    else:
-        root = app_root()
-        protected = {".env", "craftlife.db", "craftlife.db-wal", "craftlife.db-shm", "_update_state.json"}
-        for item in staging.iterdir():
-            dst = root / item.name
-            if dst.name in protected:
-                continue
-            if item.is_dir():
-                shutil.copytree(item, dst, dirs_exist_ok=True)
-            else:
-                shutil.copy2(item, dst)
-        shutil.rmtree(staging, ignore_errors=True)
+
+def apply_downloaded(zip_path: Path, version: str) -> None:
+    """Ekstrak paket baru, siapkan staging, lalu (Windows) jalankan updater batch.
+
+    C07 §10: ABORT dengan error jelas bila CraftLife.exe tidak ada setelah
+    staging di-flatten (tata letak zip salah) — JANGAN timpa instalasi.
+    Seluruh langkah dicatat di _update_apply.log (folder aplikasi).
+    """
+    staging = _staging_dir()
+    _apply_log(f"apply start version={version} zip={zip_path}")
+    try:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path) as z:
+            z.extractall(staging)
+        try:
+            names = sorted(p.name for p in staging.iterdir())
+        except OSError:
+            names = []
+        _apply_log(f"extracted entries: {names}")
+        _flatten_staging(staging)
+        exe = staging / "CraftLife.exe"
+        if not exe.exists():
+            try:
+                names = sorted(p.name for p in staging.iterdir())
+            except OSError:
+                names = []
+            _apply_log(f"ABORT updater_no_exe: CraftLife.exe tidak ada di staging {names}")
+            shutil.rmtree(staging, ignore_errors=True)
+            raise RuntimeError(
+                "updater_no_exe: paket update tidak berisi CraftLife.exe "
+                "(tata letak zip salah — harusnya isi dist/CraftLife di root)")
+        _apply_log("exe check OK: CraftLife.exe ada di staging")
+        try:
+            zip_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        if os.name == "nt":
+            bat = _write_updater_bat(staging, version)
+            _apply_log(f"updater batch ditulis: {bat}")
+            _launch_detached(f'cmd /c "{bat}"')
+            _apply_log("updater batch diluncurkan (detached)")
+        else:
+            root = app_root()
+            protected = {".env", "craftlife.db", "craftlife.db-wal", "craftlife.db-shm",
+                         "_update_state.json", "_update_apply.log"}
+            for item in staging.iterdir():
+                dst = root / item.name
+                if dst.name in protected:
+                    continue
+                if item.is_dir():
+                    shutil.copytree(item, dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dst)
+            shutil.rmtree(staging, ignore_errors=True)
+            _apply_log("apply selesai (posix copy)")
+    except Exception as e:
+        _apply_log(f"apply FAILED: {e}")
+        raise
 
 
-def _write_updater_bat(staging: Path) -> Path:
+def _write_updater_bat(staging: Path, version: str = "") -> Path:
     root = app_root()
     bat = Path(tempfile.gettempdir()) / f"craftlife_update_{int(time.time())}.bat"
     if is_frozen():
@@ -350,6 +494,8 @@ def _write_updater_bat(staging: Path) -> Path:
         f"set PID={pid}\r\n"
         f"set SRC={staging}\r\n"
         f"set DST={root}\r\n"
+        "set LOG=%DST%\\_update_apply.log\r\n"
+        f"echo [%date% %time%] CraftLife updater start {version} >> \"%LOG%\" 2>&1\r\n"
         "set MAXWAIT=30\r\n"
         "set /a N=0\r\n"
         ":waitloop\r\n"
@@ -360,8 +506,9 @@ def _write_updater_bat(staging: Path) -> Path:
         "  if !N! LSS %MAXWAIT% goto waitloop\r\n"
         ")\r\n"
         "robocopy \"%SRC%\" \"%DST%\" /E /XF .env craftlife.db craftlife.db-wal craftlife.db-shm "
-        "_update_state.json /XD backups logs learning_audio _update_staging /NFL /NDL /NJH /NJS /NP >nul\r\n"
+        "_update_state.json /XD backups logs learning_audio _update_staging /NFL /NDL /NJH /NJS /NP >> \"%LOG%\" 2>&1\r\n"
         "if errorlevel 8 exit /b 1\r\n"
+        "echo [%date% %time%] robocopy exit=%errorlevel% >> \"%LOG%\" 2>&1\r\n"
         "rd /s /q \"%SRC%\"\r\n"
         f"cd /d \"%DST%\"\r\n"
         f"{relaunch}\r\n"
@@ -378,3 +525,58 @@ def _launch_detached(command: str) -> None:
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                  | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     subprocess.Popen(command, shell=True, creationflags=flags, close_fds=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  UNDUH LATAR — untuk polling progres Web UI (C07)
+# ══════════════════════════════════════════════════════════════════════════════
+_dl_lock = threading.Lock()
+_dl_state = {"state": "idle", "done": 0, "total": 0,
+             "version": "", "zip": "", "error": ""}
+
+
+def download_status() -> dict:
+    """Salinan status unduh saat ini (aman-thread)."""
+    with _dl_lock:
+        return dict(_dl_state)
+
+
+def reset_download() -> dict:
+    """Kembalikan status ke idle (dipanggil setelah apply/dismiss)."""
+    with _dl_lock:
+        _dl_state.update({"state": "idle", "done": 0, "total": 0,
+                          "version": "", "zip": "", "error": ""})
+        return dict(_dl_state)
+
+
+def _dl_progress(done: int, total: int) -> None:
+    with _dl_lock:
+        _dl_state["done"] = done
+        _dl_state["total"] = total
+
+
+def start_download(info: dict) -> dict:
+    """Mulai unduh rilis di background thread; idempoten saat downloading.
+
+    Mengembalikan status langsung — Web UI mem-poll download_status().
+    """
+    with _dl_lock:
+        if _dl_state.get("state") == "downloading":
+            return dict(_dl_state)
+        _dl_state.update({"state": "downloading", "done": 0, "total": 0,
+                          "version": str((info or {}).get("version") or ""),
+                          "zip": "", "error": ""})
+
+    def _run():
+        try:
+            zip_path = download_release(info, progress_cb=_dl_progress)
+        except Exception as e:
+            with _dl_lock:
+                _dl_state.update({"state": "error", "error": str(e) or "download_failed"})
+            return
+        with _dl_lock:
+            _dl_state.update({"state": "ready", "zip": str(zip_path),
+                              "done": _dl_state.get("total") or _dl_state.get("done")})
+
+    threading.Thread(target=_run, name="craftlife-update-dl", daemon=True).start()
+    return download_status()

@@ -374,6 +374,7 @@ def init_db():
         counter_up INTEGER DEFAULT 0,
         counter_down INTEGER DEFAULT 0,
         streak INTEGER DEFAULT 0,
+        fail_streak INTEGER DEFAULT 0,
         done_today INTEGER DEFAULT 0,
         last_done TEXT,
         notes TEXT DEFAULT '',
@@ -391,6 +392,7 @@ def init_db():
         xp_reward INTEGER DEFAULT 30,
         gold_reward REAL DEFAULT 6,
         streak INTEGER DEFAULT 0,
+        fail_streak INTEGER DEFAULT 0,
         done_today INTEGER DEFAULT 0,
         last_done TEXT,
         notes TEXT DEFAULT '',
@@ -1284,6 +1286,13 @@ def init_db():
         auto INTEGER DEFAULT 1,
         last_purge_at TEXT
     )""")
+    # C06: jadwal auto-clean mandiri (terpisah dari retensi).
+    _safe_alter(c, "maintenance_state", "schedule", "TEXT DEFAULT 'monthly'")
+    try:
+        c.execute("UPDATE maintenance_state SET schedule='monthly'"
+                  " WHERE schedule IS NULL OR schedule NOT IN ('daily','weekly','monthly')")
+    except Exception:
+        pass
 
     # ========== REMINDERS ==========
     c.execute("""CREATE TABLE IF NOT EXISTS reminders(
@@ -1365,6 +1374,18 @@ def init_db():
         chunk_index INTEGER NOT NULL,
         FOREIGN KEY(source_id) REFERENCES learning_sources(id) ON DELETE CASCADE
     )""")
+    # C02: kolom berkas asli di learning_sources (instalasi lama otomatis
+    # dilengkapi; instalasi baru dapat kolom via _safe_alter yang sama).
+    for _col, _ddl in (("file_name", "TEXT DEFAULT ''"),
+                       ("mime_type", "TEXT DEFAULT ''"),
+                       ("file_size", "INTEGER DEFAULT 0"),
+                       ("file_path", "TEXT DEFAULT ''"),
+                       ("extracted_at", "TEXT")):
+        _safe_alter(c, "learning_sources", _col, _ddl)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_learning_sources_nb_user "
+              "ON learning_sources(notebook_id, user_id)")
+    # C03: ringkasan panduan per sumber (dibangkitkan malas + disimpan).
+    _safe_alter(c, "learning_sources", "summary", "TEXT DEFAULT ''")
     c.execute("""CREATE TABLE IF NOT EXISTS learning_audio(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         notebook_id INTEGER NOT NULL,
@@ -1389,6 +1410,18 @@ def init_db():
         created_at TEXT DEFAULT(datetime('now')),
         FOREIGN KEY(notebook_id) REFERENCES learning_notebooks(id) ON DELETE CASCADE
     )""")
+    # C04: catatan tersimpan per notebook (dari jawaban AI).
+    c.execute("""CREATE TABLE IF NOT EXISTS learning_notes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notebook_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(notebook_id) REFERENCES learning_notebooks(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_learning_notes_nb_user "
+              "ON learning_notes(notebook_id, user_id)")
     c.execute("""CREATE TABLE IF NOT EXISTS learning_generations(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         notebook_id INTEGER NOT NULL,
@@ -1785,6 +1818,7 @@ def init_db():
     _safe_alter(c, "economy_items", "sort_order", "INTEGER DEFAULT 0")
     _safe_alter(c, "food_logs", "sort_order", "INTEGER DEFAULT 0")
     _safe_alter(c, "dailies", "fail_streak", "INTEGER DEFAULT 0")
+    _safe_alter(c, "habits", "fail_streak", "INTEGER DEFAULT 0")  # C08: streak gagal nyata
     _safe_alter(c, "messages", "deleted_by", "TEXT DEFAULT ''")
     # Phase 4B.1 direct-chat reply/edit/delete/reaction cache.
     _safe_alter(c,"messages","reply_to_id","INTEGER")
@@ -3402,9 +3436,12 @@ def complete_habit(user_id, habit_id, direction="up"):
         if h["done_today"]:
             return {"ok": False, "msg": tr_db(user_id=user_id, key="db_habit_already_done")}
         new_streak = h["streak"] + 1 if direction == "up" else 0
+        # C08: fail_streak nyata (parity dailies) — up mereset, down +1.
+        prev_fail = h["fail_streak"] if "fail_streak" in h.keys() else 0
+        new_fail = 0 if direction == "up" else (prev_fail or 0) + 1
         conn.execute("""UPDATE habits SET done_today=1, streak=?, last_done=?, last_action=?, 
-                        counter_up=counter_up+?, counter_down=counter_down+? WHERE id=?""",
-                     (new_streak, today, direction, 1 if direction=="up" else 0, 1 if direction=="down" else 0, habit_id))
+                        counter_up=counter_up+?, counter_down=counter_down+?, fail_streak=? WHERE id=?""",
+                     (new_streak, today, direction, 1 if direction=="up" else 0, 1 if direction=="down" else 0, new_fail, habit_id))
         conn.execute("UPDATE users SET total_habits_done=total_habits_done+1 WHERE id=?", (user_id,))
         conn.execute("UPDATE users SET total_tasks_completed = total_tasks_completed + 1 WHERE id=?", (user_id,))
         new_total = conn.execute("SELECT total_tasks_completed FROM users WHERE id=?", (user_id,)).fetchone()[0]
@@ -6550,13 +6587,23 @@ def get_maintenance_state(user_id):
     if row:
         # P62: hati-hati falsy — retention 0 (= nonaktif) harus tetap 0, bukan 30.
         rd = row["retention_days"] if row["retention_days"] is not None else 30
+        try:
+            sched = row["schedule"] or "monthly"
+        except Exception:
+            sched = "monthly"
+        if sched not in _SCHEDULE_DAYS:
+            sched = "monthly"
         return {"retention_days": int(rd), "auto": bool(row["auto"]),
-                "last_purge_at": row["last_purge_at"] or ""}
-    return {"retention_days": 30, "auto": True, "last_purge_at": ""}
+                "last_purge_at": row["last_purge_at"] or "", "schedule": sched}
+    return {"retention_days": 30, "auto": True, "last_purge_at": "", "schedule": "monthly"}
 
 
-def set_maintenance_state(user_id, retention_days=None, auto=None):
-    if retention_days is None and auto is None:
+def set_maintenance_state(user_id, retention_days=None, auto=None, schedule=None):
+    if schedule is not None:
+        schedule = str(schedule).strip().lower()
+        if schedule not in _SCHEDULE_DAYS:
+            raise ValueError("schedule_invalid")
+    if retention_days is None and auto is None and schedule is None:
         return
     conn = get_conn()
     row = conn.execute("SELECT user_id FROM maintenance_state WHERE user_id=?", (user_id,)).fetchone()
@@ -6567,11 +6614,15 @@ def set_maintenance_state(user_id, retention_days=None, auto=None):
         if auto is not None:
             conn.execute("UPDATE maintenance_state SET auto=? WHERE user_id=?",
                          (1 if auto else 0, user_id))
+        if schedule is not None:
+            conn.execute("UPDATE maintenance_state SET schedule=? WHERE user_id=?",
+                         (schedule, user_id))
     else:
         rd = int(retention_days) if retention_days is not None else 30
         au = 1 if (auto if auto is not None else True) else 0
-        conn.execute("INSERT INTO maintenance_state(user_id, retention_days, auto) VALUES(?,?,?)",
-                     (user_id, rd, au))
+        sc = schedule if schedule is not None else "monthly"
+        conn.execute("INSERT INTO maintenance_state(user_id, retention_days, auto, schedule)"
+                     " VALUES(?,?,?,?)", (user_id, rd, au, sc))
     conn.commit()
     conn.close()
 
@@ -6620,25 +6671,11 @@ def purge_tracker_history(user_id, retention_days, do_backup=True):
         "INSERT INTO maintenance_state(user_id, last_purge_at) VALUES(?, datetime('now'))"
         " ON CONFLICT(user_id) DO UPDATE SET last_purge_at=excluded.last_purge_at", (user_id,))
     conn.commit()
-    try:
-        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    except Exception:
-        pass
     conn.close()
-    try:
-        conn2 = get_conn()
-        conn2.execute("VACUUM")
-        conn2.close()
-    except Exception:
-        pass
-    # VACUUM menulis seluruh DB baru ke WAL — checkpoint lagi supaya file
-    # benar-benar mengecil (wal truncate) setelah dibebaskan.
-    try:
-        conn3 = get_conn()
-        conn3.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        conn3.close()
-    except Exception:
-        pass
+    # C06: checkpoint + VACUUM via koneksi khusus (laporan + error terlihat,
+    # tidak lagi bisu; VACUUM menulis ulang lalu TRUNCATE di dalam run_vacuum).
+    report["checkpoint"] = run_checkpoint()
+    report["vacuum"] = run_vacuum()
     report["after_bytes"] = db_file_size_bytes()
     report["freed_bytes"] = max(0, report["before_bytes"] - report["after_bytes"])
     report["total_deleted"] = sum(report["deleted"].values())
@@ -6646,24 +6683,128 @@ def purge_tracker_history(user_id, retention_days, do_backup=True):
 
 
 def maybe_auto_purge(user_id):
-    # Auto-purge saat login bila last_purge_at sudah lewat interval retensi.
+    # C06: jadwal mandiri (daily/weekly/monthly) terpisah dari retensi; tanpa
+    # last_purge_at (= belum pernah) dianggap DUE agar auto-clean jalan sejak awal.
     # Best-effort — tidak pernah raise.
     try:
         st = get_maintenance_state(user_id)
         rd = int(st.get("retention_days") or 0)
         if not st.get("auto") or rd <= 0:
             return {"ok": False, "code": "disabled"}
-        interval = max(1, rd)
+        sched = st.get("schedule") or "monthly"
+        interval = _SCHEDULE_DAYS.get(sched, 30)
         conn = get_conn()
-        row = conn.execute(
-            "SELECT julianday('now') - julianday(last_purge_at) elapsed FROM maintenance_state"
-            " WHERE user_id=? AND last_purge_at IS NOT NULL", (user_id,)).fetchone()
+        row = conn.execute("SELECT last_purge_at FROM maintenance_state WHERE user_id=?",
+                           (user_id,)).fetchone()
         conn.close()
-        if row and row["elapsed"] is not None and float(row["elapsed"]) >= interval:
-            return {"ok": True, "report": purge_tracker_history(user_id, interval, do_backup=True)}
-        return {"ok": False, "code": "not_due"}
+        due = True
+        if row and row["last_purge_at"]:
+            try:
+                conn2 = get_conn()
+                el = conn2.execute("SELECT julianday('now') - julianday(?)",
+                                   (row["last_purge_at"],)).fetchone()[0]
+                conn2.close()
+                due = el is None or float(el) >= interval
+            except Exception:
+                due = True
+        if due:
+            return {"ok": True, "report": purge_tracker_history(user_id, rd, do_backup=True),
+                    "schedule": sched, "interval_days": interval}
+        return {"ok": False, "code": "not_due", "schedule": sched, "interval_days": interval}
     except Exception as e:
         return {"ok": False, "code": "error", "error": str(e)}
+
+
+# C06: jadwal auto-clean (hari) — terpisah dari retensi.
+_SCHEDULE_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
+
+
+def db_table_sizes():
+    """C06: ukuran per tabel (dbstat; fallback hitung baris) + total file."""
+    tables = []
+    try:
+        conn = get_conn()
+        try:
+            rows = conn.execute("SELECT name, SUM(pgsize) s, SUM(ncell) n"
+                                " FROM dbstat GROUP BY name").fetchall()
+            for r in rows:
+                name = r["name"] or ""
+                if name.startswith("sqlite_"):
+                    continue
+                tables.append({"name": name, "bytes": int(r["s"] or 0),
+                               "rows": int(r["n"] or 0)})
+        except Exception:
+            for (name,) in conn.execute("SELECT name FROM sqlite_master"
+                                        " WHERE type='table' AND name NOT LIKE 'sqlite_%'"):
+                try:
+                    n = conn.execute(f'SELECT COUNT(*) c FROM "{name}"').fetchone()["c"]
+                except Exception:
+                    n = 0
+                tables.append({"name": name, "bytes": 0, "rows": int(n or 0)})
+        conn.close()
+    except Exception:
+        tables = []
+    tables.sort(key=lambda t: t["bytes"], reverse=True)
+    return {"tables": tables, "total_bytes": db_file_size_bytes()}
+
+
+def _fresh_db_conn():
+    """C06: koneksi SQLite baru non-pooled (untuk VACUUM/checkpoint manual)."""
+    import sqlite3 as _s3
+    c = _s3.connect(DB_PATH, timeout=60.0)
+    c.execute("PRAGMA busy_timeout = 60000")
+    return c
+
+
+def run_checkpoint():
+    """C06: checkpoint WAL manual (koneksi khusus) + laporan sebelum/sesudah."""
+    rep = {"ok": False, "before_bytes": db_file_size_bytes(), "after_bytes": 0,
+           "freed_bytes": 0, "error": ""}
+    try:
+        c = _fresh_db_conn()
+        try:
+            row = c.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            rep["checkpoint"] = [int(x or 0) for x in (tuple(row) if row else (0, 0, 0))]
+        finally:
+            c.close()
+        rep["after_bytes"] = db_file_size_bytes()
+        rep["freed_bytes"] = max(0, rep["before_bytes"] - rep["after_bytes"])
+        rep["ok"] = True
+    except Exception as e:
+        rep["error"] = str(e)[:300]
+        try:
+            rep["after_bytes"] = db_file_size_bytes()
+        except Exception:
+            pass
+    return rep
+
+
+def run_vacuum():
+    """C06: VACUUM manual di koneksi khusus non-pooled.
+
+    Pooled `get_conn` memakai cached_statements + bisa menahan transaksi —
+    VACUUM di sana rawan gagal diam-diam. Di sini koneksi segar + laporan +
+    error terlihat.
+    """
+    rep = {"ok": False, "before_bytes": db_file_size_bytes(), "after_bytes": 0,
+           "freed_bytes": 0, "error": ""}
+    try:
+        c = _fresh_db_conn()
+        try:
+            c.execute("VACUUM")
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            c.close()
+        rep["after_bytes"] = db_file_size_bytes()
+        rep["freed_bytes"] = max(0, rep["before_bytes"] - rep["after_bytes"])
+        rep["ok"] = True
+    except Exception as e:
+        rep["error"] = str(e)[:300]
+        try:
+            rep["after_bytes"] = db_file_size_bytes()
+        except Exception:
+            pass
+    return rep
 
 
 def get_pending_friend_requests(user_id):
@@ -10125,7 +10266,8 @@ def fill_skipped_history(user_id):
                         )
                     else:
                         conn.execute(
-                            f"UPDATE {table} SET streak = 0 WHERE id = ?",
+                            # C08: habit terlewat — streak putus + fail_streak +1.
+                            f"UPDATE {table} SET streak = 0, fail_streak = COALESCE(fail_streak, 0) + 1 WHERE id = ?",
                             (r["id"],)
                         )
         conn.commit()
@@ -11445,12 +11587,16 @@ def delete_calendar_note(user_id, date_str):
     conn.close()
 
 _checkpoint_timer = None
+_checkpoint_interval = 300
 
-def start_periodic_checkpoint(interval=10):
-    global _checkpoint_timer
+def start_periodic_checkpoint(interval=300):
+    # C06: default 5 menit; interval disimpan & dipakai ulang (dulu re-arm
+    # hardcoded 10 detik sehingga argumen diabaikan). Desktop memanggil (10).
+    global _checkpoint_timer, _checkpoint_interval
     if _checkpoint_timer:
         return
-    _checkpoint_timer = threading.Timer(interval, _do_checkpoint)
+    _checkpoint_interval = max(5, int(interval or 300))
+    _checkpoint_timer = threading.Timer(_checkpoint_interval, _do_checkpoint)
     _checkpoint_timer.daemon = True
     _checkpoint_timer.start()
 
@@ -11462,7 +11608,11 @@ def _do_checkpoint():
         _c.close()  # koneksi langsung (bukan pooled) -> hindari bocor di thread Timer
     except:
         pass
-    _checkpoint_timer = threading.Timer(10, _do_checkpoint)
+    try:
+        iv = max(5, int(globals().get("_checkpoint_interval") or 300))
+    except Exception:
+        iv = 300
+    _checkpoint_timer = threading.Timer(iv, _do_checkpoint)
     _checkpoint_timer.daemon = True
     _checkpoint_timer.start()
 
@@ -13679,10 +13829,16 @@ def update_learning_notebook(notebook_id, user_id, title=None, icon=None, descri
     return {"ok": True}
 
 # ── Sources ──
-def add_learning_source(notebook_id, user_id, type_, title, path, content):
+def add_learning_source(notebook_id, user_id, type_, title, path, content,
+                         file_name="", mime_type="", file_size=0, file_path=""):
     conn = get_conn()
-    cur = conn.execute("INSERT INTO learning_sources(notebook_id, user_id, type, title, path, content) VALUES(?,?,?,?,?,?)",
-                       (notebook_id, user_id, type_, title, path, content))
+    # C02: kolom file_* selalu ada (migrasi di init_db); parameter opsional agar
+    # pemanggil lama (teks tempel/URL) tetap jalan tanpa perubahan.
+    cur = conn.execute("INSERT INTO learning_sources(notebook_id, user_id, type, title, path, content,"
+                       " file_name, mime_type, file_size, file_path, extracted_at)"
+                       " VALUES(?,?,?,?,?,?,?,?,?,?, datetime('now'))",
+                       (notebook_id, user_id, type_, title, path, content,
+                        file_name or "", mime_type or "", int(file_size or 0), file_path or ""))
     sid = cur.lastrowid
     conn.commit()
     conn.close()
@@ -13710,11 +13866,88 @@ def get_learning_sources(notebook_id, user_id=None):
     return [dict(r) for r in rows]
 
 def delete_learning_source(source_id, user_id):
+    # C02: hapus chunk + baris + berkas KELOLAAN app saja.
     conn = get_conn()
+    row = conn.execute("SELECT file_path FROM learning_sources WHERE id=? AND user_id=?",
+                       (source_id, user_id)).fetchone()
+    conn.execute("DELETE FROM learning_chunks WHERE source_id=?", (source_id,))
     conn.execute("DELETE FROM learning_sources WHERE id=? AND user_id=?", (source_id, user_id))
     conn.commit()
     conn.close()
+    fp = (row["file_path"] if row else "") or ""
+    if fp and is_managed_source_file(fp):
+        try:
+            os.remove(fp)
+        except Exception:
+            pass
     return {"ok": True}
+
+
+def get_learning_source(source_id, user_id):
+    """C02: satu baris sumber milik user (dict) atau None."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM learning_sources WHERE id=? AND user_id=?",
+                       (source_id, user_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_learning_source_content(source_id, user_id, content):
+    """C02: ganti isi + bangun ulang chunk + cap extracted_at (re-extract)."""
+    conn = get_conn()
+    conn.execute("UPDATE learning_sources SET content=?, extracted_at=datetime('now') "
+                 "WHERE id=? AND user_id=?", (content, source_id, user_id))
+    conn.execute("DELETE FROM learning_chunks WHERE source_id=?", (source_id,))
+    conn.commit()
+    conn.close()
+    try:
+        import learning_helper as lh
+        chunks = lh.chunk_text(content)
+    except Exception:
+        chunks = [content[i:i + 800] for i in range(0, len(content), 800)]
+    conn = get_conn()
+    for idx, ch in enumerate(chunks):
+        conn.execute("INSERT INTO learning_chunks(source_id, chunk_text, chunk_index) VALUES(?,?,?)",
+                     (source_id, ch, idx))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "chunks": len(chunks)}
+
+
+def update_learning_source_summary(source_id, user_id, summary):
+    """C03: simpan ringkasan panduan (backfill malas dari _nb_map)."""
+    conn = get_conn()
+    conn.execute("UPDATE learning_sources SET summary=? WHERE id=? AND user_id=?",
+                 (summary or "", source_id, user_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+def learning_sources_root():
+    """C02: folder learning_sources/ absolut (sama dengan api_server)."""
+    try:
+        base = os.path.dirname(os.path.abspath(DB_PATH))
+    except Exception:
+        base = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.join(base, "learning_sources")
+    try:
+        os.makedirs(root, exist_ok=True)
+    except Exception:
+        pass
+    return root
+
+
+def is_managed_source_file(path):
+    """C02: True hanya bila path absolut di bawah learning_sources/ app."""
+    try:
+        if not path:
+            return False
+        root = os.path.realpath(learning_sources_root())
+        fp = os.path.realpath(path)
+        return fp == root or fp.startswith(root + os.sep)
+    except Exception:
+        return False
 
 def get_learning_chunks(notebook_id, user_id=None):
     conn = get_conn()
@@ -13768,6 +14001,34 @@ def get_learning_chats(notebook_id):
 def clear_learning_chats(notebook_id):
     conn = get_conn()
     conn.execute("DELETE FROM learning_chats WHERE notebook_id=?", (notebook_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+# ── C04: catatan tersimpan (dari jawaban AI) ─────────────────────────────
+def add_learning_note(notebook_id, user_id, title, content):
+    conn = get_conn()
+    cur = conn.execute("INSERT INTO learning_notes(notebook_id, user_id, title, content)"
+                       " VALUES(?,?,?,?)",
+                       (notebook_id, user_id, (title or "").strip() or "Catatan",
+                        (content or "").strip()))
+    nid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "note_id": nid}
+
+
+def get_learning_notes(notebook_id, user_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM learning_notes WHERE notebook_id=? AND user_id=?"
+                        " ORDER BY created_at DESC", (notebook_id, user_id)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_learning_note(note_id, user_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM learning_notes WHERE id=? AND user_id=?", (note_id, user_id))
     conn.commit()
     conn.close()
     return {"ok": True}

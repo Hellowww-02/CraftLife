@@ -14,11 +14,16 @@ _LEGACY_STUDIO_TYPE = {
     "audio_overview": "audio-overview",
     "mind_map": "mindmap",
     "study_guide": "study-guide",
+    # C05: 4 tipe baru (snake → kebab utk gtype kartu artefak).
+    "briefing_doc": "briefing-doc",
+    "data_table": "data-table",
+    "infographic": "infographic",
+    "slide_deck": "slide-deck",
 }
 
 
 # ── A06: metadata artefak Studio untuk daftar artefak (list ke bawah) ────────
-_TEXT_STUDIO_TYPES = ("summary", "faq", "timeline", "study_guide")
+_TEXT_STUDIO_TYPES = ("summary", "faq", "timeline", "study_guide", "briefing_doc")
 
 
 def _artifact_meta(gen_type: str, content: str) -> dict:
@@ -44,6 +49,18 @@ def _artifact_meta(gen_type: str, content: str) -> dict:
             item_count = len(arr or [])
         elif gtype == "audio_overview":
             item_count = len([ln for ln in raw.splitlines() if ln.strip()])
+        elif gtype == "data_table":
+            data = json.loads(_strip_json_fence(raw))
+            rows = data.get("rows") if isinstance(data, dict) else []
+            item_count = len(rows or []) if isinstance(rows, list) else 0
+        elif gtype == "slide_deck":
+            data = json.loads(_strip_json_fence(raw))
+            slides = data.get("slides") if isinstance(data, dict) else []
+            item_count = len(slides or []) if isinstance(slides, list) else 0
+        elif gtype == "infographic":
+            data = json.loads(_strip_json_fence(raw))
+            pts = data.get("points") if isinstance(data, dict) else []
+            item_count = len(pts or []) if isinstance(pts, list) else 0
         else:
             words = len(raw.split())
     except Exception:
@@ -53,6 +70,58 @@ def _artifact_meta(gen_type: str, content: str) -> dict:
     if gtype in _TEXT_STUDIO_TYPES:
         item_count = 0
     return {"itemCount": item_count, "words": words, "sizeBytes": size}
+
+
+def _map_sources(uid: int, sources: list) -> list:
+    """C03: petakan baris sumber + ringkasan panduan (backfill malas ≤2/panggil)."""
+    try:
+        key = _gemini_key(uid)
+    except Exception:
+        key = ""
+    budget = 2
+    out = []
+    for s in sources or []:
+        content = s.get("content") or ""
+        summary = s.get("summary") or ""
+        snippet = ""
+        if content.strip():
+            try:
+                import learning_helper as lh
+                snippet = lh.source_snippet(content)
+            except Exception:
+                snippet = ""
+        if not summary and snippet and key and budget > 0:
+            # Backfill malas: hanya hasil AI yang disimpan (potongan dihitung ulang
+            # tiap baca; gagal AI → "" → pakai potongan sementara, coba lagi nanti).
+            try:
+                import learning_helper as lh
+                gen = lh.make_source_guide(content, key, s.get("title") or "") or ""
+                if gen and gen != snippet:
+                    try:
+                        db.update_learning_source_summary(s.get("id"), uid, gen)
+                    except Exception:
+                        pass
+                    summary = gen
+                    budget -= 1
+            except Exception:
+                pass
+        out.append({
+            "id": str(s.get("id")),
+            "title": s.get("title") or "",
+            "type": s.get("type") or "text",
+            "content": (s.get("content") or "")[:4000],
+            "wordCount": len((s.get("content") or "").split()),
+            "createdAt": s.get("created_at") or "",
+            # C02: metadata berkas asli (kosong bila sumber teks/URL).
+            "fileName": s.get("file_name") or "",
+            "mimeType": s.get("mime_type") or "",
+            "fileSize": s.get("file_size") or 0,
+            "hasFile": bool(s.get("file_path")),
+            "extractedAt": s.get("extracted_at") or s.get("created_at") or "",
+            # C03: ringkasan panduan (AI tersimpan, else potongan).
+            "summary": summary or snippet,
+        })
+    return out
 
 
 def _nb_map(row: dict, uid: int) -> dict:
@@ -65,22 +134,16 @@ def _nb_map(row: dict, uid: int) -> dict:
         chats = db.get_learning_chats(nid) or []
     except Exception:
         chats = []
+    try:
+        _notes = db.get_learning_notes(nid, uid) or []
+    except Exception:
+        _notes = []
     out = {
         "id": str(nid),
         "title": row.get("title") or "",
         "description": row.get("description") or "",
         "icon": row.get("icon") or "📚",
-        "sources": [
-            {
-                "id": str(s.get("id")),
-                "title": s.get("title") or "",
-                "type": s.get("type") or "text",
-                "content": (s.get("content") or "")[:4000],
-                "wordCount": len((s.get("content") or "").split()),
-                "createdAt": s.get("created_at") or "",
-            }
-            for s in sources
-        ],
+        "sources": _map_sources(uid, sources),
         "chatHistory": [
             {
                 "sender": "ai" if (c.get("role") == "assistant" or c.get("role") == "model") else "user",
@@ -92,9 +155,23 @@ def _nb_map(row: dict, uid: int) -> dict:
             }
             for c in chats
         ],
+        "savedNotes": [
+            {
+                "id": str(n.get("id")),
+                "title": n.get("title") or "",
+                "content": n.get("content") or "",
+                "createdAt": n.get("created_at") or "",
+            }
+            for n in _notes
+        ],
         "flashcards": [],
         "quizzes": [],
         "podcast": [],
+        # C05: slot 4 tipe baru (terbaru per tipe).
+        "briefingDoc": "",
+        "dataTable": None,
+        "infographic": None,
+        "slideDeck": None,
         "studyGuide": "",
         "mindMap": None,
         "faq": "",
@@ -181,6 +258,23 @@ def _nb_map(row: dict, uid: int) -> dict:
             out["timeline"] = raw
         elif typ == "summary" and not out["summary"]:
             out["summary"] = raw
+        elif typ == "briefing_doc" and not out["briefingDoc"]:
+            out["briefingDoc"] = raw
+        elif typ == "data_table" and not out["dataTable"]:
+            try:
+                out["dataTable"] = _parse_data_table(raw)
+            except Exception:
+                out["dataTable"] = {"raw": raw}
+        elif typ == "infographic" and not out["infographic"]:
+            try:
+                out["infographic"] = _parse_infographic(raw)
+            except Exception:
+                out["infographic"] = {"raw": raw}
+        elif typ == "slide_deck" and not out["slideDeck"]:
+            try:
+                out["slideDeck"] = _parse_slide_deck(raw)
+            except Exception:
+                out["slideDeck"] = {"raw": raw}
     # Parity LearningPage: riwayat generasi Studio (tipe/topic/waktu) untuk combo
     # history + aksi hapus (_delete_generation). Slot tipe di atas = generasi terbaru.
     try:
@@ -1172,7 +1266,83 @@ _STUDIO_TITLES = {
     "quiz": "Quiz", "flashcards": "Flashcards", "audio_overview": "Audio Overview",
     "mind_map": "Mind Map", "study_guide": "Study Guide", "faq": "FAQ",
     "timeline": "Timeline", "summary": "Summary",
+    # C05.
+    "briefing_doc": "Briefing Doc", "data_table": "Data Table",
+    "infographic": "Infographic", "slide_deck": "Slide Deck",
 }
+
+
+def _artifact_csv(gtype: str, title: str, content: str) -> str:
+    """C05: ekspor Data Table sebagai CSV (delimiter `;` + BOM agar Excel ID langsung benar)."""
+    import csv as _csv
+    import io as _io
+    gtype = (gtype or "").lower()
+    raw = (content or "").strip()
+    buf = _io.StringIO()
+    w = _csv.writer(buf, delimiter=";", lineterminator="\r\n")
+    try:
+        data = json.loads(_strip_json_fence(raw)) if gtype == "data_table" else None
+        cols = [str(c) for c in ((data or {}).get("columns") or [])][:8]
+        rows = (data or {}).get("rows") or []
+        if cols:
+            if title:
+                w.writerow([title])
+            w.writerow(cols)
+            for r in rows:
+                cells = [str(c) for c in (r if isinstance(r, list) else [r])]
+                w.writerow((cells + [""] * len(cols))[:len(cols)])
+            return "\ufeff" + buf.getvalue()
+    except Exception:
+        pass
+    w.writerow([title or "Data"])
+    w.writerow([raw[:200000]])
+    return "\ufeff" + buf.getvalue()
+
+
+def _artifact_html_slides(gtype: str, title: str, content: str) -> str:
+    """C05: ekspor Slide Deck sebagai SATU berkas HTML mandiri (CSS+JS inline, tombol+keyboard)."""
+    import html as _html
+    raw = (content or "").strip()
+    slides = []
+    try:
+        data = json.loads(_strip_json_fence(raw))
+        arr = data.get("slides") if isinstance(data, dict) else []
+        for s in arr or []:
+            if isinstance(s, dict):
+                slides.append({"title": str(s.get("title") or ""),
+                               "bullets": [str(b) for b in (s.get("bullets") or [])]})
+    except Exception:
+        slides = []
+    if not slides:
+        slides = [{"title": title or "Slide", "bullets": [raw[:5000] or "(kosong)"]}]
+    deck_title = _html.escape(title or "Slide Deck")
+    cards = []
+    for i, s in enumerate(slides, 1):
+        lis = "".join(f"<li>{_html.escape(b)}</li>" for b in s["bullets"][:8])
+        cards.append(
+            f'<section class="slide" id="s{i}" style="display:{"block" if i == 1 else "none"}">'
+            f'<div class="num">{i} / {len(slides)}</div>'
+            f"<h1>{_html.escape(s['title'])}</h1>"
+            f"<ul>{lis}</ul></section>")
+    return ("<!DOCTYPE html><html lang=\"id\"><head><meta charset=\"utf-8\">"
+            f"<title>{deck_title}</title><style>"
+            "body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:32px}"
+            ".slide{max-width:760px;margin:0 auto;background:#1e293b;border:1px solid #334155;"
+            "border-radius:16px;padding:40px;min-height:320px}"
+            "h1{font-size:28px;margin:0 0 20px}.num{float:right;color:#64748b;font-size:13px}"
+            "li{margin:10px 0;font-size:17px;line-height:1.5}.nav{text-align:center;margin-top:24px}"
+            "button{background:#7c3aed;color:#fff;border:0;border-radius:10px;"
+            "padding:10px 22px;font-size:15px;margin:0 6px;cursor:pointer}"
+            "@media print{.nav{display:none}.slide{display:block!important;page-break-after:always;border:0}}"
+            "</style></head><body>" + "".join(cards) +
+            "<div class=\"nav\"><button onclick=\"go(-1)\">\u2039</button>"
+            "<button onclick=\"go(1)\">\u203a</button></div>"
+            "<script>let i=1;const n=" + str(len(slides)) + ";"
+            "function go(d){document.getElementById(\u0027s\u0027+i).style.display=\u0027none\u0027;"
+            "i=(i-1+d+n)%n+1;document.getElementById(\u0027s\u0027+i).style.display=\u0027block\u0027;}"
+            "document.addEventListener(\u0027keydown\u0027,e=>{"
+            "if(e.key===\u0027ArrowRight\u0027||e.key===\u0027 \u0027)go(1);"
+            "if(e.key===\u0027ArrowLeft\u0027)go(-1);});</script></body></html>")
 
 
 def _artifact_plain(gtype: str, title: str, content: str) -> str:
@@ -1210,6 +1380,53 @@ def _artifact_plain(gtype: str, title: str, content: str) -> str:
                     lines.append(f"   {card.get('back') or card.get('answer') or ''}")
                     lines.append("")
             return "\n".join(lines)
+        except Exception:
+            pass
+    if gtype == "data_table":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            cols = [str(c) for c in (data.get("columns") or [])][:8]
+            rows = data.get("rows") or []
+            if cols:
+                lines.append(" | ".join(cols))
+                for r in rows:
+                    cells = [str(c) for c in (r if isinstance(r, list) else [r])]
+                    lines.append(" | ".join((cells + [""] * len(cols))[:len(cols)]))
+                lines.append("")
+                return "\n".join(lines)
+        except Exception:
+            pass
+    if gtype == "slide_deck":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            slides = data.get("slides") if isinstance(data, dict) else []
+            if slides:
+                for i, s in enumerate(slides, 1):
+                    if not isinstance(s, dict):
+                        continue
+                    lines.append(f"Slide {i}: {s.get('title') or ''}")
+                    for b in s.get("bullets") or []:
+                        lines.append(f"  - {b}")
+                    lines.append("")
+                return "\n".join(lines)
+        except Exception:
+            pass
+    if gtype == "infographic":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            if isinstance(data, dict) and "points" in data:
+                if data.get("subtitle"):
+                    lines.append(str(data["subtitle"]))
+                    lines.append("")
+                for st in data.get("stats") or []:
+                    if isinstance(st, dict):
+                        lines.append(f"[{st.get('value') or ''}] {st.get('label') or ''}")
+                lines.append("")
+                for p in data.get("points") or []:
+                    if isinstance(p, dict):
+                        lines.append(f"* {p.get('heading') or ''}: {p.get('text') or ''}")
+                lines.append("")
+                return "\n".join(lines)
         except Exception:
             pass
     lines.append(raw)
@@ -1281,6 +1498,57 @@ def _artifact_markdown(gtype: str, title: str, content: str, meta: dict) -> str:
             return head + "```json\n" + json.dumps(json.loads(_strip_json_fence(raw)), indent=2, ensure_ascii=False) + "\n```"
         except Exception:
             return head + raw
+    if gtype == "data_table":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            cols = [str(c) for c in (data.get("columns") or [])][:8]
+            rows = data.get("rows") or []
+            if not cols:
+                return head + raw
+            body = ["| " + " | ".join(cols) + " |",
+                    "|" + "|".join(["---"] * len(cols)) + "|"]
+            for r in rows:
+                cells = [str(c) for c in (r if isinstance(r, list) else [r])]
+                cells = (cells + [""] * len(cols))[:len(cols)]
+                body.append("| " + " | ".join(cells) + " |")
+            return head + "\n".join(body) + "\n"
+        except Exception:
+            return head + raw
+    if gtype == "slide_deck":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            slides = data.get("slides") if isinstance(data, dict) else []
+            if not slides:
+                return head + raw
+            body = []
+            for i, s in enumerate(slides, 1):
+                if not isinstance(s, dict):
+                    continue
+                body.append(f"## Slide {i}: {s.get('title') or ''}\n")
+                for b in s.get("bullets") or []:
+                    body.append(f"- {b}")
+                body.append("")
+            return head + "\n".join(body)
+        except Exception:
+            return head + raw
+    if gtype == "infographic":
+        try:
+            data = json.loads(_strip_json_fence(raw))
+            if not isinstance(data, dict) or "points" not in data:
+                return head + raw
+            body = []
+            if data.get("subtitle"):
+                body.append(f"*{data.get('subtitle')}*\n")
+            for st in data.get("stats") or []:
+                if isinstance(st, dict):
+                    body.append(f"- **{st.get('value') or ''}** \u2014 {st.get('label') or ''}")
+            body.append("")
+            for p in data.get("points") or []:
+                if isinstance(p, dict):
+                    body.append(f"### {p.get('heading') or ''}\n\n{p.get('text') or ''}\n")
+            return head + "\n".join(body)
+        except Exception:
+            return head + raw
     return head + raw
 
 
@@ -1299,7 +1567,7 @@ def handle_get(path: str, uid: int, qs=None):
         except (TypeError, ValueError):
             gid = nid = 0
         fmt = ((qs.get("format") or ["md"])[0] or "md").strip().lower()
-        if fmt not in ("md", "txt"):
+        if fmt not in ("md", "txt", "csv", "html"):
             fmt = "md"
         if not gid or not nid:
             return {"ok": False, "msg": "learning_not_found"}
@@ -1310,8 +1578,17 @@ def handle_get(path: str, uid: int, qs=None):
         gtype = (row.get("type") or "summary").lower()
         content = row.get("content") or ""
         meta = _artifact_meta(gtype, content)
+        # C05: csv hanya untuk data_table, html hanya untuk slide_deck (else fallback md).
+        if fmt == "csv" and gtype != "data_table":
+            fmt = "md"
+        if fmt == "html" and gtype != "slide_deck":
+            fmt = "md"
         if fmt == "md":
             data = _artifact_markdown(gtype, title, content, meta)
+        elif fmt == "csv":
+            data = _artifact_csv(gtype, title, content)
+        elif fmt == "html":
+            data = _artifact_html_slides(gtype, title, content)
         else:
             data = _artifact_plain(gtype, title, content)
         safe = "".join(ch for ch in title if ch not in '<>:"/\\|?*' and ord(ch) >= 32).strip(" .") or "studio"
@@ -1320,7 +1597,8 @@ def handle_get(path: str, uid: int, qs=None):
             import api_server as _api  # lazy: hindari impor melingkar saat modul dimuat
             staged = _api._dl_stage_file(uid, {
                 "name": f"{safe}.{fmt}",
-                "mime": "text/markdown" if fmt == "md" else "text/plain",
+                "mime": {"md": "text/markdown", "txt": "text/plain",
+                         "csv": "text/csv", "html": "text/html"}.get(fmt, "text/plain"),
                 "text": data,
             })
         except Exception as e:
@@ -1361,14 +1639,28 @@ def handle_get(path: str, uid: int, qs=None):
         return {"ok": True, "days": days, "count": len(items),
                 "events": items, "specialDays": [it for it in items if it.get("isSpecial")]}
     if path == "/api/settings/cleanup":
-        # P62: status pembersihan DB (ukuran, retensi, estimasi dry-run).
+        # C06: respons camelCase konsisten (dulu snake_case → UI tampil 0 B) +
+        # rincian ukuran per tabel.
         st = db.get_maintenance_state(uid)
         rd = int(st.get("retention_days") or 0)
         if rd > 0:
             est = db.estimate_tracker_purge(uid, rd)
         else:
             est = {"cutoff": "", "tables": {}, "total_rows": 0, "db_size_bytes": db.db_file_size_bytes()}
-        return {"ok": True, "cleanup": {**st, **est}}
+        try:
+            sizes = db.db_table_sizes()
+        except Exception:
+            sizes = {"tables": [], "total_bytes": est.get("db_size_bytes", 0)}
+        return {"ok": True, "cleanup": {
+            "retentionDays": rd, "auto": bool(st.get("auto")),
+            "lastPurgeAt": st.get("last_purge_at") or "",
+            "schedule": st.get("schedule") or "monthly",
+            "cutoff": est.get("cutoff") or "", "tables": est.get("tables") or {},
+            "totalRows": int(est.get("total_rows") or 0),
+            "dbSizeBytes": int(est.get("db_size_bytes") or 0),
+            "tableSizes": sizes.get("tables") or [],
+            "dbTotalBytes": int(sizes.get("total_bytes") or 0),
+        }}
     if re.match(r"^/api/friends/[^/]+/chat$", path):
         # Parity ChatDialog._load_messages (hybrid cloud/local).
         fid = path.split("/")[3]
@@ -2301,19 +2593,57 @@ def _selected_sources(notebook_id: int, uid: int, source_ids=None) -> list:
     out = []
     for row in rows or []:
         content = (row.get("content") or "").strip()
-        if not content:
+        fp = row.get("file_path") or ""
+        if not content and not (fp and db.is_managed_source_file(fp)):
             continue
         out.append({
             "id": str(row.get("id")),
             "title": row.get("title") or "Sumber",
             "type": row.get("type") or "text",
             "content": content,
+            "file_path": fp,
+            "mime_type": row.get("mime_type") or "",
+            "file_size": row.get("file_size") or 0,
         })
     wanted = _normalize_ids(source_ids)
     if wanted:
         picked = [x for x in out if str(x["id"]) in wanted]
         if picked:
             return picked
+    return out
+
+
+def _vision_files_for_sources(sources, max_files=3, max_bytes=20 * 1024 * 1024):
+    """C02-revisi: berkas asli (pdf/gambar) untuk dilampirkan ke Gemini.
+
+    Hanya path kelolaan app + ada + <=max_bytes; dibaca sebagai bytes di sini
+    (learning_helper tidak menyentuh disk). Audio tidak dilampirkan (transkrip
+    impor sudah menjadi teks grounding); Office tidak didukung Gemini langsung.
+    """
+    _MIME = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+             ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+    out = []
+    for s in sources or []:
+        if len(out) >= max_files:
+            break
+        fp = (s or {}).get("file_path") or ""
+        if not fp or not db.is_managed_source_file(fp):
+            continue
+        ext = os.path.splitext(fp)[1].lower()
+        if ext not in _MIME:
+            continue
+        try:
+            if os.path.getsize(fp) > max_bytes or os.path.getsize(fp) == 0:
+                continue
+            with open(fp, "rb") as f:
+                data = f.read()
+        except Exception:
+            continue
+        if not data:
+            continue
+        mime = (s.get("mime_type") or "").split(";")[0].strip() or _MIME[ext]
+        out.append({"data": data, "mime": mime,
+                    "name": s.get("title") or os.path.basename(fp)})
     return out
 
 
@@ -2338,7 +2668,8 @@ def _chat_ai(uid: int, notebook_id: int, question: str, source_ids=None) -> dict
     if key and sources:
         try:
             import learning_helper as lh
-            payload = lh.chat_with_citations(question, sources, history, key)
+            files = _vision_files_for_sources(sources)
+            payload = lh.chat_with_citations(question, sources, history, key, files=files)
             answer = (payload or {}).get("answer") or ""
             citations = (payload or {}).get("citations") or []
             if answer:
@@ -2459,6 +2790,52 @@ def _gemini_key(uid: int) -> str:
         return os.environ.get("GEMINI_API_KEY") or ""
 
 
+def _parse_data_table(raw: str) -> dict:
+    """C05: normalisasi JSON Data Table → {title, columns, rows} (semua sel string)."""
+    data = json.loads(_strip_json_fence(raw))
+    if not isinstance(data, dict):
+        raise ValueError("bad_shape")
+    cols = [str(c) for c in (data.get("columns") or [])][:8]
+    if not cols:
+        raise ValueError("no_columns")
+    rows = []
+    for r in (data.get("rows") or [])[:30]:
+        cells = [str(c) for c in (r if isinstance(r, list) else [r])]
+        rows.append((cells + [""] * len(cols))[:len(cols)])
+    return {"title": str(data.get("title") or ""), "columns": cols, "rows": rows}
+
+
+def _parse_infographic(raw: str) -> dict:
+    """C05: normalisasi JSON Infografik → {title, subtitle, stats, points}."""
+    data = json.loads(_strip_json_fence(raw))
+    if not isinstance(data, dict) or not isinstance(data.get("points"), list):
+        raise ValueError("bad_shape")
+    stats = [{"value": str((s or {}).get("value") or "")[:40],
+              "label": str((s or {}).get("label") or "")[:120]}
+             for s in (data.get("stats") or [])[:6] if isinstance(s, dict)]
+    points = [{"heading": str((p or {}).get("heading") or "")[:120],
+               "text": str((p or {}).get("text") or "")[:2000]}
+              for p in data["points"][:15] if isinstance(p, dict)]
+    if not points:
+        raise ValueError("no_points")
+    return {"title": str(data.get("title") or ""),
+            "subtitle": str(data.get("subtitle") or ""),
+            "stats": stats, "points": points}
+
+
+def _parse_slide_deck(raw: str) -> dict:
+    """C05: normalisasi JSON Slide Deck → {title, slides[{title, bullets}]}."""
+    data = json.loads(_strip_json_fence(raw))
+    if not isinstance(data, dict) or not isinstance(data.get("slides"), list):
+        raise ValueError("bad_shape")
+    slides = [{"title": str((s or {}).get("title") or "")[:200],
+               "bullets": [str(b)[:500] for b in ((s or {}).get("bullets") or [])][:8]}
+              for s in data["slides"][:25] if isinstance(s, dict)]
+    if not slides:
+        raise ValueError("no_slides")
+    return {"title": str(data.get("title") or ""), "slides": slides}
+
+
 def _strip_json_fence(text: str) -> str:
     text = (text or "").strip()
     if text.startswith("```"):
@@ -2485,7 +2862,10 @@ _STUDIO_CHOICES = {
               "brief", "detail", "bullets", "narrative"),
 }
 _STUDIO_INTS = {"depth": (1, 3), "branches": (3, 8), "subs": (2, 6),
-                "exercises": (3, 10), "faq_count": (5, 15)}
+                "exercises": (3, 10), "faq_count": (5, 15),
+                # C05: counter 3 tipe JSON baru.
+                "table_rows": (3, 15), "info_points": (3, 10),
+                "slide_count": (4, 15), "slide_bullets": (2, 6)}
 _STUDIO_TEXTS = {"focus": 200, "instructions": 600}
 _STUDIO_SECTIONS = ("summary", "concepts", "examples", "practice", "conclusion")
 # Alias dari UI (gaya per tipe) → satu kunci `style` yang dipakai learning_helper.
@@ -2495,6 +2875,9 @@ _STUDIO_ALIASES = {
     "answer_style": "style", "summary_style": "style",
     "faqCount": "faq_count", "faq_count": "faq_count", "faqQuestions": "faq_count",
     "absoluteDates": "absolute_dates", "absolute_dates": "absolute_dates",
+    # C05: alias camelCase counter baru.
+    "tableRows": "table_rows", "infoPoints": "info_points",
+    "slideCount": "slide_count", "slideBullets": "slide_bullets",
     "focusTopic": "focus", "customInstructions": "instructions",
     "extraInstructions": "instructions",
 }
@@ -2607,7 +2990,14 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
         # subs/sections/exercises/faqCount/granularity/absoluteDates/focus/instructions).
         # Divalidasi & di-clamp di `_studio_opts` → tidak ada nilai liar yang masuk prompt.
         kwargs.update(_studio_opts(body))
-        raw = lh.generate_studio_content(studio_type, topic or "Materi", chunks, key, **kwargs)
+        files = []
+        try:
+            if nid:
+                files = _vision_files_for_sources(_selected_sources(int(nid), uid))
+        except Exception:
+            files = []
+        raw = lh.generate_studio_content(studio_type, topic or "Materi", chunks, key,
+                                         files=files, **kwargs)
     except Exception as e:
         return {"result": {"ok": False, "msg": str(e)}, "skip_snap": True}
     text = raw if isinstance(raw, str) else json.dumps(raw)
@@ -2666,6 +3056,23 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
         payload["timeline"] = text
     elif studio_type == "summary":
         payload["summary"] = text
+    elif studio_type == "briefing_doc":
+        payload["briefingDoc"] = text
+    elif studio_type == "data_table":
+        try:
+            payload["dataTable"] = _parse_data_table(text)
+        except Exception:
+            payload["dataTable"] = {"raw": text}
+    elif studio_type == "infographic":
+        try:
+            payload["infographic"] = _parse_infographic(text)
+        except Exception:
+            payload["infographic"] = {"raw": text}
+    elif studio_type == "slide_deck":
+        try:
+            payload["slideDeck"] = _parse_slide_deck(text)
+        except Exception:
+            payload["slideDeck"] = {"raw": text}
     if nid:
         try:
             # A04: untuk QUIZ, simpan JSON yang SUDAH dinormalkan (field `type` +
@@ -2687,34 +3094,88 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
             pass
     return {"result": payload, "skip_snap": True}
 
-def _add_source_from_upload(nid: int, uid: int, path: str) -> dict:
-    """Ekstraksi file upload Learning (parity LearningPage._add_source_files)."""
+def _add_source_from_upload(nid: int, uid: int, path: str, orig_name: str = "",
+                             mime: str = "") -> dict:
+    """C02: impor berkas sumber Learning — berkas asli DISIMPAN (tidak dihapus),
+    teks terekstrak terstruktur, metadata berkas ikut dicatat di DB."""
     if not path or not os.path.isfile(path):
         return {"ok": False, "msg": "learning_not_found"}
-    ext = os.path.splitext(path)[1].lower()
-    ftype = "docx" if ext == ".docx" else "pdf" if ext == ".pdf" else "txt"
     try:
         import learning_helper as lh
-        if ftype == "pdf":
-            content = lh.extract_from_pdf(path)
-        elif ftype == "docx":
-            content = lh.extract_from_docx(path)
-        else:
-            content = lh.extract_from_txt(path)
+        res = lh.extract_source_file(path, _gemini_key(uid))
+    except Exception as e:
+        return {"ok": False, "msg": f"[Gagal ekstrak: {e}]"}
+    if not res.get("ok"):
+        return {"ok": False, "msg": res.get("msg") or "learning_source_empty_file"}
+    content = str(res.get("text") or "").strip()
+    if not content:
+        return {"ok": False, "msg": "learning_source_empty_file"}
+    title = (orig_name or "").strip() or os.path.basename(path)
+    try:
+        size = os.path.getsize(path)
     except Exception:
-        try:
-            if ftype == "txt":
-                content = open(path, "r", encoding="utf-8", errors="ignore").read()[:50000]
-            else:
-                content = open(path, "rb").read().decode(errors="ignore")[:50000]
-        except Exception as e:
-            return {"ok": False, "msg": str(e)}
-    content = str(content or "").strip()
-    if not content or content.startswith("[Gagal"):
-        return {"ok": False, "msg": content or "learning_source_empty_file"}
-    return db.add_learning_source(
-        nid, uid, ftype, os.path.basename(path), path, content[:80000],
+        size = 0
+    if not mime:
+        import mimetypes as _mt
+        mime = _mt.guess_type(path)[0] or "application/octet-stream"
+    # Hanya path kelolaan app yang dicatat (aman dihapus saat sumber dihapus).
+    managed = path if db.is_managed_source_file(path) else ""
+    out = db.add_learning_source(
+        nid, uid, res.get("kind") or "txt", title, managed or path,
+        content[:80000], file_name=os.path.basename(title) or os.path.basename(path),
+        mime_type=mime, file_size=size, file_path=managed,
     )
+    if isinstance(out, dict):
+        out["warnings"] = res.get("warnings") or []
+        out["kind"] = res.get("kind") or "txt"
+    return out
+
+
+def _add_source_from_url(nid: int, uid: int, url: str, title: str = "") -> dict:
+    """C03: impor sumber URL — deteksi YouTube vs website, fetch server-side."""
+    u = (url or "").strip()
+    if not u.lower().startswith(("http://", "https://")) or len(u) < 12 or " " in u:
+        return {"ok": False, "msg": "learning_url_invalid"}
+    try:
+        import learning_helper as lh
+        if lh.is_youtube_url(u):
+            kind = "youtube"
+            res = lh.fetch_youtube(u)
+        else:
+            kind = "website"
+            res = lh.fetch_website(u)
+    except Exception:
+        return {"ok": False, "msg": "learning_source_fetch_failed"}
+    text = str((res or {}).get("text") or "").strip()
+    if not (res or {}).get("ok") or len(text) < 20:
+        return {"ok": False, "msg": "learning_source_fetch_failed"}
+    name = (title or "").strip() or (res.get("title") or "").strip() or u[:60]
+    return db.add_learning_source(nid, uid, kind, name, u, text[:80000])
+
+
+def _op_report_camel(rep: dict) -> dict:
+    # C06: laporan checkpoint/VACUUM snake → camel (error ikut terlihat).
+    rep = rep or {}
+    return {"ok": bool(rep.get("ok")),
+            "beforeBytes": int(rep.get("before_bytes") or 0),
+            "afterBytes": int(rep.get("after_bytes") or 0),
+            "freedBytes": int(rep.get("freed_bytes") or 0),
+            "error": rep.get("error") or ""}
+
+
+def _purge_report_camel(rep: dict) -> dict:
+    rep = rep or {}
+    out = {"beforeBytes": int(rep.get("before_bytes") or 0),
+           "afterBytes": int(rep.get("after_bytes") or 0),
+           "freedBytes": int(rep.get("freed_bytes") or 0),
+           "deleted": rep.get("deleted") or {},
+           "totalDeleted": int(rep.get("total_deleted") or 0),
+           "backupPath": rep.get("backup_path") or ""}
+    if rep.get("checkpoint") is not None:
+        out["checkpoint"] = _op_report_camel(rep.get("checkpoint"))
+    if rep.get("vacuum") is not None:
+        out["vacuum"] = _op_report_camel(rep.get("vacuum"))
+    return out
 
 
 def handle_post(path: str, uid: int, body: dict, parts: list):
@@ -2770,16 +3231,45 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             return {"result": db.update_learning_notebook(
                 nid, uid, title=title, icon=icon, description=description)}
         if len(parts) >= 5 and parts[4] == "upload-source":
-            # Parity LearningPage._add_source_files: ekstrak per ekstensi →
-            # db.add_learning_source(type, basename, path, content[:80000]).
+            # C02: berkas asli DISIMPAN (tidak dihapus); nama+mime asli dicatat.
             path = body.get("path") or ""
-            res = _add_source_from_upload(nid, uid, path)
-            try:
-                if res.get("ok"):
+            res = _add_source_from_upload(nid, uid, path,
+                                           body.get("orig_name") or "",
+                                           body.get("mime") or "")
+            if not res.get("ok") and path and db.is_managed_source_file(path):
+                # C02-revisi: impor gagal → hapus mentahan yatim agar tak menumpuk.
+                try:
                     os.remove(path)
-            except Exception:
-                pass
+                except Exception:
+                    pass
             return {"result": res}
+        if len(parts) >= 7 and parts[4] == "sources" and parts[6] == "re-extract":
+            # C02: ekstrak ulang dari berkas asli (mis. setelah isi API key).
+            try:
+                sid = int(parts[5])
+            except (TypeError, ValueError):
+                sid = 0
+            src = db.get_learning_source(sid, uid) if sid else None
+            fp = (src.get("file_path") or "") if src else ""
+            if not src or int(src.get("notebook_id") or 0) != nid:
+                return {"result": {"ok": False, "msg": "learning_not_found"}}
+            if not fp or not os.path.isfile(fp):
+                return {"result": {"ok": False, "msg": "learning_nofile"}}
+            try:
+                import learning_helper as lh
+                res = lh.extract_source_file(fp, _gemini_key(uid))
+            except Exception as e:
+                return {"result": {"ok": False, "msg": f"[Gagal ekstrak: {e}]"}}
+            if not res.get("ok"):
+                return {"result": {"ok": False,
+                                   "msg": res.get("msg") or "learning_source_empty_file"}}
+            content = str(res.get("text") or "").strip()
+            if not content:
+                return {"result": {"ok": False, "msg": "learning_source_empty_file"}}
+            db.update_learning_source_content(sid, uid, content[:80000])
+            return {"result": {"ok": True, "source_id": sid,
+                               "warnings": res.get("warnings") or [],
+                               "kind": res.get("kind") or "txt"}}
         if len(parts) >= 5 and parts[4] == "sources":
             if len(parts) >= 7 and parts[6] == "delete":
                 try:
@@ -2787,6 +3277,10 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 except Exception:
                     pass
                 return {"result": {"ok": True}}
+            url = (body.get("url") or "").strip()
+            if url:
+                # C03: sumber URL — server yang fetch (website/YouTube otomatis).
+                return {"result": _add_source_from_url(nid, uid, url, body.get("title") or "")}
             result = db.add_learning_source(
                 nid, uid,
                 body.get("type") or "text",
@@ -2814,6 +3308,21 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             # A08: `sourceIds` = sumber yang dicentang user (grounding).
             reply = _chat_ai(uid, nid, text, body.get("sourceIds") or body.get("source_ids"))
             return {"result": {"ok": True, **reply}}
+        if len(parts) >= 5 and parts[4] == "notes":
+            # C04: catatan tersimpan per notebook (simpan/hapus; daftar via _nb_map).
+            if len(parts) >= 7 and parts[6] == "delete":
+                try:
+                    db.delete_learning_note(int(parts[5]), uid)
+                except Exception:
+                    pass
+                return {"result": {"ok": True}}
+            title = (body.get("title") or "").strip()
+            content = (body.get("content") or "").strip()
+            if not content:
+                return {"result": {"ok": False, "msg": "learning_note_empty"}}
+            if not title:
+                title = content[:60]
+            return {"result": db.add_learning_note(nid, uid, title, content[:80000])}
 
     if path == "/api/music/play":
         return {"result": db.log_music_play(uid, body.get("path") or "", body.get("title") or "", body.get("artist") or "")}
@@ -2960,6 +3469,15 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         return _studio_generate(uid, body, "timeline")
     if path == "/api/ai/summary":
         return _studio_generate(uid, body, "summary")
+    # C05: 4 generator baru.
+    if path in ("/api/ai/briefing-doc", "/api/ai/briefing_doc"):
+        return _studio_generate(uid, body, "briefing_doc")
+    if path in ("/api/ai/data-table", "/api/ai/data_table"):
+        return _studio_generate(uid, body, "data_table")
+    if path == "/api/ai/infographic":
+        return _studio_generate(uid, body, "infographic")
+    if path in ("/api/ai/slide-deck", "/api/ai/slide_deck"):
+        return _studio_generate(uid, body, "slide_deck")
     if path == "/api/ai/chat":
         nid = int(body.get("notebookId") or 0)
         text = (body.get("text") or body.get("question") or "").strip()
@@ -3115,14 +3633,32 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 db.set_maintenance_state(uid, retention_days=rd)
             if body.get("auto") is not None:
                 db.set_maintenance_state(uid, auto=bool(body.get("auto")))
-            return {"result": {"ok": True, "state": db.get_maintenance_state(uid)}, "skip_snap": True}
+            if body.get("schedule") is not None:
+                sch = str(body.get("schedule")).strip().lower()
+                if sch not in ("daily", "weekly", "monthly"):
+                    return {"result": {"ok": False, "msg": "schedule_invalid"}, "skip_snap": True}
+                db.set_maintenance_state(uid, schedule=sch)
+            st = db.get_maintenance_state(uid)
+            return {"result": {"ok": True, "state": {
+                "retentionDays": int(st.get("retention_days") or 0),
+                "auto": bool(st.get("auto")),
+                "lastPurgeAt": st.get("last_purge_at") or "",
+                "schedule": st.get("schedule") or "monthly"}}, "skip_snap": True}
         if action == "run":
             st = db.get_maintenance_state(uid)
             rd = int(st.get("retention_days") or 0)
             if rd <= 0:
                 return {"result": {"ok": False, "msg": "cleanup_disabled"}, "skip_snap": True}
             report = db.purge_tracker_history(uid, rd, do_backup=True)
-            return {"result": {"ok": True, "report": report}, "skip_snap": True}
+            return {"result": {"ok": True, "report": _purge_report_camel(report)}, "skip_snap": True}
+        if action == "checkpoint":
+            # C06: checkpoint WAL manual + laporan.
+            return {"result": {"ok": True, "report": _op_report_camel(db.run_checkpoint())},
+                    "skip_snap": True}
+        if action == "vacuum":
+            # C06: VACUUM manual (koneksi khusus) + laporan.
+            return {"result": {"ok": True, "report": _op_report_camel(db.run_vacuum())},
+                    "skip_snap": True}
         return {"result": {"ok": False, "msg": "action_invalid"}, "skip_snap": True}
 
     if path == "/api/love/profile":

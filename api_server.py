@@ -34,6 +34,53 @@ _state = {
     "token": None,
 }
 
+# C07: cache hasil cek update — refresh di background per 6 jam agar /api/bootstrap
+# tidak pernah block menunggu GitHub. Cek manual (/api/update/check) selalu live.
+_UPDATE_CACHE = {"at": 0.0, "info": None, "refreshing": False}
+_UPDATE_CACHE_TTL = 6 * 3600
+
+
+def _update_cached_info():
+    """Info update dari cache; picu refresh background bila basi."""
+    try:
+        import updater
+        now = _time.time()
+        if now - float(_UPDATE_CACHE.get("at") or 0) > _UPDATE_CACHE_TTL \
+                and not _UPDATE_CACHE.get("refreshing"):
+            _UPDATE_CACHE["refreshing"] = True
+
+            def _ref():
+                try:
+                    info = updater.check_for_update()
+                except Exception:
+                    info = None
+                _UPDATE_CACHE["info"] = info
+                _UPDATE_CACHE["at"] = _time.time()
+                _UPDATE_CACHE["refreshing"] = False
+
+            threading.Thread(target=_ref, name="craftlife-update-cache",
+                             daemon=True).start()
+        return _UPDATE_CACHE.get("info")
+    except Exception:
+        return None
+
+
+def _tasks_rollover(uid: int) -> dict:
+    """C08: reset harian + daftar task segar utk rollover tengah malam.
+
+    Ringan: hanya reset done/streak + habits/dailies + jam server
+    (bukan bootstrap/snapshot penuh).
+    """
+    db.reset_daily_tasks(uid)
+    now = _server_now()
+    return {
+        "ok": True,
+        "serverNow": now,
+        "serverDate": now["date"],
+        "habits": [_map_habit(h) for h in db.get_habits(uid)],
+        "dailies": [_map_daily(d) for d in db.get_dailies(uid)],
+    }
+
 WEB_I18N_KEYS = [
     "app_logo", "loading", "nav_dashboard", "nav_habits", "nav_dailies",
     "nav_quests", "nav_sport", "nav_economy", "nav_health_food", "nav_shop",
@@ -1703,7 +1750,7 @@ WEB_I18N_KEYS = [
     "chat_pending",
     "chat_pending_action_blocked",
 
-    "a11y_font_apply_hint", "a11y_font_scale", "a11y_group", "a11y_high_contrast", "achievement_all", "achievement_claim", "achievement_empty", "achievement_locked", "achievement_reward", "achievement_search", "achievement_unlocked", "admin_add_gold", "admin_add_xp", "admin_complete_tasks", "admin_debug_title", "admin_export_blocked", "admin_fill_hp_mp", "admin_hp_restored", "admin_import_blocked", "admin_max_level", "admin_mode_active", "admin_mode_msg", "admin_mode_title", "admin_panel", "admin_pet_add_exp", "admin_pet_cheat", "admin_pet_feed", "admin_pet_level_up", "admin_tasks_done", "admin_warning", "cheat_title", "currency_idr", "debug_gold_added", "debug_hp_mp_restored", "debug_level_already", "debug_level_set", "debug_tasks_done", "debug_title", "debug_xp_added", "export_failed", "export_generic_error", "export_history_action", "export_history_date", "export_history_task_id", "export_history_type", "export_lib_docx", "export_lib_missing", "export_lib_openpyxl", "export_lib_reportlab", "export_metric", "export_section_dailies", "export_section_economy", "export_section_economy_items", "export_section_habits", "export_section_health", "export_section_health_log", "export_section_history", "export_section_quests", "export_section_sport", "export_section_stats", "export_section_user", "export_success", "export_value", "import_confirm_warning", "import_failed", "import_success", "lang_en", "lang_id", "leaderboard_col_gold", "leaderboard_col_level", "leaderboard_col_pet", "leaderboard_col_rebirth", "leaderboard_col_sport", "leaderboard_col_user", "leaderboard_col_xp", "leaderboard_partner_tip", "leaderboard_single_tip", "nav_leaderboard", "redeem_admin_password_prompt", "redeem_admin_password_title", "redeem_admin_password_wrong", "reset_answer_empty", "reset_answer_wrong", "reset_backup_code_label", "reset_backup_reset_btn", "reset_bc_empty", "reset_bc_invalid", "reset_cancel", "reset_confirm_btn", "reset_confirm_detail", "reset_confirm_invalid", "reset_confirm_placeholder", "reset_confirm_title", "reset_confirm_type_label", "reset_confirm_warning", "reset_error", "reset_loading", "reset_method_backup", "reset_method_security", "reset_method_title", "reset_no_bc", "reset_no_bc_long", "reset_no_sq", "reset_password_answer", "reset_password_backup_btn", "reset_password_backup_code", "reset_password_backup_title", "reset_password_btn", "reset_password_check", "reset_password_confirm", "reset_password_new", "reset_password_security_question", "reset_password_security_title", "reset_password_username", "reset_password_verify", "reset_success_msg", "reset_success_title", "reset_username_empty", "reset_username_notfound", "reset_verify_password_prompt", "reset_verify_password_title", "settings_backup_now", "settings_change_restart_msg", "settings_currency", "settings_data_management", "settings_database", "settings_db_path", "settings_exit", "settings_exit_btn", "settings_export_tracker", "settings_import_tracker", "settings_language", "settings_language_en", "settings_language_id", "settings_language_restart_msg", "settings_language_restart_no", "settings_language_restart_title", "settings_language_restart_yes", "settings_reset_btn", "settings_reset_progress", "settings_reset_warning", "settings_sound", "settings_sound_enable", "settings_sound_hint", "settings_theme", "settings_theme_changed", "settings_theme_title", "settings_title", "unit_exp", "unit_gold", "unit_xp", "update_apply", "update_auto_countdown", "update_available", "update_available_title", "update_check", "update_check_offline", "update_checking", "update_downloading", "update_failed", "update_group_title", "update_later", "update_latest", "update_notes_label", "update_restarting", "update_version",
+    "a11y_font_apply_hint", "a11y_font_scale", "a11y_group", "a11y_high_contrast", "achievement_all", "achievement_claim", "achievement_empty", "achievement_locked", "achievement_reward", "achievement_search", "achievement_unlocked", "admin_add_gold", "admin_add_xp", "admin_complete_tasks", "admin_debug_title", "admin_export_blocked", "admin_fill_hp_mp", "admin_hp_restored", "admin_import_blocked", "admin_max_level", "admin_mode_active", "admin_mode_msg", "admin_mode_title", "admin_panel", "admin_pet_add_exp", "admin_pet_cheat", "admin_pet_feed", "admin_pet_level_up", "admin_tasks_done", "admin_warning", "cheat_title", "currency_idr", "debug_gold_added", "debug_hp_mp_restored", "debug_level_already", "debug_level_set", "debug_tasks_done", "debug_title", "debug_xp_added", "export_failed", "export_generic_error", "export_history_action", "export_history_date", "export_history_task_id", "export_history_type", "export_lib_docx", "export_lib_missing", "export_lib_openpyxl", "export_lib_reportlab", "export_metric", "export_section_dailies", "export_section_economy", "export_section_economy_items", "export_section_habits", "export_section_health", "export_section_health_log", "export_section_history", "export_section_quests", "export_section_sport", "export_section_stats", "export_section_user", "export_success", "export_value", "import_confirm_warning", "import_failed", "import_success", "lang_en", "lang_id", "leaderboard_col_gold", "leaderboard_col_level", "leaderboard_col_pet", "leaderboard_col_rebirth", "leaderboard_col_sport", "leaderboard_col_user", "leaderboard_col_xp", "leaderboard_partner_tip", "leaderboard_single_tip", "nav_leaderboard", "redeem_admin_password_prompt", "redeem_admin_password_title", "redeem_admin_password_wrong", "reset_answer_empty", "reset_answer_wrong", "reset_backup_code_label", "reset_backup_reset_btn", "reset_bc_empty", "reset_bc_invalid", "reset_cancel", "reset_confirm_btn", "reset_confirm_detail", "reset_confirm_invalid", "reset_confirm_placeholder", "reset_confirm_title", "reset_confirm_type_label", "reset_confirm_warning", "reset_error", "reset_loading", "reset_method_backup", "reset_method_security", "reset_method_title", "reset_no_bc", "reset_no_bc_long", "reset_no_sq", "reset_password_answer", "reset_password_backup_btn", "reset_password_backup_code", "reset_password_backup_title", "reset_password_btn", "reset_password_check", "reset_password_confirm", "reset_password_new", "reset_password_security_question", "reset_password_security_title", "reset_password_username", "reset_password_verify", "reset_success_msg", "reset_success_title", "reset_username_empty", "reset_username_notfound", "reset_verify_password_prompt", "reset_verify_password_title", "settings_backup_now", "settings_change_restart_msg", "settings_currency", "settings_data_management", "settings_database", "settings_db_path", "settings_exit", "settings_exit_btn", "settings_export_tracker", "settings_import_tracker", "settings_language", "settings_language_en", "settings_language_id", "settings_language_restart_msg", "settings_language_restart_no", "settings_language_restart_title", "settings_language_restart_yes", "settings_reset_btn", "settings_reset_progress", "settings_reset_warning", "settings_sound", "settings_sound_enable", "settings_sound_hint", "settings_theme", "settings_theme_changed", "settings_theme_title", "settings_title", "unit_exp", "unit_gold", "unit_xp", "update_apply", "update_applying", "update_auto_countdown", "update_available", "update_available_title", "update_check", "update_check_failed", "update_check_offline", "update_checking", "update_download", "update_downloaded", "update_downloading", "update_failed", "update_group_title", "update_later", "update_latest", "update_notes_label", "update_reopen_note", "update_restarting", "update_size", "update_version",
 
     "cloud_leaderboard_events", "cloud_leaderboard_exp", "cloud_leaderboard_guild", "cloud_leaderboard_local", "cloud_leaderboard_members", "cloud_leaderboard_points", "cloud_leaderboard_productivity", "leaderboard_guild", "leaderboard_rank", "leaderboard_title",
 
@@ -1712,7 +1759,7 @@ WEB_I18N_KEYS = [
     "web_hero_custom", "web_hero_avatar", "web_hero_name", "web_hero_class", "web_hero_bio", "web_profile_saved", "web_profile_save", "reload_now_confirm",
 
     "btn_close", "food_meal_type", "health_mood_low", "learning_no_notebook", "nav_notes", "nav_pomodoro", "notes_color", "notes_default_title", "notes_denominator", "notes_empty", "notes_fraction", "notes_fraction_title", "notes_highlight", "notes_numerator", "notes_select_hint", "notes_symbols", "notes_to_learning_done", "notes_unarchive", "notes_unsaved", "notes_updated", "pomodoro", "sport_activity_ph", "sport_calories_label", "sport_rank_max", "sport_rank_progress", "sport_type_label", "supplies_add", "web_backup_code", "web_display_name", "web_forgot_password", "web_have_account", "web_login_btn", "web_login_subtitle", "web_need_account", "web_palette_placeholder", "web_password", "web_register_btn", "web_register_subtitle", "web_username",
-    "habit_habit_tracker", "habit_templates", "habit_new_habit", "habit_search_habits", "habit_all_difficulty", "habit_all_habits", "habit_duplicate", "habit_no_habits_in_this_category", "habit_create_first_habit", "habit_edit_habit", "habit_habit_title", "habit_difficulty", "habit_folder", "habit_no_folder", "habit_habit_nature", "habit_notes", "habit_cancel", "habit_save", "daily_daily_routine_dailies", "daily_new_daily", "daily_search_dailies", "daily_all_dailies", "daily_fail_hp", "daily_days", "daily_no_daily_tasks_in_this_category", "daily_edit_daily", "daily_daily_task_title", "daily_folder", "daily_repeat_days", "daily_notes", "quest_quest_to_do_list", "quest_new_quest", "quest_search_quests", "quest_all_priorities", "quest_all_quests", "quest_completed", "quest_all", "quest_no_quests_in_this_category", "quest_edit_quest", "quest_quest_title", "quest_due_date",
+    "habit_habit_tracker", "habit_templates", "habit_new_habit", "habit_search_habits", "habit_all_difficulty", "habit_all_habits", "habit_duplicate", "habit_no_habits_in_this_category", "habit_create_first_habit", "habit_edit_habit", "habit_habit_title", "habit_difficulty", "habit_folder", "habit_no_folder", "habit_habit_nature", "habit_notes", "habit_cancel", "habit_done_today", "habit_save", "daily_daily_routine_dailies", "daily_new_daily", "daily_search_dailies", "daily_all_dailies", "daily_fail_hp", "daily_days", "daily_no_daily_tasks_in_this_category", "daily_edit_daily", "daily_daily_task_title", "daily_folder", "daily_repeat_days", "daily_notes", "quest_quest_to_do_list", "quest_new_quest", "quest_search_quests", "quest_all_priorities", "quest_all_quests", "quest_completed", "quest_all", "quest_no_quests_in_this_category", "quest_edit_quest", "quest_quest_title", "quest_due_date",
     "habit_subtitle", "daily_subtitle", "quest_subtitle",
     "shop_tab_inventory",
     "shop_equipped", "shop_type_item",
@@ -1898,8 +1945,10 @@ def _map_habit(h: dict) -> dict:
         "difficulty": diff,
         "isPositive": bool(h.get("positive", 1)),
         "isNegative": bool(h.get("negative", 0)),
-        "positiveStreak": int(h.get("streak") or h.get("counter_up") or 0),
-        "negativeStreak": int(h.get("counter_down") or 0),
+        # C08: streak MURNI — JANGAN fallback ke counter lifetime (bug: angka
+        # lama bangkit lagi saat streak=0). counter_* tetap di DB sbg statistik.
+        "positiveStreak": int(h.get("streak") or 0),
+        "negativeStreak": int(h.get("fail_streak") or 0),
         "history": [],
         "createdAt": h.get("created_at") or "",
         "icon": h.get("icon") or "⚔️",
@@ -2575,6 +2624,13 @@ def _note_attachments_dir(uid: int) -> str:
     os.makedirs(d, exist_ok=True)
     return d
 
+def _learning_source_user_dir(uid: int) -> str:
+    """C02: learning_sources/<uid>/ (dibuat bila belum ada)."""
+    d = os.path.join(_learning_sources_dir(), str(uid or 0))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def _learning_sources_dir() -> str:
     """Folder penyimpanan file sumber Learning (parity path PyQt di data root)."""
     try:
@@ -2718,20 +2774,26 @@ def _handle_upload_file(uid: int, body: dict) -> dict:
         return {"ok": True, "icon": f"photo:{icon_id}"}
 
     if target == "learning_source":
-        # Parity LovePage._add_source_files: .txt/.md/.pdf/.docx, word-count >=
-        # LEARNING_MIN_SOURCE_WORDS divalidasi di studio_api.add_learning_source.
+        # C02: dokumen + gambar + audio (20 MB seragam — batas inline API Gemini).
+        # Berkas asli DISIMPAN di learning_sources/<uid>/ dan tidak dihapus.
         _LEARN_MAX = 20 * 1024 * 1024
+        _LEARN_EXTS = (".pdf", ".docx", ".xlsx", ".xls", ".pptx", ".csv", ".tsv",
+                       ".txt", ".md", ".markdown", ".rtf", ".epub",
+                       ".png", ".jpg", ".jpeg", ".webp", ".gif",
+                       ".mp3", ".wav", ".m4a", ".ogg", ".opus", ".flac")
         if len(raw) > _LEARN_MAX:
-            return {"ok": False, "error": "file_too_large", "msg": "web_upload_too_large"}
+            return {"ok": False, "error": "file_too_large", "msg": "learning_too_large",
+                    "limit_mb": 20}
         name = _safe_upload_name(body.get("name") or "", ".txt")
         ext = os.path.splitext(name)[1].lower()
-        if ext not in (".txt", ".md", ".pdf", ".docx"):
-            return {"ok": False, "error": "bad_type", "msg": "web_upload_bad_type"}
-        sdir = _learning_sources_dir()
+        if ext not in _LEARN_EXTS:
+            return {"ok": False, "error": "bad_type", "msg": "learning_type_unsupported"}
+        sdir = _learning_source_user_dir(uid)
         dest = os.path.join(sdir, f"{uuid.uuid4().hex[:8]}_{name}")
         with open(dest, "wb") as f:
             f.write(raw)
-        return {"ok": True, "path": dest, "name": os.path.basename(dest)}
+        return {"ok": True, "path": dest, "name": os.path.basename(dest),
+                "orig_name": name, "size_bytes": len(raw), "ext": ext}
 
     if target == "note_attachment":
         # P54: lampiran catatan. File disimpan ke craftlife_attachments/<uid>/,
@@ -2978,16 +3040,30 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, routes[path]())
             return
         if path == "/api/update/check":
-            # Parity _check_for_update_manual: updater.check_for_update (best-effort).
+            # C07: live check verbose — bedakan 'terbaru' vs 'gagal cek' (dulu
+            # error ikut dilaporkan latest=True sehingga user terkecoh).
             try:
                 import updater
-                info = updater.check_for_update()
-                self._send(200, {"ok": True, "update": info or None,
-                                 "latest": not bool(info),
+                st = updater.check_update_status()
+                self._send(200, {"ok": True, "update": st.get("update"),
+                                 "latest": st.get("update") is None and not st.get("error"),
+                                 "error": st.get("error"),
                                  "version": getattr(updater, "APP_VERSION", "?")})
             except Exception as e:
-                self._send(200, {"ok": True, "update": None, "latest": True,
-                                 "error": str(e)})
+                self._send(200, {"ok": False, "update": None, "latest": False,
+                                 "error": str(e) or "update_check_failed"})
+            return
+        if path == "/api/update/status":
+            # C07: poll progres unduh latar (lihat POST /api/update/download).
+            try:
+                import updater
+                self._send(200, {"ok": True, "status": updater.download_status()})
+            except Exception as e:
+                self._send(200, {"ok": False, "error": str(e) or "update_status_failed"})
+            return
+        if path == "/api/clock":
+            # C08: jam server ringan (koreksi drift tanpa bootstrap).
+            self._send(200, {"ok": True, "serverNow": _server_now()})
             return
         if path == "/api/year-wrapped":
             # A13: laporan tahunan Wrapped. `?year=2025` memilih tahun lain
@@ -3102,6 +3178,37 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "private, max-age=300")
             self.end_headers()
             self.wfile.write(blob)
+            return
+
+        # C02 — serve berkas asli sumber Learning (owner only, folder kelolaan saja).
+        if path.startswith("/api/learning/sources/") and path.endswith("/file"):
+            try:
+                sid = int(path.split("/")[4])
+            except (TypeError, ValueError, IndexError):
+                sid = 0
+            src = db.get_learning_source(sid, uid) if sid else None
+            fp = (src.get("file_path") or "") if src else ""
+            if not src or not fp or not db.is_managed_source_file(fp) or not os.path.isfile(fp):
+                self._send(404, {"ok": False, "error": "not_found"})
+                return
+            try:
+                with open(fp, "rb") as f:
+                    raw = f.read()
+            except Exception:
+                self._send(404, {"ok": False, "error": "file_missing"})
+                return
+            import mimetypes as _mt
+            fname = (src.get("file_name") or os.path.basename(fp) or "source").split("/")[-1]
+            mime = (src.get("mime_type") or _mt.guess_type(fp)[0]
+                    or "application/octet-stream").split(";")[0].strip()
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.end_headers()
+            self.wfile.write(raw)
             return
 
         # P54 — serve file lampiran note (owner only).
@@ -3241,6 +3348,7 @@ class Handler(BaseHTTPRequestHandler):
             snap["recipes"] = _recipe_catalog()
             snap["serverNow"] = _server_now()
             snap["serverDate"] = _server_now()["date"]
+            snap["updateCheck"] = _update_cached_info()
             self._send(200, snap)
             return
 
@@ -3715,6 +3823,51 @@ class Handler(BaseHTTPRequestHandler):
                 info["error"] = str(e)
             self._send(200, info)
             return
+        if path == "/api/update/download":
+            # C07: mulai unduh rilis terbaru di background. Server selalu fresh-check
+            # sendiri (body diabaikan) agar URL unduh tak bisa dikendalikan klien.
+            # Progres: poll GET /api/update/status.
+            try:
+                import updater
+                st = updater.download_status()
+                if st.get("state") == "downloading":
+                    self._send(200, {"ok": True, "status": st})
+                    return
+                chk = updater.check_update_status()
+                if chk.get("error"):
+                    self._send(200, {"ok": False, "error": chk["error"]})
+                    return
+                info = chk.get("update")
+                if not info:
+                    self._send(200, {"ok": False, "error": "no_update_available"})
+                    return
+                self._send(200, {"ok": True, "status": updater.start_download(info)})
+            except Exception as e:
+                self._send(200, {"ok": False, "error": str(e) or "update_download_failed"})
+            return
+        if path == "/api/update/apply":
+            # C07: terapkan zip yang sudah ready (staging + restart).
+            # Merespons dulu, lalu keluar agar updater batch bisa ganti file.
+            try:
+                import updater
+                from pathlib import Path as _P
+                st = updater.download_status()
+                zp = _P(st.get("zip") or "")
+                if st.get("state") != "ready" or not zp.is_file():
+                    self._send(200, {"ok": False, "error": "update_not_ready"})
+                    return
+                updater.apply_downloaded(zp, st.get("version") or "")
+                updater.reset_download()
+                self._send(200, {"ok": True, "applied": True,
+                                 "version": st.get("version") or ""})
+            except Exception as e:
+                try:
+                    self._send(200, {"ok": False, "error": str(e) or "update_apply_failed"})
+                except Exception:
+                    pass
+                return
+            threading.Timer(2.0, lambda: os._exit(0)).start()
+            return
 
         if not _auth_ok(self):
             self._send(401, {"ok": False, "error": "unauthorized"})
@@ -3727,6 +3880,10 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             # tasks reorder (drag & drop) — one call handles reorder-in-folder + move across folders
+            if path == "/api/tasks/rollover":
+                # C08: rollover tengah malam — reset harian + task segar (ringan).
+                self._send(200, _tasks_rollover(uid))
+                return
             if path == "/api/tasks/reorder":
                 mode = str(body.get("mode") or "habit")
                 items = body.get("items")
@@ -4279,6 +4436,11 @@ def start_server(host="127.0.0.1", port=8765):
     global _httpd
     if _httpd is not None:
         return _httpd, f"http://{host}:{port}"
+    # C07: hangatkan cache update di background (bootstrap tidak block).
+    try:
+        _update_cached_info()
+    except Exception:
+        pass
     last_err = None
     for candidate in range(int(port), int(port) + 8):
         try:
@@ -4286,6 +4448,12 @@ def start_server(host="127.0.0.1", port=8765):
             t = threading.Thread(target=httpd.serve_forever, daemon=True)
             t.start()
             _httpd = httpd
+            # C06: checkpoint WAL berkala juga saat jalan sebagai server
+            # (sebelumnya hanya desktop yang menyalakannya → WAL membengkak).
+            try:
+                db.start_periodic_checkpoint()
+            except Exception:
+                pass
             if candidate != int(port):
                 os.environ["CRAFTLIFE_API_PORT"] = str(candidate)
             print(f"CraftLife API http://{host}:{candidate}", flush=True)

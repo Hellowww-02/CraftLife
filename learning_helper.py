@@ -64,31 +64,57 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100):
 
 # ── Extractors ───────────────────────────────────────────────────────────
 def extract_from_pdf(path: str) -> str:
+    # C02: penanda halaman per halaman + fallback pypdf (dulu hanya fitz/PyPDF2).
+    pages = None
     try:
         # Coba PyMuPDF dulu (paling bagus)
         import fitz  # type: ignore
         doc = fitz.open(path)
-        text = ""
-        for page in doc:
-            text += page.get_text() + "\n"
-        return text
+        pages = [page.get_text() for page in doc]
     except ImportError:
         pass
-    try:
-        import PyPDF2  # type: ignore
-        reader = PyPDF2.PdfReader(path)
-        text = ""
-        for page in reader.pages:
-            text += (page.extract_text() or "") + "\n"
-        return text
-    except Exception as e:
-        return f"[Gagal baca PDF: {e}]"
+    if pages is None:
+        try:
+            from pypdf import PdfReader  # type: ignore
+            reader = PdfReader(path)
+            pages = [(p.extract_text() or "") for p in reader.pages]
+        except ImportError:
+            pass
+    if pages is None:
+        try:
+            import PyPDF2  # type: ignore
+            reader = PyPDF2.PdfReader(path)
+            pages = [(p.extract_text() or "") for p in reader.pages]
+        except Exception as e:
+            return f"[Gagal baca PDF: {e}]"
+    out = []
+    for i, t in enumerate(pages or [], 1):
+        t = (t or "").strip()
+        if t:
+            out.append(f"─── Halaman {i} ───\n{t}")
+    return "\n\n".join(out)
 
 def extract_from_docx(path: str) -> str:
+    # C02: heading ditandai + tabel ikut diekstrak (dulu paragraf polos).
     try:
         from docx import Document
         doc = Document(path)
-        return "\n".join([p.text for p in doc.paragraphs])
+        lines = []
+        for p in doc.paragraphs:
+            t = (p.text or "").strip()
+            if not t:
+                continue
+            try:
+                style = (p.style.name or "") if p.style else ""
+            except Exception:
+                style = ""
+            lines.append(("## " + t) if style.startswith("Heading") else t)
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [(cell.text or "").strip() for cell in row.cells]
+                if any(cells):
+                    lines.append(" | ".join(cells))
+        return "\n".join(lines)
     except Exception as e:
         return f"[Gagal baca DOCX: {e}]"
 
@@ -103,58 +129,464 @@ def extract_from_txt(path: str) -> str:
         except Exception as e:
             return f"[Gagal baca TXT: {e}]"
 
-def fetch_website_text(url: str) -> str:
+
+# ── C02: ekstraktor terstruktur per tipe berkas ────────────────────────────
+# Konvensi: sukses → teks (bisa "" bila kosong); gagal → "[Gagal ...]" (pola lama
+# yang dikenali pemanggil). Dispatcher `extract_source_file` di bawah yang dipakai
+# studio_api — bukan fungsi-fungsi ini secara langsung.
+
+SOURCE_TEXT_CAP = 120000  # ekstraksi mentah dipotong di sini
+SOURCE_STORE_CAP = 80000  # yang disimpan ke DB (konsisten perilaku lama)
+
+DOC_EXTS = {"pdf", "docx", "xlsx", "xls", "pptx", "csv", "tsv", "txt", "md",
+            "markdown", "rtf", "epub"}
+IMAGE_EXTS = {"png", "jpg", "jpeg", "webp", "gif"}
+AUDIO_EXTS = {"mp3", "wav", "m4a", "ogg", "opus", "flac"}
+
+
+def _cap_text(text: str, cap: int = SOURCE_TEXT_CAP) -> str:
+    text = str(text or "")
+    if len(text) > cap:
+        return text[:cap] + "\n\n[…dipotong/truncated…]"
+    return text
+
+
+def _md_table(headers: list, rows: list) -> str:
+    def esc(v):
+        return str(v if v is not None else "").replace("\n", " ").strip()
+    head = [esc(h) or f"Kolom{i+1}" for i, h in enumerate(headers)]
+    out = ["| " + " | ".join(head) + " |",
+           "|" + "|".join(["---"] * len(head)) + "|"]
+    for r in rows:
+        out.append("| " + " | ".join(esc(v) for v in r) + " |")
+    return "\n".join(out)
+
+
+def extract_from_xlsx(path: str, max_rows: int = 500, max_cols: int = 30) -> str:
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        parts = []
+        for ws in wb.worksheets:
+            rows = list(ws.iter_rows(min_row=1, max_row=max_rows + 1,
+                                     max_col=max_cols, values_only=True))
+            rows = [r for r in rows if any(v is not None and str(v).strip() for v in r)]
+            if not rows:
+                continue
+            parts.append(f"## Sheet: {ws.title} ({max(len(rows) - 1, 0)} baris)\n" +
+                         _md_table(list(rows[0]), [list(r) for r in rows[1:]]))
+        try:
+            wb.close()
+        except Exception:
+            pass
+        return "\n\n".join(parts)
+    except Exception as e:
+        return f"[Gagal baca XLSX: {e}]"
+
+
+def extract_from_xls(path: str, max_rows: int = 500, max_cols: int = 30) -> str:
+    try:
+        import xlrd
+        book = xlrd.open_workbook(path)
+        parts = []
+        for sh in book.sheets():
+            n = min(sh.nrows, max_rows + 1)
+            rows = [[sh.cell_value(r, c) for c in range(min(sh.ncols, max_cols))]
+                    for r in range(n)]
+            rows = [r for r in rows if any(str(v).strip() for v in r)]
+            if not rows:
+                continue
+            parts.append(f"## Sheet: {sh.name} ({max(len(rows) - 1, 0)} baris)\n" +
+                         _md_table(rows[0], rows[1:]))
+        return "\n\n".join(parts)
+    except Exception as e:
+        return f"[Gagal baca XLS: {e}]"
+
+
+def extract_from_pptx(path: str, max_slides: int = 200) -> str:
+    try:
+        from pptx import Presentation
+        prs = Presentation(path)
+        parts = []
+        from itertools import islice as _islice
+        for i, slide in enumerate(_islice(prs.slides, max_slides), 1):
+            lines = []
+            for shape in slide.shapes:
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        cells = [cell.text.strip() for cell in row.cells]
+                        if any(cells):
+                            lines.append(" | ".join(cells))
+                elif shape.has_text_frame:
+                    t = (shape.text or "").strip()
+                    if t:
+                        lines.append(t)
+            if lines:
+                parts.append(f"## Slide {i}\n" + "\n".join(lines))
+        return "\n\n".join(parts)
+    except Exception as e:
+        return f"[Gagal baca PPTX: {e}]"
+
+
+def extract_from_csv(path: str, max_rows: int = 500) -> str:
+    try:
+        import csv as _csv
+        with open(path, "r", encoding="utf-8-sig", errors="ignore", newline="") as f:
+            sample = f.read(4096)
+            f.seek(0)
+            try:
+                dialect = _csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
+            except Exception:
+                dialect = _csv.excel_tab if "\t" in sample else _csv.excel
+            reader = _csv.reader(f, dialect)
+            rows = []
+            for r in reader:
+                if any((c or "").strip() for c in r):
+                    rows.append(r)
+                if len(rows) >= max_rows + 1:
+                    break
+        if not rows:
+            return ""
+        return f"({max(len(rows) - 1, 0)} baris)\n" + _md_table(rows[0], rows[1:])
+    except Exception as e:
+        return f"[Gagal baca CSV: {e}]"
+
+
+def extract_from_epub(path: str, max_items: int = 100) -> str:
+    try:
+        import ebooklib
+        from ebooklib import epub
+        book = epub.read_epub(path)
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            BeautifulSoup = None
+        parts = []
+        count = 0
+        for item in book.get_items():
+            if count >= max_items:
+                break
+            if item.get_type() != ebooklib.ITEM_DOCUMENT:
+                continue
+            raw = item.get_content() or b""
+            try:
+                html = raw.decode("utf-8", errors="ignore")
+            except Exception:
+                continue
+            if BeautifulSoup is not None:
+                soup = BeautifulSoup(html, "html.parser")
+                title = (soup.title.string.strip() if soup.title and soup.title.string else "")
+                text = soup.get_text("\n").strip()
+            else:
+                import re as _re
+                title = ""
+                text = _re.sub(r"<[^>]+>", " ", html).strip()
+            # Buang baris kosong berlebih.
+            text = "\n".join([ln.strip() for ln in text.splitlines() if ln.strip()])
+            if text:
+                count += 1
+                head = f"## Bab: {title}\n" if title else f"## Bagian {count}\n"
+                parts.append(head + text)
+        return "\n\n".join(parts)
+    except Exception as e:
+        return f"[Gagal baca EPUB: {e}]"
+
+
+def extract_from_rtf(path: str) -> str:
+    try:
+        from striprtf.striprtf import rtf_to_text
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            return rtf_to_text(f.read()).strip()
+    except ImportError:
+        return "[Gagal baca RTF: pustaka striprtf belum terpasang]"
+    except Exception as e:
+        return f"[Gagal baca RTF: {e}]"
+
+
+def _multimodal_once(api_key: str, prompt: str, data: bytes, mime: str,
+                     model_name: str = "gemini-2.5-flash") -> str:
+    """Satu panggilan vision/audio ke Gemini (SDK baru). Raise RuntimeError bila gagal."""
+    if not api_key or not str(api_key).strip():
+        raise RuntimeError("no_key")
+    if LEGACY_SDK:
+        raise RuntimeError("needs_new_sdk")
+    from google.genai import types  # type: ignore
+    client = _new_sdk_client(api_key)
+    resp = client.models.generate_content(
+        model=_clean_model_name(model_name),
+        contents=[types.Part.from_bytes(data=data, mime_type=mime), prompt],
+        config=_gen_config(0.3),
+    )
+    text = _extract_text(resp)
+    if not text:
+        raise RuntimeError("empty response")
+    return text
+
+
+def describe_image_file(path: str, api_key: str) -> str:
+    """Deskripsikan gambar via vision AI (untuk grounding sumber gambar)."""
+    import mimetypes
+    mime = mimetypes.guess_type(path)[0] or "image/png"
+    with open(path, "rb") as f:
+        data = f.read()
+    prompt = ("Jelaskan isi gambar ini sedetail mungkin dalam Bahasa Indonesia untuk "
+              "dijadikan bahan belajar: objek, orang, teks/angka yang terlihat, diagram, "
+              "grafik beserta nilainya, dan konteksnya. Jawab hanya dengan penjelasan.")
+    return _multimodal_once(api_key, prompt, data, mime)
+
+
+def transcribe_audio_file(path: str, api_key: str) -> str:
+    """Transkrip audio via Gemini (untuk grounding sumber audio)."""
+    import mimetypes
+    mime = mimetypes.guess_type(path)[0] or "audio/mpeg"
+    with open(path, "rb") as f:
+        data = f.read()
+    prompt = ("Transkripsikan audio ini seakurat mungkin (verbatim). Bila ada beberapa "
+              "pembicara, beri label Pembicara 1/2/.... Akhiri dengan ringkasan 3–5 "
+              "kalimat. Jawab dalam bahasa yang sama dengan audio.")
+    return _multimodal_once(api_key, prompt, data, mime)
+
+
+def extract_source_file(path: str, api_key: str = "") -> dict:
+    """Dispatcher C02: ekstrak berkas apa pun menjadi teks grounding.
+
+    Return {"ok", "kind", "text", "warnings"}; kind = pdf/docx/xlsx/xls/pptx/csv/
+    txt/md/rtf/epub/image/audio. Gambar/audio tanpa API key tetap "ok" dengan teks
+    penanda (berkas tersimpan; user bisa Ekstrak ulang setelah isi key).
+    """
+    import os as _os
+    base = _os.path.basename(path or "")
+    ext = _os.path.splitext(base)[1].lower().lstrip(".")
+    if ext == "tsv":
+        kind, text = "csv", extract_from_csv(path)
+    elif ext == "markdown":
+        kind, text = "md", extract_from_txt(path)
+    elif ext == "md":
+        kind, text = "md", extract_from_txt(path)
+    elif ext == "txt":
+        kind, text = "txt", extract_from_txt(path)
+    elif ext == "pdf":
+        kind, text = "pdf", extract_from_pdf(path)
+    elif ext == "docx":
+        kind, text = "docx", extract_from_docx(path)
+    elif ext == "xlsx":
+        kind, text = "xlsx", extract_from_xlsx(path)
+    elif ext == "xls":
+        kind, text = "xls", extract_from_xls(path)
+    elif ext == "pptx":
+        kind, text = "pptx", extract_from_pptx(path)
+    elif ext == "csv":
+        kind, text = "csv", extract_from_csv(path)
+    elif ext == "rtf":
+        kind, text = "rtf", extract_from_rtf(path)
+    elif ext == "epub":
+        kind, text = "epub", extract_from_epub(path)
+    elif ext in IMAGE_EXTS:
+        kind = "image"
+        if not (api_key or "").strip():
+            return {"ok": True, "kind": kind, "warnings": ["learning_image_need_key"],
+                    "text": f"[Gambar: {base} — tambah API key Gemini lalu Ekstrak ulang.]"}
+        try:
+            text = describe_image_file(path, api_key)
+        except Exception as e:
+            return {"ok": False, "kind": kind, "msg": f"[Gagal deskripsikan gambar: {e}]"}
+    elif ext in AUDIO_EXTS:
+        kind = "audio"
+        if not (api_key or "").strip():
+            return {"ok": True, "kind": kind, "warnings": ["learning_audio_need_key"],
+                    "text": f"[Audio: {base} — tambah API key Gemini lalu Ekstrak ulang.]"}
+        try:
+            text = transcribe_audio_file(path, api_key)
+        except Exception as e:
+            return {"ok": False, "kind": kind, "msg": f"[Gagal transkrip audio: {e}]"}
+    else:
+        return {"ok": False, "kind": "", "msg": "learning_type_unsupported"}
+    text = str(text or "")
+    if text.startswith("[Gagal"):
+        return {"ok": False, "kind": kind, "msg": text}
+    if not text.strip() and kind == "pdf":
+        # C02-revisi: PDF scan/foto (tanpa lapisan teks) tetap tersimpan — AI
+        # membaca berkas aslinya langsung saat chat/generate (butuh API key).
+        return {"ok": True, "kind": kind, "warnings": ["learning_pdf_no_text"],
+                "text": f"[PDF tanpa teks: {base} — AI membaca berkas asli.]"}
+    return {"ok": True, "kind": kind, "warnings": [], "text": _cap_text(text.strip())}
+
+def fetch_website(url: str) -> dict:
+    """C03: ambil artikel web → {"ok", "title", "text"} (judul dari <title>).
+
+    Gagal → {"ok": False, "msg"}. `fetch_website_text` lama mendelegasikan ke sini.
+    """
     try:
         import requests
         from html.parser import HTMLParser
+
         class TextExtractor(HTMLParser):
             def __init__(self):
                 super().__init__()
                 self.texts = []
                 self.skip = False
+                self.in_title = False
+                self.title = ""
+
             def handle_starttag(self, tag, attrs):
-                if tag in ('script','style','nav','header','footer'):
+                if tag in ('script', 'style', 'nav', 'header', 'footer', 'head'):
                     self.skip = True
+                if tag == 'title':
+                    self.in_title = True
+
             def handle_endtag(self, tag):
-                if tag in ('script','style','nav','header','footer'):
+                if tag in ('script', 'style', 'nav', 'header', 'footer', 'head'):
                     self.skip = False
+                if tag == 'title':
+                    self.in_title = False
+
             def handle_data(self, data):
-                if not self.skip and data.strip():
+                if self.in_title and data.strip():
+                    self.title += (" " if self.title else "") + data.strip()
+                elif not self.skip and data.strip():
                     self.texts.append(data.strip())
-        resp = requests.get(url, timeout=10, headers={'User-Agent':'Mozilla/5.0'})
+
+        resp = requests.get(url, timeout=12, headers={'User-Agent': 'Mozilla/5.0'})
         resp.raise_for_status()
         parser = TextExtractor()
-        parser.feed(resp.text)
-        text = " ".join(parser.texts)
-        # Bersihkan whitespace
-        text = re.sub(r'\s+', ' ', text)
-        return text[:50000]  # batasi 50k char
+        parser.feed(resp.text or "")
+        text = re.sub(r'\s+', ' ', ' '.join(parser.texts)).strip()
+        title = re.sub(r'\s+', ' ', parser.title).strip()
+        return {"ok": True, "title": title, "text": text[:50000]}
     except Exception as e:
-        return f"[Gagal fetch website: {e}]"
+        return {"ok": False, "msg": str(e)}
 
-def fetch_youtube_transcript(url: str) -> str:
-    # Coba youtube-transcript-api
+
+def fetch_website_text(url: str) -> str:
+    res = fetch_website(url)
+    if res.get("ok"):
+        return res.get("text") or ""
+    return f"[Gagal fetch website: {res.get('msg') or 'unknown'}]"
+
+_YT_ID_RES = (
+    re.compile(r'[?&]v=([A-Za-z0-9_-]{11})'),
+    re.compile(r'youtu\.be/([A-Za-z0-9_-]{11})'),
+    re.compile(r'youtube\.com/(?:shorts|embed|live|v)/([A-Za-z0-9_-]{11})'),
+)
+
+
+def youtube_video_id(url: str) -> str:
+    """C03: ekstrak 11-char video id dari berbagai bentuk URL YouTube."""
+    for rx in _YT_ID_RES:
+        m = rx.search(url or "")
+        if m:
+            return m.group(1)
+    return ""
+
+
+def is_youtube_url(url: str) -> bool:
+    """C03: True bila URL menunjuk video YouTube (id valid ditemukan)."""
+    u = (url or "").lower()
+    return ("youtube.com" in u or "youtu.be" in u) and bool(youtube_video_id(url))
+
+
+def fetch_youtube(url: str) -> dict:
+    """C03: transkrip YouTube → {"ok", "title", "text", "video_id"}.
+
+    API transkrip ganda (baru `fetch` + lama `get_transcript`), bahasa id/en
+    lalu bahasa apa pun; judul via oEmbed (tanpa API key).
+    """
+    vid = youtube_video_id(url)
+    if not vid:
+        return {"ok": False, "msg": "not_youtube"}
+    text = ""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
-        # Extract video id
-        vid = None
-        if "v=" in url:
-            vid = url.split("v=")[1].split("&")[0]
-        elif "youtu.be/" in url:
-            vid = url.split("youtu.be/")[1].split("?")[0]
-        elif "youtube.com" in url:
-            # fallback
-            m = re.search(r'v=([A-Za-z0-9_-]{11})', url)
-            if m:
-                vid = m.group(1)
-        if vid:
-            trans = YouTubeTranscriptApi.get_transcript(vid, languages=['id','en'])
-            text = " ".join([t['text'] for t in trans])
-            return text
+        fetched = None
+        try:
+            api = YouTubeTranscriptApi()
+            for langs in (["id", "en"], None):
+                try:
+                    if langs is None:
+                        for tr in api.list(vid):
+                            fetched = tr.fetch()
+                            break
+                    else:
+                        fetched = api.fetch(vid, languages=langs)
+                    if fetched:
+                        break
+                except Exception:
+                    continue
+        except Exception:
+            fetched = None
+        if fetched is None:
+            # API lama (0.6.x): static get_transcript.
+            try:
+                fetched = YouTubeTranscriptApi.get_transcript(vid, languages=['id', 'en'])
+            except Exception:
+                fetched = YouTubeTranscriptApi.get_transcript(vid)
+        parts = []
+        for t in fetched or []:
+            if isinstance(t, dict):
+                parts.append(t.get('text') or '')
+            else:
+                parts.append(getattr(t, 'text', '') or '')
+        text = re.sub(r'\s+', ' ', " ".join(p for p in parts if p)).strip()
+    except Exception as e:
+        return {"ok": False, "msg": f"no_transcript: {e}"}
+    if not text:
+        return {"ok": False, "msg": "no_transcript"}
+    title = ""
+    try:
+        import requests
+        r = requests.get("https://www.youtube.com/oembed",
+                         params={"url": f"https://www.youtube.com/watch?v={vid}",
+                                 "format": "json"},
+                         timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        if r.ok:
+            title = (r.json().get("title") or "").strip()
     except Exception:
-        pass
-    # Fallback: coba pakai yt-dlp untuk ambil auto subtitle? Untuk MVP, kasih pesan
+        title = ""
+    return {"ok": True, "title": title or f"YouTube: {vid}",
+            "text": text[:80000], "video_id": vid}
+
+
+def fetch_youtube_transcript(url: str) -> str:
+    res = fetch_youtube(url)
+    if res.get("ok"):
+        return res.get("text") or ""
     return "[Transcript Youtube tidak ditemukan. Coba paste manual transcript atau gunakan link website.]"
+
+
+def source_snippet(content: str, max_chars: int = 180) -> str:
+    """C03: potongan panduan — 2 kalimat pertama atau max_chars (rapi di kata)."""
+    text = re.sub(r'\s+', ' ', str(content or '')).strip()
+    if not text:
+        return ""
+    parts = re.split(r'(?<=[.!?…])\s+', text)
+    out = " ".join(parts[:2]).strip() or text
+    if len(out) > max_chars:
+        cut = out[:max_chars].rsplit(' ', 1)[0] or out[:max_chars]
+        return cut.rstrip('.,;:') + '…'
+    return out
+
+
+def make_source_guide(content: str, api_key: str = "", title: str = "") -> str:
+    """C03: ringkasan panduan 1–2 kalimat (Gemini bila ada key, else potongan).
+
+    Gagal AI → "" (sementara; pemanggil memakai potongan + coba lagi nanti).
+    """
+    snippet = source_snippet(content)
+    if not snippet:
+        return ""
+    if not (api_key or "").strip():
+        return snippet
+    try:
+        prompt = (f"Buat ringkasan panduan 1–2 kalimat singkat (maks 40 kata) untuk sumber "
+                  f"berjudul \"{title or 'tanpa judul'}\" berikut:\n\n{snippet}\n\n"
+                  f"Jawab hanya dengan ringkasan, tanpa pengantar.")
+        out = call_gemini(prompt, api_key, temperature=0.3)
+        out = re.sub(r'\s+', ' ', str(out or '')).strip()
+        if not out or out.startswith("[MOCK") or out.startswith("[Error") or out.startswith("[Quota"):
+            return ""
+        return out[:300]
+    except Exception:
+        return ""
 
 # ── Gemini ───────────────────────────────────────────────────────────────
 def _clean_model_name(model_name: str) -> str:
@@ -170,6 +602,28 @@ def _new_sdk_client(api_key: str):
     return genai.Client(api_key=api_key.strip())
 
 
+def _gen_config(temperature: float):
+    """GenerateContentConfig dengan AFC dimatikan eksplisit (C05-0).
+
+    SDK google-genai >=1.x mengaktifkan automatic function calling secara
+    default untuk SEMUA generate_content (tanpa early-return utk config tanpa
+    tools) → warning tiap proses + overhead deep-copy. Repo tidak memakai
+    tools sama sekali, jadi AFC dimatikan. Fallback utk SDK lama tanpa field
+    tersebut.
+    """
+    from google.genai import types  # type: ignore
+    try:
+        fields = getattr(types.GenerateContentConfig, "model_fields", None) or {}
+        if "automatic_function_calling" in fields and hasattr(types, "AutomaticFunctionCallingConfig"):
+            return types.GenerateContentConfig(
+                temperature=temperature,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            )
+    except Exception:
+        pass
+    return types.GenerateContentConfig(temperature=temperature)
+
+
 def _extract_text(resp) -> str:
     """Ambil teks dari respons SDK (dua bentuk: `.text` atau daftar `parts`)."""
     text = getattr(resp, "text", None)
@@ -182,8 +636,13 @@ def _extract_text(resp) -> str:
         return ""
 
 
-def _generate_once(api_key: str, model_name: str, prompt: str, temperature: float = 0.7) -> str:
-    """Satu panggilan generate dengan SDK aktif. Raise RuntimeError bila gagal."""
+def _generate_once(api_key: str, model_name: str, prompt: str, temperature: float = 0.7,
+                   files: list = None) -> str:
+    """Satu panggilan generate dengan SDK aktif. Raise RuntimeError bila gagal.
+
+    C02-revisi: `files` = [{data: bytes, mime: str}] opsional — dilampirkan sebagai
+    Part multimodal agar AI membaca berkas asli langsung. SDK legacy mengabaikannya.
+    """
     clean_name = _clean_model_name(model_name)
     if LEGACY_SDK:
         genai.configure(api_key=api_key.strip())  # type: ignore[attr-defined]
@@ -194,10 +653,20 @@ def _generate_once(api_key: str, model_name: str, prompt: str, temperature: floa
         return _extract_text(resp)
     from google.genai import types  # type: ignore
     client = _new_sdk_client(api_key)
+    parts = []
+    for f in files or []:
+        try:
+            data = (f or {}).get("data") or b""
+            mime = (f or {}).get("mime") or "application/octet-stream"
+            if data:
+                parts.append(types.Part.from_bytes(data=data, mime_type=mime))
+        except Exception:
+            continue
+    contents = parts + [prompt] if parts else prompt
     resp = client.models.generate_content(
         model=clean_name,
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=temperature),
+        contents=contents,
+        config=_gen_config(temperature),
     )
     text = _extract_text(resp)
     if not text:
@@ -220,7 +689,7 @@ def _get_model(api_key: str, model_name: str = "gemini-2.5-flash"):
     return (SDK_NAME, _clean_model_name(model_name)), None
 
 
-def call_gemini(prompt: str, api_key: str, system_instruction: str = None, model_name: str = "gemini-2.5-flash", temperature: float = 0.7) -> str:
+def call_gemini(prompt: str, api_key: str, system_instruction: str = None, model_name: str = "gemini-2.5-flash", temperature: float = 0.7, files: list = None) -> str:
     """Panggil Gemini (SDK `google.genai`) dengan fallback model bila 429/404.
 
     Return teks jawaban, atau pesan ramah-pengguna (prefixed `[MOCK ...]`) yang
@@ -258,7 +727,7 @@ def call_gemini(prompt: str, api_key: str, system_instruction: str = None, model
     last_error = None
     for m in unique_models:
         try:
-            return _generate_once(api_key, m, full_prompt, temperature)
+            return _generate_once(api_key, m, full_prompt, temperature, files)
         except Exception as e:
             err_str = str(e)
             last_error = err_str
@@ -281,7 +750,7 @@ def call_gemini(prompt: str, api_key: str, system_instruction: str = None, model
                     if _clean_model_name(n) in seen:
                         continue
                     try:
-                        return _generate_once(api_key, n, full_prompt, temperature)
+                        return _generate_once(api_key, n, full_prompt, temperature, files)
                     except Exception:
                         continue
     except Exception as e:
@@ -413,7 +882,9 @@ def generate_studio_content(studio_type: str, query: str, context_chunks: list, 
                             subs: int = None, sections: list = None, exercises: int = None,
                             faq_count: int = None, granularity: str = None,
                             absolute_dates: bool = None, focus: str = None,
-                            instructions: str = None) -> str:
+                            instructions: str = None, table_rows: int = None,
+                            info_points: int = None, slide_count: int = None,
+                            slide_bullets: int = None, files: list = None) -> str:
     """Generate konten Studio berdasarkan type.
 
     A04: quiz memakai DUA counter terpisah — `mc_count` (pilihan ganda) dan `essay_count`
@@ -434,6 +905,9 @@ def generate_studio_content(studio_type: str, query: str, context_chunks: list, 
       - `exercises`   : study guide 3–10 soal latihan
       - `faq_count`   : FAQ 5–15 Q&A
       - `granularity` : day|week|month|year + `absolute_dates` (timeline)
+      - C05: `table_rows` 3-15 (data_table, default 8) · `info_points` 3-10
+        (infographic, default 6) · `slide_count` 4-15 + `slide_bullets` 2-6
+        (slide_deck, default 8+4) · `length` short|standard|deep (briefing_doc)
       - `focus` / `instructions` : arahan bebas user (ditempel ke prompt tipe apa pun)
     """
     context = "\n\n---\n\n".join(context_chunks[:6])  # batasi 6 chunks biar tidak kepanjangan
@@ -585,6 +1059,16 @@ def generate_studio_content(studio_type: str, query: str, context_chunks: list, 
                   "narrative": "Gaya Naratif: paragraf mengalir yang saling terhubung."}
     sum_style_line = f"\nGAYA: {_sum_style[style]}" if style in _sum_style else ""
 
+    # C05: 4 tipe baru — jumlah baris/poin/slide + panjang briefing.
+    table_rows_i = _clamp_cnt(table_rows, 3, 15) or 8
+    info_points_i = _clamp_cnt(info_points, 3, 10) or 6
+    slide_count_i = _clamp_cnt(slide_count, 4, 15) or 8
+    slide_bullets_i = _clamp_cnt(slide_bullets, 2, 6) or 4
+    _brief_len = {"short": "singkat (±150-200 kata)",
+                  "standard": "standar (±300-500 kata)",
+                  "deep": "mendalam (±600-900 kata dengan sub-poin)"}
+    brief_len_line = f"\nPANJANG: {_brief_len[length]}" if length in _brief_len else ""
+
     prompts = {
         "audio_overview": f"""Buat dialog podcast edukasi dengan DUA HOST yang benar-benar saling berbicara, bertanya, menanggapi, dan menyimpulkan materi.
 
@@ -679,7 +1163,56 @@ Format persis:
 
         "summary": f"""Buatkan RINGKASAN EKSEKUTIF dari konteks berikut.
 Bahasa: {language_name}.{sum_len_line}{sum_style_line}{extra}
-Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}"""
+Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}""",
+
+        "briefing_doc": f"""Buatkan BRIEFING DOC — laporan terstruktur siap baca dari konteks berikut.
+Bahasa: {language_name}.{brief_len_line}{extra}
+Konteks:\n{context}\n\nTopik: {query or 'Semua materi'}
+Format WAJIB (markdown, urut, tanpa bagian lain):
+# Briefing: [Judul singkat]
+## Ringkasan Eksekutif
+(satu paragraf padat: apa, mengapa penting, kesimpulan)
+## Temuan Kunci
+(3-7 bullet, tiap bullet 1-2 kalimat + angka/fakta bila ada)
+## Detail
+(2-4 subbagian ### ... sesuai topik)
+## Kesimpulan & Tindak Lanjut
+(1 paragraf + 2-4 langkah konkret berbentuk checklist - [ ] ...)
+## Sumber Dirujuk
+(daftar judul sumber dari konteks, satu per baris diawali - )""",
+
+        "data_table": f"""Buatkan DATA TABLE — tabel perbandingan dari konteks berikut.
+Bahasa isi sel: {language_name}.{extra}
+Konteks:\n{context}\n\nTopik: {query or 'Perbandingan'}
+ATURAN OUTPUT WAJIB:
+- Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
+- TEPAT {table_rows_i} baris data dan 2-6 kolom yang relevan untuk perbandingan.
+- Setiap baris WAJIB punya sel sebanyak jumlah kolom (string pendek, tanpa newline).
+- JANGAN tambah koma di akhir objek/array (no trailing comma).
+Format persis:
+{{"title":"Judul Tabel","columns":["Aspek","A","B"],"rows":[["Baris 1","...","..."]]}}""",
+
+        "infographic": f"""Buatkan INFOGRAFIK — poin kunci divisualkan, dari konteks berikut.
+Bahasa: {language_name}.{extra}
+Konteks:\n{context}\n\nTopik: {query or 'Sorotan'}
+ATURAN OUTPUT WAJIB:
+- Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
+- "stats": 2-4 angka/fakta mencolok (value singkat maks 12 karakter, label maks 8 kata).
+- "points": TEPAT {info_points_i} poin (heading maks 6 kata, text 1-2 kalimat).
+- JANGAN tambah koma di akhir objek/array (no trailing comma).
+Format persis:
+{{"title":"Judul","subtitle":"Subjudul singkat","stats":[{{"value":"80%","label":"..."}}],"points":[{{"heading":"...","text":"..."}}]}}""",
+
+        "slide_deck": f"""Buatkan SLIDE DECK — tayangan presentasi dari konteks berikut.
+Bahasa: {language_name}.{extra}
+Konteks:\n{context}\n\nTopik: {query or 'Presentasi'}
+ATURAN OUTPUT WAJIB:
+- Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
+- TEPAT {slide_count_i} slide: slide 1 = judul/pembuka (bullets boleh kosong), slide terakhir = kesimpulan/penutup.
+- Slide 2 sampai terakhir: "title" (maks 10 kata) + 2-{slide_bullets_i} "bullets" (tiap bullet maks 20 kata).
+- JANGAN tambah koma di akhir objek/array (no trailing comma).
+Format persis:
+{{"title":"Judul Deck","slides":[{{"title":"Pembuka","bullets":[]}},{{"title":"Isi 1","bullets":["...","..."]}}]}}""",
     }
 
     prompt = prompts.get(studio_type, prompts["summary"])
@@ -690,7 +1223,8 @@ Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}"""
         )
     else:
         system = "Kamu adalah asisten belajar NotebookLM yang membantu membuat materi belajar dari sources. Jawab dalam bahasa Indonesia yang jelas, terstruktur, dan engaging. Selalu gunakan konteks yang diberikan."
-    return call_gemini(prompt, api_key, system_instruction=system)
+    file_note = ("\n\n(Catatan: file asli sumber juga TERLAMPIR — periksa langsung bila teks konteks kurang jelas.)" if files else "")
+    return call_gemini(prompt + file_note, api_key, system_instruction=system, files=files)
 
 _CITE_RE = re.compile(r"\[S(\d{1,2})\]")
 
@@ -737,7 +1271,7 @@ def _citation_snippet(answer: str, marker: str, source_text: str) -> str:
 
 
 def chat_with_citations(question: str, sources: list, chat_history: list, api_key: str,
-                        language: str = "auto") -> dict:
+                        language: str = "auto", files: list = None) -> dict:
     """Jawab pertanyaan HANYA dari `sources` terpilih, lengkap dengan sitasi terstruktur.
 
     A08: `sources` = [{"id": str, "title": str, "content": str}, ...] — daftar sumber
@@ -784,6 +1318,9 @@ def chat_with_citations(question: str, sources: list, chat_history: list, api_ke
 - Jangan tulis daftar sumber di akhir jawaban; cukup penanda di dalam kalimat."""
     if is_greeting:
         rules += "\n- Ini sapaan: balas ramah tanpa penanda sitasi."
+    if files:
+        rules += ("\n- File asli sumber (PDF/gambar) juga TERLAMPIR pada pesan ini — "
+                  "periksa langsung isi berkas bila teks SOURCES kurang jelas/kosong.")
 
     prompt = f"""SOURCES (sumber terpilih untuk jawaban ini):
 {blocks}
@@ -802,6 +1339,7 @@ PERTANYAAN: {question}
             "dan sertakan penanda sitasi [S1], [S2], ... pada klaim yang memakai sumber."
         ),
         temperature=0.4,
+        files=files,
     )
 
     citations = []
