@@ -1977,6 +1977,32 @@ def init_db():
     else:
         log.warning("Tidak ada makanan default baru, skip.")
 
+    # v1.6.5: sinkron nilai gizi default ke kanonik hasil dedupe + koreksi.
+    # Idempoten & aman untuk DB lama: hanya baris is_custom=0 yg disentuh,
+    # makanan custom user tidak pernah diubah. Dipasang SETELAH seed agar
+    # item baru pun langsung bernilai kanonik. ──
+    for food in DEFAULT_FOODS:
+        c.execute(
+            "UPDATE food_items SET icon=?, calories=?, protein=?, carbs=?, fat=? "
+            "WHERE name=? AND is_custom=0",
+            (food[2], food[3], food[4], food[5], food[6], food[0]))
+    # v1.6.5: gabung duplikat semantik (beda nama, makanan sama). Log & resep
+    # user dipindah ke entri kanonik dulu, baru baris ganda dihapus. ──
+    for _dupe, _canon in (
+        ("Kopi Susu Aren", "Kopi Susu Gula Aren"),
+        ("Yogurt Greek", "Greek Yogurt"),
+        ("Es Soda Gembira", "Soda Gembira"),
+    ):
+        _d = c.execute(
+            "SELECT id FROM food_items WHERE name=? AND is_custom=0", (_dupe,)).fetchone()
+        _k = c.execute(
+            "SELECT id FROM food_items WHERE name=? AND is_custom=0", (_canon,)).fetchone()
+        if _d and _k and _d[0] != _k[0]:
+            c.execute("UPDATE food_logs SET food_id=? WHERE food_id=?", (_k[0], _d[0]))
+            c.execute("UPDATE recipe_items SET food_id=? WHERE food_id=?", (_k[0], _d[0]))
+            c.execute("DELETE FROM food_items WHERE id=?", (_d[0],))
+            log.info(f"Menggabung makanan duplikat '{_dupe}' -> '{_canon}'.")
+
     # ── P47 FIX (bug "Invalid or expired code" untuk SEMUA kode default) ──
     # Dulu: blok ini hanya jalan bila tabel redeem_codes KOSONG, padahal
     # migrate_redeem_codes() di atas sudah mengisi 15 kode baru SEBELUM blok

@@ -9,7 +9,7 @@
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.6.4-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.6.5-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -37,6 +37,13 @@ sync and online social features, but the app never requires it.
 - **Two languages** — every screen ships in Indonesian and English (4,409 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
+
+## ✨ What's New in v1.6.5
+
+| Area | Highlights |
+|------|------------|
+| 🍱 Food database | Deduplicated catalog: 850 → 774 unique entries with zero duplicates; 9 nutrition corrections (kerupuk values are now per serving, not per 100 g); 33 new Indonesian snacks and drinks — kerupuk, ciki, street snacks, bottled drinks — each with Indonesian + English names and verified approximate macros |
+| 🔄 Migration | Existing databases upgrade in place: old values sync to canonical, semantic duplicates merge automatically, and food logs plus custom foods are preserved untouched |
 
 ## ✨ What's New in v1.6.4
 
@@ -203,7 +210,7 @@ CraftLife/
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
 ├── translations.py       UI strings, Indonesian + English (4,409 keys)
-├── updater.py            Auto-update from GitHub Releases (v1.6.4, SHA-256)
+├── updater.py            Auto-update from GitHub Releases (v1.6.5, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
 ├── mathtools.py          Math text and LaTeX conversion
@@ -240,6 +247,7 @@ Design docs and phase reports kept in the repo:
 | [UPDATE_ROADMAP_C01_C09_v1.6.4.md](UPDATE_ROADMAP_C01_C09_v1.6.4.md) | v1.6.4 plan with per-phase evidence |
 | [OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md) | Release operator runbook (build → zip → tag → publish → verify) |
 | [RELEASE_NOTES_v1.6.4.md](RELEASE_NOTES_v1.6.4.md) | v1.6.4 GitHub Release notes |
+| [RELEASE_NOTES_v1.6.5.md](RELEASE_NOTES_v1.6.5.md) | v1.6.5 GitHub Release notes |
 | [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |
 | [UPDATE_ROADMAP_P47_P63.md](UPDATE_ROADMAP_P47_P63.md) | v1.6.0 fix roadmap |
 | [2026-09-08-P47-P63-PHASE-SUMMARY.md](2026-09-08-P47-P63-PHASE-SUMMARY.md) | v1.6.0 consolidated phase report |
@@ -307,6 +315,10 @@ To ship an auto-update (full runbook:
 
 Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/releases).
 
+- **v1.6.5 "Food Database Update"** (23 Sep 2026) — Deduplicated food
+  catalog (850 → 774, zero duplicates), 9 nutrition corrections, 33 new
+  Indonesian snacks and drinks with EN translations, and an in-place
+  migration that preserves food logs and custom foods.
 - **v1.6.4 "Study & Stability"** (23 Sep 2026) — NotebookLM-style Learning
   shell, 23-type multi-upload, URL/YouTube sources, 4 new Studio outputs, KaTeX
   math; real habit fail streaks; ticking server-clock date with midnight

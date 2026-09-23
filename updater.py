@@ -132,7 +132,10 @@ from pathlib import Path
 #   C09 (selesai 2026-09-23): finalisasi & rilis v1.6.4 — bump versi, sinkron
 #   i18n 4 arah (4.409), README REVISI, RELEASE_NOTES, rekap fase, verifikasi
 #   penuh + smoke hidup, satu commit + tag v1.6.4.
-APP_VERSION = "1.6.4"
+# v1.6.5 (selesai 2026-09-23): food database update — dedupe 850→774 (0
+# duplikat), 9 koreksi gizi, 33 item baru (ciki/kerupuk/minuman), migrasi DB
+# lama idempoten (sinkron kanonik + gabung duplikat semantik, log aman).
+APP_VERSION = "1.6.5"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 
