@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import 'katex/dist/katex.min.css'; /* C05-revisi: gaya rumus chat AI */
 
 /* ════════════════════════════════════════════════════════════════════════
    CraftLife UI v2.1 — "AURORA CRAFT II" Design System
@@ -1100,6 +1101,81 @@ select.ct-input option { background: var(--ct-bg2); color: var(--ct-text); }
 .ct-nlm-tab.is-active {
   background: color-mix(in srgb, var(--ct-primary) 20%, transparent);
   border-color: color-mix(in srgb, var(--ct-primary) 55%, transparent);
+  color: var(--ct-text);
+}
+/* C01 — divider seret + strip collapse panel Sumber/Studio (desktop saja).
+   TANPA `@layer` (lihat catatan A15 di atas); tanpa backdrop-filter (R10); tanpa
+   animasi selama drag — hanya perubahan warna garis + kursor. */
+.ct-nlm-splitter {
+  position: relative;
+  flex: 0 0 auto;
+  width: 12px;
+  margin: 0 -3px;
+  cursor: col-resize;
+  touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.ct-nlm-splitter::before {
+  content: "";
+  width: 2px; height: 100%;
+  border-radius: 2px;
+  background: transparent;
+}
+.ct-nlm-splitter:hover::before, .ct-nlm-splitter.is-drag::before {
+  background: color-mix(in srgb, var(--ct-primary) 65%, transparent);
+}
+.ct-nlm-splitter.is-drag { cursor: col-resize; }
+.ct-nlm-splitbtn {
+  position: absolute;
+  display: flex; align-items: center; justify-content: center;
+  width: 1.35rem; height: 1.35rem; border-radius: 999px;
+  background: var(--ct-nlm-surface-2);
+  border: 1px solid var(--ct-nlm-line);
+  color: var(--ct-nlm-dim);
+  opacity: 0;
+}
+.ct-nlm-splitter:hover .ct-nlm-splitbtn, .ct-nlm-splitbtn:focus-visible { opacity: 1; }
+.ct-nlm-splitbtn:hover { color: var(--ct-text); border-color: color-mix(in srgb, var(--ct-primary) 55%, transparent); }
+.ct-nlm-splitbtn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ct-primary) 70%, transparent);
+  outline-offset: 1px;
+}
+.ct-nlm-strip {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  background: color-mix(in srgb, var(--ct-nlm-surface) 70%, transparent);
+  border: 1px solid var(--ct-nlm-line-soft);
+  border-radius: var(--ct-r-lg);
+  color: var(--ct-nlm-dim);
+}
+.ct-nlm-strip:hover { color: var(--ct-text); border-color: color-mix(in srgb, var(--ct-primary) 45%, transparent); }
+.ct-nlm-strip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ct-primary) 70%, transparent);
+  outline-offset: 1px;
+}
+.ct-nlm-strip-label {
+  writing-mode: vertical-rl;
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-height: 9rem;
+}
+/* C03 — potongan panduan kartu sumber (maks 2 baris). */
+.ct-guide-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* C02 — overlay drag-and-drop berkas sumber (tanpa backdrop-filter, R10). */
+.ct-drop-active {
+  border-color: color-mix(in srgb, var(--ct-primary) 60%, transparent);
+}
+.ct-drop-overlay {
+  background: color-mix(in srgb, var(--ct-primary) 14%, rgba(2, 6, 12, 0.72));
+  border: 2px dashed color-mix(in srgb, var(--ct-primary) 70%, transparent);
   color: var(--ct-text);
 }
 .ct-nlm-railbtn {

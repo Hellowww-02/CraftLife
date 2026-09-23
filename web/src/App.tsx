@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar';
 import { ToastContainer } from './components/ToastContainer';
 import { DownloadToaster } from './components/DownloadToaster';
 import { UndoToast } from './components/UndoToast';
+import { UpdateDialogHost } from './components/UpdateDialogHost';
 import { LevelUpModal } from './components/LevelUpModal';
 import { CommandPalette } from './components/CommandPalette';
 import { QuickAddDialog } from './components/QuickAddDialog';
@@ -164,6 +165,7 @@ const MainLayout: React.FC = () => {
       <ToastContainer />
       <DownloadToaster />
       <UndoToast />
+      <UpdateDialogHost />
       <QuickAddDialog />
       <LevelUpModal />
       <CommandPalette

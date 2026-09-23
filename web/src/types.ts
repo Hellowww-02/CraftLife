@@ -93,6 +93,7 @@ export interface Habit {
   isNegative: boolean;
   positiveStreak: number;
   negativeStreak: number;
+  doneToday?: boolean;
   history: { date: string; type: 'pos' | 'neg' }[];
   createdAt: string;
   sortOrder?: number;
@@ -427,7 +428,7 @@ export interface PodcastDialogue {
 // learning_output/<judul>/ (file spec.json era PyQt; sekarang SQLite learning_generations).
 export interface LearningGeneration {
   id: string;
-  gtype: 'quiz' | 'flashcards' | 'mindmap' | 'podcast' | 'summary' | 'faq' | 'timeline' | 'study-guide';
+  gtype: 'quiz' | 'flashcards' | 'mindmap' | 'podcast' | 'summary' | 'faq' | 'timeline' | 'study-guide' | 'briefing-doc' | 'data-table' | 'infographic' | 'slide-deck';
   topic: string;
   content: string;
   fileName: string;
