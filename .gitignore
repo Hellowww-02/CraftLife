@@ -9,9 +9,12 @@ build/
 
 # Database & session
 craftlife.db
+craftlife.db-shm
+craftlife.db-wal
 session.json
 
 # Logs
+logs/
 Error.txt
 crash.log
 db_error.log
