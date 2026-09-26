@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { GameProvider, useGame } from './context/GameContext';
 import { MusicPlayerProvider } from './music/MusicPlayerContext';
 import { OnboardingWizard } from './components/views/OnboardingWizard';
@@ -13,32 +13,59 @@ import { LevelUpModal } from './components/LevelUpModal';
 import { CommandPalette } from './components/CommandPalette';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { LoginView } from './components/views/LoginView';
+import { ViewFallback } from './components/ViewFallback';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { t } from './i18n';
 
-import { DashboardView } from './components/views/DashboardView';
-import { HabitsView } from './components/views/HabitsView';
-import { DailiesView } from './components/views/DailiesView';
-import { QuestsView } from './components/views/QuestsView';
-import { SportView } from './components/views/SportView';
-import { HealthFoodView } from './components/views/HealthFoodView';
-import { ShopView } from './components/views/ShopView';
-import { CraftView } from './components/views/CraftView';
-import { PetsView } from './components/views/PetsView';
-import { EconomyView } from './components/views/EconomyView';
-import { NotesView } from './components/views/NotesView';
-import { PomodoroView } from './components/views/PomodoroView';
-import { RemindersView } from './components/views/RemindersView';
-import { FriendsView } from './components/views/FriendsView';
-import { GuildView } from './components/views/GuildView';
-import { AchievementsView } from './components/views/AchievementsView';
-import { SettingsView } from './components/views/SettingsView';
-import { ProfileView } from './components/views/ProfileView';
-import { LeaderboardView } from './components/views/LeaderboardView';
-import { LearningView } from './components/views/LearningView';
-import { MusicView } from './components/views/MusicView';
-import { LoveSpaceView } from './components/views/LoveSpaceView';
-import { CalendarView } from './components/views/CalendarView';
-import { SuppliesView } from './components/views/SuppliesView';
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const DashboardView = lazy(() => import('./components/views/DashboardView').then((m) => ({ default: m.DashboardView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const HabitsView = lazy(() => import('./components/views/HabitsView').then((m) => ({ default: m.HabitsView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const DailiesView = lazy(() => import('./components/views/DailiesView').then((m) => ({ default: m.DailiesView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const QuestsView = lazy(() => import('./components/views/QuestsView').then((m) => ({ default: m.QuestsView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const SportView = lazy(() => import('./components/views/SportView').then((m) => ({ default: m.SportView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const HealthFoodView = lazy(() => import('./components/views/HealthFoodView').then((m) => ({ default: m.HealthFoodView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const ShopView = lazy(() => import('./components/views/ShopView').then((m) => ({ default: m.ShopView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const CraftView = lazy(() => import('./components/views/CraftView').then((m) => ({ default: m.CraftView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const PetsView = lazy(() => import('./components/views/PetsView').then((m) => ({ default: m.PetsView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const EconomyView = lazy(() => import('./components/views/EconomyView').then((m) => ({ default: m.EconomyView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const NotesView = lazy(() => import('./components/views/NotesView').then((m) => ({ default: m.NotesView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const PomodoroView = lazy(() => import('./components/views/PomodoroView').then((m) => ({ default: m.PomodoroView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const RemindersView = lazy(() => import('./components/views/RemindersView').then((m) => ({ default: m.RemindersView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const FriendsView = lazy(() => import('./components/views/FriendsView').then((m) => ({ default: m.FriendsView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const GuildView = lazy(() => import('./components/views/GuildView').then((m) => ({ default: m.GuildView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const AchievementsView = lazy(() => import('./components/views/AchievementsView').then((m) => ({ default: m.AchievementsView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const SettingsView = lazy(() => import('./components/views/SettingsView').then((m) => ({ default: m.SettingsView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const ProfileView = lazy(() => import('./components/views/ProfileView').then((m) => ({ default: m.ProfileView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const LeaderboardView = lazy(() => import('./components/views/LeaderboardView').then((m) => ({ default: m.LeaderboardView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const LearningView = lazy(() => import('./components/views/LearningView').then((m) => ({ default: m.LearningView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const MusicView = lazy(() => import('./components/views/MusicView').then((m) => ({ default: m.MusicView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const LoveSpaceView = lazy(() => import('./components/views/LoveSpaceView').then((m) => ({ default: m.LoveSpaceView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const CalendarView = lazy(() => import('./components/views/CalendarView').then((m) => ({ default: m.CalendarView })));
+// D01 (v1.6.7): code-split — tiap view jadi chunk sendiri, dimuat saat dibuka.
+const SuppliesView = lazy(() => import('./components/views/SuppliesView').then((m) => ({ default: m.SuppliesView })));
 
 function wantLoginScreen() {
   const params = new URLSearchParams(window.location.search);
@@ -54,6 +81,7 @@ const MainLayout: React.FC = () => {
   const [activeView, setActiveView] = useState<ActiveView>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -62,6 +90,15 @@ const MainLayout: React.FC = () => {
         setPaletteOpen((v) => !v);
       }
       if (e.key === 'Escape') setPaletteOpen(false);
+      // D04 (v1.6.7): `?` membuka bantuan pintasan — kecuali sedang mengetik.
+      if (e.key === '?') {
+        const el = e.target as HTMLElement | null;
+        const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+        if (!typing) {
+          e.preventDefault();
+          setShortcutsOpen(true);
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -158,7 +195,11 @@ const MainLayout: React.FC = () => {
         />
 
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
-          <div key={activeView} className={`ct-view${activeView === 'music' ? ' h-full' : ''}`}>{renderActiveView()}</div>
+          <div key={activeView} className={`ct-view${activeView === 'music' ? ' h-full' : ''}`}>
+            <ErrorBoundary key={activeView}>
+              <Suspense fallback={<ViewFallback />}>{renderActiveView()}</Suspense>
+            </ErrorBoundary>
+          </div>
         </main>
       </div>
 
@@ -173,6 +214,7 @@ const MainLayout: React.FC = () => {
         onClose={() => setPaletteOpen(false)}
         onSelectView={(v) => setActiveView(v)}
       />
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     </div>
   );
 };
@@ -250,7 +292,9 @@ export default function App() {
       {/* P57: music engine global — <audio> hidup di luar switch view,
           sehingga musik tidak berhenti saat pindah halaman. */}
       <MusicPlayerProvider>
-        <HydrationGate />
+        <ErrorBoundary>
+          <HydrationGate />
+        </ErrorBoundary>
       </MusicPlayerProvider>
     </GameProvider>
   );

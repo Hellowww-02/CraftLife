@@ -47,6 +47,10 @@ export interface MusicPlayerApi {
   toggleRepeat: () => void;
   /** Hentikan total (logout / ditutup shell PyQt): pause + reset + hentikan alarm. */
   stopAll: () => void;
+  /** E03: sisa detik timer tidur (0 = mati). */
+  sleepLeftSec: number;
+  /** E03: set timer tidur menit; 0 membatalkan. */
+  setSleepTimer: (minutes: number) => void;
 }
 
 const MusicPlayerContext = createContext<MusicPlayerApi | null>(null);
@@ -67,6 +71,10 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isMuted, setIsMuted] = useState(false);
   const [progressMs, setProgressMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
+  // E03: timer tidur — pause otomatis saat habis (ref agar timeout stabil).
+  const [sleepLeftSec, setSleepLeftSec] = useState(0);
+  const sleepTimerRef = useRef(0);
+  const sleepTickRef = useRef(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // Salinan state utk handler event audio (listener di-attach SEKALI, tanpa re-attach).
@@ -132,7 +140,31 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (a && a.duration) { a.currentTime = ms / 1000; setProgressMs(ms); }
   }, []);
 
+  const setSleepTimer = useCallback((minutes: number) => {
+    window.clearTimeout(sleepTimerRef.current);
+    window.clearInterval(sleepTickRef.current);
+    if (minutes <= 0) {
+      setSleepLeftSec(0);
+      return;
+    }
+    const endsAt = Date.now() + minutes * 60000;
+    setSleepLeftSec(minutes * 60);
+    sleepTickRef.current = window.setInterval(() => {
+      setSleepLeftSec(Math.max(0, Math.round((endsAt - Date.now()) / 1000)));
+    }, 1000);
+    sleepTimerRef.current = window.setTimeout(() => {
+      window.clearInterval(sleepTickRef.current);
+      setSleepLeftSec(0);
+      // Pause langsung (bukan toggle) — aman walau sudah pause.
+      try { audioRef.current?.pause(); } catch { /* ignore */ }
+      setIsPlaying(false);
+    }, minutes * 60000);
+  }, []);
+
   const stopAll = useCallback(() => {
+    window.clearTimeout(sleepTimerRef.current);
+    window.clearInterval(sleepTickRef.current);
+    setSleepLeftSec(0);
     const a = audioRef.current;
     if (a) {
       try { a.pause(); a.removeAttribute('src'); a.load(); } catch { /* ignore */ }
@@ -181,6 +213,14 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     else if (!isPlaying) { a.pause(); }
   }, [playSrc, isPlaying, volume, isMuted]);
 
+  // E03: bersihkan timer tidur saat provider dilepas.
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(sleepTimerRef.current);
+      window.clearInterval(sleepTickRef.current);
+    };
+  }, []);
+
   // P57: hook global untuk shell PyQt (web_shell.closeEvent / MainPyQt6._logout)
   // dan untuk logout dari UI web — musik berhenti seketika.
   useEffect(() => {
@@ -211,6 +251,8 @@ export const MusicPlayerProvider: React.FC<{ children: React.ReactNode }> = ({ c
     toggleShuffle,
     toggleRepeat,
     stopAll,
+    sleepLeftSec,
+    setSleepTimer,
   };
 
   return (
