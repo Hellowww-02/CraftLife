@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { downloadApiFile, downloadTargetInfo } from '../../api/client';
 import { DEFAULT_FOODS } from '../../data/gameData';
 import { t } from '../../i18n';
-import { Salad, Droplets, Plus, Trash2, Search, LineChart as LineIcon, ChefHat, X, Download, ChevronLeft, ChevronRight, Activity } from 'lucide-react';
+import { Salad, Droplets, Plus, Trash2, Search, LineChart as LineIcon, ChefHat, X, Download, ChevronLeft, ChevronRight, Activity, ClipboardList, Pencil, Target } from 'lucide-react';
 import { LineChart } from '../charts';
 
 // ── trv: terjemahan dengan interpolasi {var} (mendukung spec format {v:.1f}) ──
@@ -80,6 +81,7 @@ export const HealthFoodView: React.FC = () => {
   const calBarColor = calPct >= 100 ? '#e05050' : calPct >= 80 ? '#f0a800' : '#80c000';
 
   const [editGoals, setEditGoals] = useState(false);
+  useEscapeClose(editGoals, () => setEditGoals(false));
   const [goalForm, setGoalForm] = useState({ calories: 2000, protein: 50, carbs: 250, fat: 70 });
   const openGoals = () => { setGoalForm({ ...goals }); setEditGoals(true); };
 
@@ -88,6 +90,7 @@ export const HealthFoodView: React.FC = () => {
   const [waterGoalInput, setWaterGoalInput] = useState(2500);
   const [waterCustom, setWaterCustom] = useState(1000);
   const [waterGoalOpen, setWaterGoalOpen] = useState(false);
+  useEscapeClose(waterGoalOpen, () => setWaterGoalOpen(false));
   const addWater = async (amount: number) => {
     try {
       const res = await life.addWater(amount, day);
@@ -179,6 +182,7 @@ export const HealthFoodView: React.FC = () => {
   const [recipeCreateOpen, setRecipeCreateOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  useEscapeClose(customOpen, () => setCustomOpen(false));
   const [custom, setCustom] = useState({ name: '', calories: 200, protein: 15, carbs: 20, fat: 5 });
 
   useEffect(() => {
@@ -312,7 +316,7 @@ export const HealthFoodView: React.FC = () => {
       {/* ── Water section (parity _build_water_section) ── */}
       <div className="ct-panel p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Droplets className="w-4 h-4 text-cyan-400" /> {t('food_tab_water', '💧 Tracker Air')}</h3>
+          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Droplets className="w-4 h-4 text-cyan-400" /> {t('food_tab_water', 'Tracker Air')}</h3>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-300">{trv('food_water_goal', { goal: water.goalMl }, `Goal: ${water.goalMl} ml`)}</span>
             <button type="button" onClick={() => { setWaterGoalInput(water.goalMl); setWaterGoalOpen(true); }} className="ct-btn ct-btn-gold ct-btn-sm">{t('food_water_set_goal', 'Atur Target')}</button>
@@ -358,7 +362,7 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── BMI section (parity _build_bmi_section) ── */}
       <div className="ct-panel p-4 space-y-3">
-        <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> {t('food_bmi_title', '📏 BMI & Profil Tubuh')}</h3>
+        <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> {t('food_bmi_title', 'BMI & Profil Tubuh')}</h3>
         <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
           <label className="space-y-1">
             <span className="text-slate-400">{t('food_bmi_height', 'Tinggi (cm)')}</span>
@@ -456,7 +460,7 @@ export const HealthFoodView: React.FC = () => {
 
         {/* Catatan makanan tanggal ini (parity: grouped per meal, move cross-meal, delete) */}
         <div className="space-y-3">
-          <h3 className="font-bold text-sm text-slate-200">{t('food_log_group_title', '📝 Catatan Makanan')}</h3>
+          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><ClipboardList className="w-4 h-4 text-teal-400" /> {t('food_log_group_title', 'Catatan Makanan')}</h3>
           {foodLogs.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-8 bg-slate-900/40 rounded-xl border border-slate-800/80">{t('food_no_logs_today', 'Belum ada catatan makanan untuk tanggal ini.')}</p>
           ) : (
@@ -507,7 +511,7 @@ export const HealthFoodView: React.FC = () => {
 
       {/* ── Health input (parity _build_health_input_section) ── */}
       <div className="ct-panel p-4 space-y-3">
-        <h3 className="font-bold text-sm text-slate-200">{t('health_tab_input', '📥 Input Data Kesehatan')}</h3>
+        <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><Pencil className="w-4 h-4 text-emerald-400" /> {t('health_tab_input', 'Input Data Kesehatan')}</h3>
         <div className="grid md:grid-cols-3 gap-4 text-xs">
           <div className="space-y-2 rounded-xl bg-slate-950/50 border border-slate-800 p-3">
             <div className="font-bold text-slate-300">{t('health_activity_group', '🏃 Aktivitas Fisik')}</div>
@@ -551,7 +555,7 @@ export const HealthFoodView: React.FC = () => {
       {hist && (
         <div className="space-y-4">
           <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4">
-            <h3 className="font-bold text-sm text-slate-200 mb-3 flex items-center gap-2"><LineIcon className="w-4 h-4 text-teal-400" /> {t('health_avg_7days', '📊 Rata-rata 7 Hari')}</h3>
+            <h3 className="font-bold text-sm text-slate-200 mb-3 flex items-center gap-2"><LineIcon className="w-4 h-4 text-teal-400" /> {t('health_avg_7days', 'Rata-rata 7 Hari')}</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {([
                 ['health_avg_steps', String(hist.avg7?.steps ?? 0), '#80c000', ''],
@@ -602,7 +606,7 @@ export const HealthFoodView: React.FC = () => {
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
             <ChefHat className="w-5 h-5 text-amber-400" />
-            <h3 className="font-bold text-sm text-slate-200">{t('food_recipes', '📖 Resep Makanan')}</h3>
+            <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2"><ChefHat className="w-4 h-4 text-orange-400" /> {t('food_recipes', 'Resep Makanan')}</h3>
           </div>
           <button type="button" onClick={() => setRecipeCreateOpen(true)} className="px-3 py-1.5 rounded-xl bg-amber-600 text-white text-xs font-bold flex items-center gap-1">
             <Plus className="w-3.5 h-3.5" /> {t('health_manage_btn', 'Manage / New')}
@@ -635,7 +639,7 @@ export const HealthFoodView: React.FC = () => {
       {customOpen && (
         <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="ct-dialog max-w-md w-full p-6 space-y-4">
-            <h3 className="text-lg font-black text-slate-100">{t('food_add_custom', '➕ Tambah Makanan Kustom')}</h3>
+            <h3 className="text-lg font-black text-slate-100 flex items-center gap-2"><Plus className="w-4 h-4 text-teal-400" /> {t('food_add_custom', 'Tambah Makanan Kustom')}</h3>
             <form onSubmit={addCustomAndLog} className="space-y-3 text-xs">
               <input type="text" required value={custom.name} onChange={(e) => setCustom((c) => ({ ...c, name: e.target.value }))} placeholder={t('food_custom_ph', 'Contoh: Smoothie Buah')} className="ct-input w-full px-3 py-2 rounded-xl" />
               <div className="grid grid-cols-2 gap-3">
@@ -659,7 +663,7 @@ export const HealthFoodView: React.FC = () => {
       {editGoals && (
         <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-3">
-            <h3 className="text-lg font-black text-slate-100">{t('health_daily_targets', '🎯 Target Nutrisi Harian')}</h3>
+            <h3 className="text-lg font-black text-slate-100 flex items-center gap-2"><Target className="w-4 h-4 text-rose-400" /> {t('health_daily_targets', 'Target Nutrisi Harian')}</h3>
             <label className="block text-xs text-slate-300">{t('food_calories_label', 'Kalori (kcal)')}
               <NumberInput value={goalForm.calories} onValueChange={(n) => setGoalForm((g) => ({ ...g, calories: n }))} min={500} max={10000} integer emptyValue={2000} inputClassName="ct-input w-full mt-1 px-3 py-2 rounded-xl" /></label>
             <label className="block text-xs text-slate-300">{t('food_protein_label', 'Protein (g)')}
@@ -704,7 +708,7 @@ export const HealthFoodView: React.FC = () => {
         <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="max-w-sm w-full bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-black text-slate-100">{t('food_export_format_title', '📤 Ekspor Data Nutrisi')}</h3>
+              <h3 className="text-base font-black text-slate-100 flex items-center gap-2"><Download className="w-4 h-4 text-slate-400" /> {t('food_export_format_title', 'Ekspor Data Nutrisi')}</h3>
               <button onClick={() => setExportOpen(false)} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
             </div>
             <p className="text-xs text-slate-400">{t('economy_export_label', 'Pilih format file:')} ({t('food_export_days_hint', 'last 30 days')})</p>
@@ -761,7 +765,7 @@ export const NewRecipeModal: React.FC<{ onClose: () => void; onDone: () => void 
     <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="ct-dialog max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-black text-slate-100">{t('food_recipe_new_title', '🍲 Buat Resep Baru')}</h3>
+          <h3 className="text-lg font-black text-slate-100 flex items-center gap-2"><ChefHat className="w-4 h-4 text-orange-400" /> {t('food_recipe_new_title', 'Buat Resep Baru')}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">

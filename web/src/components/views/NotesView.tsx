@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { life } from '../../api/life';
@@ -7,7 +8,7 @@ import { MATH_PALETTE } from '../../data/mathSymbols';
 import { NoteAttachments, attachmentUrl } from '../notes/NoteAttachments';
 import {
   Archive, ArchiveRestore, ChevronDown, ChevronRight, Copy, FolderPlus, FolderX,
-  Paperclip, Pencil, Plus, Save, Search, Send, Sigma, Smile, Trash2, Type, X,
+  Paperclip, Pencil, Pin, Plus, Save, Search, Send, Sigma, Smile, Trash2, Type, X, FileText,
 } from 'lucide-react';
 
 const trv = (key: string, vars: Record<string, string | number>, fb: string) =>
@@ -58,8 +59,11 @@ export const NotesView: React.FC<NotesViewProps> = () => {
   const [symbolTab, setSymbolTab] = useState<string>('sym');
   const [showLatexMenu, setShowLatexMenu] = useState(false);
   const [mathChunks, setMathChunks] = useState<{ raw: string; converted: string }[] | null>(null);
+  useEscapeClose(mathChunks !== null, () => setMathChunks(null));
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
+  useEscapeClose(iconPickerFor !== null, () => setIconPickerFor(null));
   const [renameFor, setRenameFor] = useState<{ id: string; name: string } | null>(null);
+  useEscapeClose(renameFor !== null, () => setRenameFor(null));
   const [fractionFor, setFractionFor] = useState<{ num: string; den: string } | null>(null);
   const [learnPicker, setLearnPicker] = useState(false);
   const [newFolderName, setNewFolderName] = useState<string | null>(null);
@@ -110,7 +114,8 @@ export const NotesView: React.FC<NotesViewProps> = () => {
       else if (fid === 0) list = list.filter((n) => !n.folderId);
       else list = list.filter((n) => n.folderId && new Set(subtreeIds(String(fid))).has(String(n.folderId)));
     }
-    return list;
+    // G02: yg disematkan selalu di atas (sort stabil → urutan relatif utuh).
+    return [...list].sort((a, b) => Number(!!b.isPinned) - Number(!!a.isPinned));
   }, [notes, currentFolderId, searchText, showArchived, tree]);
 
   const activeNote = notes.find((n) => String(n.id) === String(currentNoteId)) || null;
@@ -355,7 +360,7 @@ export const NotesView: React.FC<NotesViewProps> = () => {
       {/* ── Header (parity _page_header + actions) ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-2xl font-black text-slate-100">{t('notes_title', '📝 Catatan')}</h2>
+          <h2 className="text-2xl font-black text-slate-100 flex items-center gap-2"><FileText className="w-6 h-6 text-slate-300" /> {t('notes_title', 'Catatan')}</h2>
           <p className="text-xs text-slate-400 mt-1">{t('nav_notes', 'Notes')}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -467,6 +472,16 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                     {n.title || 'Untitled'}
                   </span>
                   {n.isArchived && <Archive className="w-3 h-3 text-slate-500 shrink-0" />}
+                  {/* G02: sematkan catatan */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); updateNote(n.id, n.title || 'Untitled', n.content || '', n.folderId ?? null, !n.isPinned); }}
+                    title={n.isPinned ? t('note_unpin', 'Lepas sematan') : t('note_pin', 'Sematkan')}
+                    aria-label={n.isPinned ? t('note_unpin', 'Lepas sematan') : t('note_pin', 'Sematkan')}
+                    aria-pressed={!!n.isPinned}
+                    className="shrink-0 p-0.5 rounded hover:bg-slate-700/60"
+                  >
+                    <Pin className={`w-3 h-3 ${n.isPinned ? 'text-amber-400 fill-amber-400' : 'text-slate-600'}`} />
+                  </button>
                   {/* Reorder via ↑↓ (drag-drop browser→ tombol parity konversi) */}
                   {currentFolderId > 0 && !searchText.trim() && (
                     <span className="hidden group-hover:inline-flex gap-0.5" onClick={(e) => e.stopPropagation()}>

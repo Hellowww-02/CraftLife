@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost } from '../../api/client';
 import { t } from '../../i18n';
+import { Trophy } from 'lucide-react';
 
 // Parity MainPyQt6.AchievementPage: search + combo kategori (all + 15),
 // grid kartu 3 kolom; nama/deskripsi SELALU via db.tr_achievement (server
@@ -88,7 +89,7 @@ export const AchievementsView: React.FC = () => {
   return (
     <div className="space-y-5 w-full mx-auto max-w-6xl">
       <div>
-        <h2 className="text-xl font-black text-slate-100">🏆 {t('nav_achievements', 'Achievement')}</h2>
+        <h2 className="text-xl font-black text-slate-100 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> {t('nav_achievements', 'Achievement')}</h2>
         <p className="text-xs text-slate-400 mt-1">{t('achievement_subtitle', 'A collection of milestones across every activity. Claim the reward for each success.')}</p>
       </div>
 

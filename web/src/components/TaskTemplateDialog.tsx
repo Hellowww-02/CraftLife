@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useGame } from '../context/GameContext';
 import { life } from '../api/life';
 import { t } from '../i18n';
@@ -21,6 +23,8 @@ export const TaskTemplateDialog: React.FC<{
   onClose: () => void;
 }> = ({ mode, open, onClose }) => {
   const { lang, showToast } = useGame();
+  useEscapeClose(open, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const [templates, setTemplates] = useState<{
     key: string;
     icon: string;
@@ -66,7 +70,7 @@ export const TaskTemplateDialog: React.FC<{
 
   return (
     <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="ct-dialog max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-hidden flex flex-col">
+      <div ref={trapRef} className="ct-dialog max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-hidden flex flex-col">
         <div>
           <h3 className="text-lg font-black text-slate-100">
             {t('template_title', '📋 Template Habit Siap Pakai')}

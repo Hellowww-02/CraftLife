@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { useMusicPlayer, type LibraryEntry } from '../../music/MusicPlayerContext';
 import { LyricsDrawer } from '../../components/music/LyricsDrawer';
@@ -28,6 +29,7 @@ import {
   Download,
   ChevronDown,
   Palette,
+  Timer,
 } from 'lucide-react';
 
 // ── Tipe (parity MusicPage PyQt) ─────────────────────────────────────────────
@@ -149,6 +151,7 @@ export const MusicView: React.FC = () => {
 
   // yt-dlp downloader modal (parity _open_downloader)
   const [dlOpen, setDlOpen] = useState(false);
+  useEscapeClose(dlOpen, () => setDlOpen(false));
   const [ytQuery, setYtQuery] = useState('');
   const [ytBusy, setYtBusy] = useState(false);
   const [ytResults, setYtResults] = useState<{ id: string; title: string; url: string }[]>([]);
@@ -158,6 +161,7 @@ export const MusicView: React.FC = () => {
 
   // Track context menu (parity _track_menu)
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
+  useEscapeClose(menuOpenFor !== null, () => setMenuOpenFor(null));
   // P59: dialog ganti icon playlist (emoji / foto dari komputer).
   const [iconDlgFor, setIconDlgFor] = useState<PlaylistEntry | null>(null);
 
@@ -257,6 +261,17 @@ export const MusicView: React.FC = () => {
   // P57: next/prev/toggle didelegasikan ke player global (antrean di provider).
   const handleNextTrack = () => music.next();
   const handlePrevTrack = () => music.prev();
+  // E03: preset timer tidur (klik berurutan 15 → 30 → 60 → mati).
+  const [sleepPreset, setSleepPreset] = useState(0);
+  useEffect(() => {
+    if (music.sleepLeftSec === 0 && sleepPreset !== 0) setSleepPreset(0);
+  }, [music.sleepLeftSec, sleepPreset]);
+  const cycleSleep = () => {
+    const presets = [0, 15, 30, 60];
+    const next = presets[(presets.indexOf(sleepPreset) + 1) % presets.length];
+    setSleepPreset(next);
+    music.setSleepTimer(next);
+  };
   const toggleTrackPlay = () => music.togglePlay();
 
   // ── Playlist actions (parity _create/_rename/_delete + _add_paths) ─────────
@@ -842,6 +857,11 @@ export const MusicView: React.FC = () => {
           <button onClick={handleNextTrack} title={tr('music_next')} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><SkipForward className="w-5 h-5" /></button>
           <button onClick={music.toggleRepeat} title={tr('music_repeat')} aria-pressed={repeat}
             className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full border ${repeat ? 'text-sky-300 bg-sky-500/25 border-sky-400/50' : 'text-slate-500 border-transparent hover:text-slate-300'}`}><Repeat className="w-4 h-4" /></button>
+          <button onClick={cycleSleep} title={tr('sleep_timer')} aria-pressed={music.sleepLeftSec > 0}
+            className={`ct-btn ct-btn-ghost ct-btn-icon-sm rounded-full border ${music.sleepLeftSec > 0 ? 'text-violet-300 bg-violet-500/25 border-violet-400/50' : 'text-slate-500 border-transparent hover:text-slate-300'}`}>
+            <Timer className="w-4 h-4" />
+            {music.sleepLeftSec > 0 && <span className="text-[10px] font-bold ml-1">{fmtTime(music.sleepLeftSec * 1000)}</span>}
+          </button>
           <button onClick={toggleLyrics} className={`ct-tab ${lyricsOpen ? 'ct-tab-on' : ''}`}>
             <Sparkles className="w-3.5 h-3.5 inline mr-1" />{tr('music_lyrics')}
           </button>

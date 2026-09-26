@@ -1,4 +1,6 @@
 import React, { useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { Image as ImageIcon, Upload, RotateCcw } from 'lucide-react';
 import { studio } from '../../api/studio';
 
@@ -38,6 +40,8 @@ export const PlaylistIconDialog: React.FC<{
   onClose: () => void;
   onSaved: () => void;
 }> = ({ playlist, tr, showToast, onClose, onSaved }) => {
+  useEscapeClose(true, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const [tab, setTab] = useState<'emoji' | 'photo'>('emoji');
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState<File | null>(null);
@@ -75,7 +79,7 @@ export const PlaylistIconDialog: React.FC<{
 
   return (
     <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="ct-dialog p-5 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} className="ct-dialog p-5 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-black flex items-center gap-2">
             <ImageIcon className="w-4 h-4 text-emerald-400" />

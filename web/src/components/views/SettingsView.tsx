@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost, saveFileToComputer, downloadTargetInfo, openDownloadsFolder } from '../../api/client';
@@ -271,6 +272,7 @@ export const SettingsView: React.FC = () => {
   const [password, setPassword] = useState('');
   const [devices, setDevices] = useState<CloudDevice[]>([]);
   const [showDevices, setShowDevices] = useState(false);
+  useEscapeClose(showDevices, () => setShowDevices(false));
 
   // Parity SettingsPage state: theme, currency, font scale, high contrast
   const [themes, setThemes] = useState<ThemeRow[]>([]);

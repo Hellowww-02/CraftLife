@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
 import { downloadApiFile, downloadTargetInfo } from '../../api/client';
 import { t } from '../../i18n';
 import { fmtChatTime } from '../../utils/serverTime';
-import { Send } from 'lucide-react';
+import { Send, MessageCircle, Search } from 'lucide-react';
 
 const tr = (key: string, vars?: Record<string, string | number>) => {
   let s = t(key, key);
@@ -27,9 +28,13 @@ export const FriendsView: React.FC = () => {
   } = useGame();
 
   const [friendName, setFriendName] = useState('');
+  // G03: filter daftar teman by nama (client-side).
+  const [friendSearch, setFriendSearch] = useState('');
   const [coupleRequests, setCoupleRequests] = useState<{ id: string; name: string; direction: string }[]>([]);
   const [profile, setProfile] = useState<any>(null);
+  useEscapeClose(profile !== null, () => setProfile(null));
   const [chatWith, setChatWith] = useState<any | null>(null);
+  useEscapeClose(chatWith !== null, () => setChatWith(null));
   const [chatMsgs, setChatMsgs] = useState<any[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLimit, setChatLimit] = useState(50);
@@ -307,7 +312,18 @@ export const FriendsView: React.FC = () => {
       {(friends || []).length > 0 && (
         <section className="space-y-2">
           <h3 className="text-sm font-black text-slate-100">{tr('friends_list')}</h3>
-          {friends.map((f: any) => {
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={friendSearch}
+              onChange={(e) => setFriendSearch(e.target.value)}
+              placeholder={tr('friends_search')}
+              aria-label={tr('friends_search')}
+              className="w-full pl-8 pr-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500"
+            />
+          </div>
+          {friends.filter((f: any) => ((f.displayName || f.name || f.username || '').toLowerCase().includes(friendSearch.trim().toLowerCase()))).map((f: any) => {
             const status = f.coupleStatus || 'friend';
             const statusText = status === 'accepted' ? tr('couple_status_couple')
               : status === 'pending' ? tr('couple_status_pending') : tr('couple_status_friend');
@@ -411,7 +427,7 @@ export const FriendsView: React.FC = () => {
         <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
           <div className="ct-dialog w-full max-w-md p-5 space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-100">💬 {chatWith.displayName || chatWith.name}</h3>
+              <h3 className="text-sm font-black text-slate-100 flex items-center gap-2"><MessageCircle className="w-4 h-4 text-sky-400" /> {chatWith.displayName || chatWith.name}</h3>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={doClearChat} title={tr('chat_clear_self')}
                   className="text-slate-400 hover:text-rose-300 text-xs">🧹</button>

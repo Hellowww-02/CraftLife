@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
@@ -35,6 +36,7 @@ const DIFFICULTIES: TaskDifficulty[] = ['easy', 'medium', 'hard', 'epic'];
 export const SportView: React.FC = () => {
   const { user, sportLogs, addSportLog, updateSportLog, completeSportLog, deleteSportLog, duplicateSportLog, reorderSportLogs, moveTaskAcrossFolders, applyTaskTemplate, showToast } = useGame();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useEscapeClose(isModalOpen, () => setIsModalOpen(false));
 
   // Form state (parity AddSportActivityDialog PyQt)
   const [form, setForm] = useState<SportFormState>({

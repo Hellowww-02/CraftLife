@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart, Package, Search, FolderOpen, Pencil } from 'lucide-react';
 import { DualLineChart, DonutChart } from '../charts';
 import { t } from '../../i18n';
 import { formatMoney as fmtMoney, currencySymbol } from '../../utils/currency';
 import { MoneyInput } from '../MoneyInput';
+import { CountUp } from '../CountUp';
 // TaskFolderBar dihapus dari Economy (bukan elemen PyQt EconomyPage — lihat komentar di atas).
 import { life } from '../../api/life';
 import { fmtYmd, addDays } from '../../utils/serverTime';
@@ -16,11 +18,11 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
     investments, addInvestment, withdrawInvestment,
     subscriptions, addSubscription, renewSubscription, deleteSubscription,
     debtNotes, addDebtNote, settleDebtNote, deleteDebtNote,
-    user, today, nowDate,
+    user, today, nowDate, lang,
   } = useGame();
   const currency = user.currency || 'IDR';
 
-  const [activeTab, setActiveTab] = useState<'transactions' | 'debts' | 'savings' | 'invest' | 'subs' | 'notes'>('transactions');
+  const [activeTab, setActiveTab] = useState<'transactions' | 'debts' | 'savings' | 'invest' | 'subs' | 'notes' | 'budgets'>('transactions');
   const [svName, setSvName] = useState('');
   const [svTarget, setSvTarget] = useState(1000000);
   // Invest (parity AddInvestmentDialog PyQt: name + icon + amount + notes)
@@ -29,8 +31,10 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [invIcon, setInvIcon] = useState('📈');
   const [invNotes, setInvNotes] = useState('');
   const [isInvestModalOpen, setIsInvestModalOpen] = useState(false);
+  useEscapeClose(isInvestModalOpen, () => setIsInvestModalOpen(false));
   // Collect return (parity _collect_return: input jumlah return manual)
   const [returnModal, setReturnModal] = useState<{ open: boolean; id: string }>({ open: false, id: '' });
+  useEscapeClose(returnModal.open, () => setReturnModal((m) => ({ ...m, open: false })));
   const [returnAmt, setReturnAmt] = useState(10000);
   // Subs (parity AddSubscriptionDialog PyQt: name + icon + amount + due + period + autorenew + notes)
   const [subName, setSubName] = useState('');
@@ -41,10 +45,13 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [subNotes, setSubNotes] = useState('');
   const [subRecurring, setSubRecurring] = useState(true);
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
+  useEscapeClose(isSubModalOpen, () => setIsSubModalOpen(false));
   const [dnName, setDnName] = useState('');
   const [dnAmt, setDnAmt] = useState(50000);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+  useEscapeClose(isTxModalOpen, () => setIsTxModalOpen(false));
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
+  useEscapeClose(isDebtModalOpen, () => setIsDebtModalOpen(false));
 
   // Transaction Form
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
@@ -85,6 +92,43 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [trendDays, setTrendDays] = useState<7 | 30 | 90>(30);
+  // D03a (v1.6.7): anggaran bulanan per kategori (data diambil langsung, bukan snapshot).
+  const [budgets, setBudgets] = useState<any[]>([]);
+  const [bdCategory, setBdCategory] = useState('');
+  const [bdAmount, setBdAmount] = useState<number>(500000);
+  const [editingBd, setEditingBd] = useState<any>(null);
+  const bdMonth = (today || '').slice(0, 7);
+  const loadBudgets = async (month?: string) => {
+    try {
+      const d = await life.getBudgets(month || bdMonth || undefined);
+      if (Array.isArray(d?.budgets)) setBudgets(d.budgets);
+    } catch {
+      // API mati: daftar anggaran kosong, tab lain tetap berfungsi (offline-first).
+    }
+  };
+  useEffect(() => { loadBudgets(); }, [bdMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bdMonthLabel = (() => {
+    try {
+      const [y, m] = bdMonth.split('-').map(Number);
+      return new Date(y, m - 1, 1).toLocaleString(lang === 'id' ? 'id-ID' : 'en-US', { month: 'long', year: 'numeric' });
+    } catch {
+      return bdMonth;
+    }
+  })();
+  const handleSaveBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cat = bdCategory.trim();
+    if (!cat) { showToast('info', t('msg_name_empty', 'Name cannot be empty!'), ''); return; }
+    if (bdAmount <= 0) { showToast('info', t('economy_amount_gt_zero', 'Amount must be greater than 0'), ''); return; }
+    try {
+      if (editingBd) await life.updateBudget(String(editingBd.id), { category: cat, amount: bdAmount });
+      else await life.addBudget({ category: cat, amount: bdAmount });
+      setBdCategory(''); setBdAmount(500000); setEditingBd(null);
+      loadBudgets();
+    } catch {
+      showToast('info', t('msg_error', 'Error'), '');
+    }
+  };
   // [P25-fix] selectedFolder dihapus — TaskFolderBar (folder strip) tidak ada di PyQt EconomyPage.
 
   // Daftar kategori unik dari transaksi (parity PyQt economy category_combo / sub-tab).
@@ -203,7 +247,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
             <Wallet className="w-4 h-4 text-blue-400" />
           </div>
           <div className={`ct-fin-num text-xl font-black mt-2 ${netBalance >= 0 ? 'text-blue-400' : 'text-rose-400'}`}>
-            {fmtMoney(netBalance, currency)}
+            <CountUp value={netBalance} format={(n) => fmtMoney(n, currency)} />
           </div>
         </div>
       </div>
@@ -349,6 +393,7 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
           <button onClick={() => setActiveTab('invest')} className={`ct-tab ${activeTab === 'invest' ? 'ct-tab-on' : ''}`}>{t('economy_tab_investments', 'Invest')}</button>
           <button onClick={() => setActiveTab('subs')} className={`ct-tab ${activeTab === 'subs' ? 'ct-tab-on' : ''}`}>{t('economy_tab_subs', 'Subs')}</button>
           <button onClick={() => setActiveTab('notes')} className={`ct-tab ${activeTab === 'notes' ? 'ct-tab-on' : ''}`}>{t('economy_tab_iou', 'IOU notes')}</button>
+          <button onClick={() => setActiveTab('budgets')} className={`ct-tab ${activeTab === 'budgets' ? 'ct-tab-on' : ''}`}>{t('economy_tab_budgets', 'Budgets')}</button>
         </div>
 
         {activeTab === 'transactions' ? (
@@ -597,6 +642,76 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
               </div>
             );
           })}
+        </div>
+      )}
+      {activeTab === 'budgets' && (
+        <div className="space-y-3">
+          <div className="text-xs font-bold text-slate-400">{t('budget_this_month', 'Anggaran bulan ini')} · {bdMonthLabel}</div>
+          <form onSubmit={handleSaveBudget} className="flex flex-wrap gap-2">
+            <input
+              value={bdCategory} onChange={(e) => setBdCategory(e.target.value)}
+              placeholder={t('budget_category_ph', 'Mis. Makanan — atau * untuk semua')}
+              list="budget-categories" aria-label={t('budget_category', 'Kategori')}
+              className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs flex-1 min-w-40"
+            />
+            <datalist id="budget-categories">
+              {uniqueCategories.map((c: string) => (<option key={c} value={c} />))}
+            </datalist>
+            <MoneyInput value={bdAmount} onValueChange={(n) => setBdAmount(n)} currency={currency} className="w-36" inputClassName="py-2 text-xs rounded-xl" />
+            <button type="submit" className="ct-btn ct-btn-success ct-btn-sm">
+              {editingBd ? t('budget_edit', 'Ubah anggaran') : t('budget_add', 'Tambah anggaran')}
+            </button>
+            {editingBd && (
+              <button type="button" onClick={() => { setEditingBd(null); setBdCategory(''); setBdAmount(500000); }} className="ct-btn ct-btn-ghost ct-btn-sm">
+                {t('btn_cancel', 'Batal')}
+              </button>
+            )}
+          </form>
+          {budgets.map((b) => {
+            const pct = Number(b.pct || 0);
+            const over = pct > 100;
+            const warn = !over && pct >= 80;
+            const bar = over ? 'bg-gradient-to-r from-red-600 to-rose-500' : warn ? 'bg-gradient-to-r from-amber-600 to-amber-400' : 'bg-gradient-to-r from-emerald-600 to-emerald-400';
+            const chip = over ? 'bg-rose-500/20 text-rose-300' : warn ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300';
+            const status = over ? t('budget_status_over', 'Jebol') : warn ? t('budget_status_warn', 'Hampir habis') : t('budget_status_ok', 'Aman');
+            return (
+              <div key={b.id} className="ct-task-card p-4 rounded-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-bold text-sm">{b.category === '*' ? t('budget_all', 'Semua pengeluaran') : b.category}</div>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${chip}`}>{status} · {Math.round(pct)}%</span>
+                </div>
+                <div className="mt-2 h-2.5 rounded-full bg-slate-800 overflow-hidden" role="progressbar" aria-valuenow={Math.round(Math.min(pct, 100))} aria-valuemin={0} aria-valuemax={100} aria-label={b.category}>
+                  <div className={`h-full ct-bar-fill transition-all ${bar}`} style={{ width: `${Math.max(3, Math.min(pct, 100))}%` }} />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="text-slate-400">
+                    {t('budget_spent', 'Terpakai')} <span className="font-extrabold text-slate-100">{fmtMoney(b.spent, currency)}</span>
+                    {' / '}{fmtMoney(b.amount, currency)}
+                    <span className="ml-2">{t('budget_remaining', 'Sisa')} <span className={`font-bold ${Number(b.remaining) < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{fmtMoney(b.remaining, currency)}</span></span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => { setEditingBd(b); setBdCategory(b.category === '*' ? '*' : b.category); setBdAmount(Math.round(Number(b.amount) || 0)); }}
+                      className="ct-btn ct-btn-secondary ct-btn-sm" title={t('budget_edit', 'Ubah anggaran')}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => { if (window.confirm(t('budget_delete_confirm', 'Hapus anggaran ini?'))) life.deleteBudget(String(b.id)).then(() => loadBudgets()).catch(() => undefined); }}
+                      className="text-rose-400 p-1" title={t('budget_delete', 'Hapus anggaran')}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {budgets.length === 0 && (
+            <div className="text-center py-12 text-slate-400 bg-slate-900/40 rounded-2xl border border-slate-800/80">
+              <p className="text-sm font-semibold">{t('budget_empty', 'Belum ada anggaran.')}</p>
+            </div>
+          )}
         </div>
       )}
       {activeTab === 'invest' && (

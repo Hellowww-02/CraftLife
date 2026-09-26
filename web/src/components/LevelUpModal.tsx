@@ -1,17 +1,21 @@
 import React from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useGame } from '../context/GameContext';
 import { Sparkles, Heart, Zap, Coins, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const LevelUpModal: React.FC = () => {
   const { levelUpInfo, closeLevelUpModal, lang, user } = useGame();
+  useEscapeClose(!!levelUpInfo, closeLevelUpModal);
+  const trapRef = useFocusTrap<HTMLDivElement>(!!levelUpInfo);
 
   if (!levelUpInfo) return null;
 
   return (
     <AnimatePresence>
       <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
-        <motion.div
+        <motion.div ref={trapRef}
           initial={{ scale: 0.8, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.8, opacity: 0 }}

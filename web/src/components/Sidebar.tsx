@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useGame } from '../context/GameContext';
 import { t } from '../i18n';
 import { ActiveView, NavTab } from '../types';
@@ -75,6 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
 }) => {
   const { lang, user, dailies, quests, achievements } = useGame();
+  useEscapeClose(!!isOpen, () => onClose?.());
 
   const currentTab = activeView || activeTab || 'dashboard';
   const handleSelect = (tab: ActiveView) => {

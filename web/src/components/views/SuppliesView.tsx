@@ -227,7 +227,7 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
       {/* ── Per-kategori panel (parity supplies_per_category) ── */}
       {cats.length > 0 && (
         <div className="ct-panel rounded-2xl p-4">
-          <h3 className="text-xs font-bold text-slate-300 mb-2">{t('supplies_per_category', '📂 Per Category')}</h3>
+          <h3 className="text-xs font-bold text-slate-300 mb-2">{t('supplies_per_category', 'Per Category')}</h3>
           <div className="space-y-1">
             {cats.map((c) => (
               <div key={c.name} className="flex items-center justify-between text-xs text-slate-300">

@@ -8,6 +8,7 @@ import { rpg } from '../api/rpg';
 import { saveBlobToFile } from '../api/client';
 import { useGame } from '../context/GameContext';
 import { t } from '../i18n';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   currencySymbol, ensureCurrencyRates, formatMoney, getCurrencyRates,
 } from '../utils/currency';
@@ -110,6 +111,7 @@ export const YearWrappedDialog: React.FC<{
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   const yearOptions = useMemo(
     () => wrappedYearOptions([...(years || []), ...(w?.year ? [w.year] : []), new Date().getFullYear()]),
@@ -167,6 +169,7 @@ export const YearWrappedDialog: React.FC<{
   return (
     <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={trapRef}
         className="ct-dialog max-w-lg w-full p-6 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         data-testid="year-wrapped-dialog"

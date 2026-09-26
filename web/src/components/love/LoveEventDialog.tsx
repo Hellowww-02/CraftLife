@@ -11,6 +11,8 @@
  * pratinjau hitung mundur langsung saat tanggal dipilih.
  */
 import React, { useMemo, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { X, CalendarDays, MapPin, Bell, Repeat, Star, StickyNote, Check } from 'lucide-react';
 import { daysUntil, nextOccurrence } from './eventUtils';
 
@@ -89,6 +91,8 @@ export function buildInitialForm(initial?: Partial<LoveEventForm> | null): LoveE
 const LoveEventDialog: React.FC<LoveEventDialogProps> = ({
   open, mode, initial, onClose, onSave, saving, today, tr,
 }) => {
+  useEscapeClose(open, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   // Nilai awal dihitung saat render (bukan lewat useEffect) supaya mode edit langsung
   // terisi — termasuk catatan — dan bisa diverifikasi dengan render server.
   // Parent me-remount lewat prop `key` setiap kali dialog dibuka.
@@ -149,6 +153,7 @@ const LoveEventDialog: React.FC<LoveEventDialogProps> = ({
   return (
     <div className="ct-backdrop fixed inset-0 z-[120] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={trapRef}
         className="ct-dialog w-full max-w-lg p-5 space-y-3.5 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >

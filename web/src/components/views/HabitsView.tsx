@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
 import { t } from '../../i18n';
@@ -11,6 +12,7 @@ export const HabitsView: React.FC = () => {
   const { habits, addHabit, editHabit, duplicateHabit, deleteHabit, triggerHabit, reorderHabits, moveTaskAcrossFolders, lang } = useGame();
   const habitFolders = useModeFolders('habit');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 

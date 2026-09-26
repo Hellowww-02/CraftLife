@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { DEFAULT_FOODS } from '../../data/gameData';
-import { Salad, Droplets, Plus, Trash2, Search, RotateCcw, LineChart as LineIcon, ChefHat, X } from 'lucide-react';
+import { Salad, Droplets, Plus, Trash2, Search, RotateCcw, LineChart as LineIcon, ChefHat, X, Star } from 'lucide-react';
+import { t } from '../../i18n';
 import { LineChart, DonutChart } from '../charts';
 
 type CatalogFood = {
@@ -24,7 +26,14 @@ export const NutritionView: React.FC = () => {
   const [selectedMealType, setSelectedMealType] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack'>('lunch');
   const [portionInput, setPortionInput] = useState<number>(1);
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
+  useEscapeClose(isCustomModalOpen, () => setIsCustomModalOpen(false));
   const [catalog, setCatalog] = useState<CatalogFood[]>([]);
+  // D03b (v1.6.7): favorit + 10 terakhir (hanya saat katalog dari API).
+  const [favIds, setFavIds] = useState<Record<string, boolean>>({});
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [foodFilter, setFoodFilter] = useState<'all' | 'fav' | 'recent'>('all');
+  // F03: urutan grid (nama = urutan DB; kalori naik; protein turun).
+  const [foodSort, setFoodSort] = useState<'name' | 'cal' | 'pro'>('name');
   const [goals, setGoals] = useState({ calories: 2000, protein: 50, carbs: 250, fat: 70 });
   const [editingGoals, setEditingGoals] = useState(false);
   const [waterGoal, setWaterGoal] = useState(waterLog.targetMl || 2000);
@@ -33,12 +42,14 @@ export const NutritionView: React.FC = () => {
   type Recipe = { id: string; name: string; icon: string; servingSize: number; notes: string; items: { foodId: string; name: string; quantity: number }[] };
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [recipeModal, setRecipeModal] = useState(false);
+  useEscapeClose(recipeModal, () => setRecipeModal(false));
   const [rcName, setRcName] = useState('');
   const [rcIcon, setRcIcon] = useState('🍲');
   const [rcServing, setRcServing] = useState(1);
   const [rcNotes, setRcNotes] = useState('');
   const [rcIngredients, setRcIngredients] = useState<{ foodId: string; quantity: number }[]>([{ foodId: '', quantity: 1 }]);
   const [rcLogTarget, setRcLogTarget] = useState<Recipe | null>(null);
+  useEscapeClose(rcLogTarget !== null, () => setRcLogTarget(null));
 
   // Custom Food Form
   const [customName, setCustomName] = useState('');
@@ -53,6 +64,12 @@ export const NutritionView: React.FC = () => {
       if (d.goals) setGoals(d.goals);
     }).catch(() => undefined);
     life.listRecipes().then((d) => setRecipes(d?.recipes || [])).catch(() => setRecipes([]));
+    life.foodFavorites().then((d) => {
+      const ids: Record<string, boolean> = {};
+      (d?.favorites || []).forEach((f: any) => { ids[String(f.id)] = true; });
+      setFavIds(ids);
+    }).catch(() => undefined);
+    life.foodRecent().then((d) => setRecentIds((d?.recent || []).map((f: any) => String(f.id)))).catch(() => setRecentIds([]));
   }, [mealLogs.length]);
 
   const loadRecipes = () => {
@@ -87,9 +104,29 @@ export const NutritionView: React.FC = () => {
         fat: f.fat,
       }));
 
-  const filteredFoods = dbFoods.filter((f) =>
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const fromApi = catalog.length > 0;
+  const filteredFoods = (() => {
+    const q = searchQuery.toLowerCase();
+    let list = dbFoods.filter((f) => f.name.toLowerCase().includes(q));
+    if (foodFilter === 'fav') list = list.filter((f) => favIds[f.id]);
+    if (foodFilter === 'recent') {
+      const order = new Map(recentIds.map((id, i) => [id, i]));
+      list = list.filter((f) => order.has(f.id)).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    } else if (foodSort === 'cal') {
+      list = [...list].sort((a, b) => a.calories - b.calories);
+    } else if (foodSort === 'pro') {
+      list = [...list].sort((a, b) => b.protein - a.protein);
+    }
+    return list;
+  })();
+
+  const toggleFav = (food: CatalogFood) => {
+    const next = !favIds[food.id];
+    setFavIds({ ...favIds, [food.id]: next });
+    life.setFoodFavorite(food.id, next).catch(() => {
+      setFavIds((prev) => ({ ...prev, [food.id]: !next }));
+    });
+  };
 
   const totalCalories = mealLogs.reduce((acc, m) => acc + m.calories, 0);
   const totalProtein = Math.round(mealLogs.reduce((acc, m) => acc + m.protein, 0) * 10) / 10;
@@ -314,6 +351,18 @@ export const NutritionView: React.FC = () => {
                 emptyValue={1}
                 inputClassName="w-12 bg-slate-800 text-slate-100 rounded px-1.5 py-0.5 text-center font-bold"
               />
+              {/* F03: preset porsi cepat */}
+              {([0.5, 1, 2] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setPortionInput(v)}
+                  aria-pressed={portionInput === v}
+                  title={`${lang === 'id' ? 'Porsi' : 'Portion'} ${v}×`}
+                  className={`px-1.5 py-0.5 rounded-lg font-bold transition-colors ${portionInput === v ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}
+                >
+                  {v === 0.5 ? '½×' : `${v}×`}
+                </button>
+              ))}
             </div>
 
             <button
@@ -323,6 +372,37 @@ export const NutritionView: React.FC = () => {
               + Custom
             </button>
           </div>
+
+          {fromApi && (
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl text-xs w-fit" role="tablist" aria-label={t('food_database', 'Database Makanan')}>
+              {(['all', 'fav', 'recent'] as const).map((f) => (
+                <button
+                  key={f} role="tab" aria-selected={foodFilter === f}
+                  onClick={() => setFoodFilter(f)}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${foodFilter === f ? 'bg-teal-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                  {f === 'all' ? t('food_filter_all', lang === 'id' ? 'Semua' : 'All') : f === 'fav' ? t('food_filter_favorites', lang === 'id' ? 'Favorit' : 'Favorites') : t('food_filter_recent', lang === 'id' ? 'Terakhir' : 'Recent')}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* F03: sortir grid */}
+          {fromApi && foodFilter !== 'recent' && (
+            <div className="flex items-center gap-2 text-xs">
+              <label htmlFor="food-sort" className="text-slate-400 font-semibold">{t('food_sort', lang === 'id' ? 'Urut' : 'Sort')}:</label>
+              <select
+                id="food-sort"
+                value={foodSort}
+                onChange={(e) => setFoodSort(e.target.value as 'name' | 'cal' | 'pro')}
+                className="px-2 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-200 font-semibold focus:outline-none focus:border-teal-500"
+              >
+                <option value="name">{t('food_sort_name', lang === 'id' ? 'Nama A–Z' : 'Name A–Z')}</option>
+                <option value="cal">{t('food_sort_cal', lang === 'id' ? 'Kalori terendah' : 'Lowest calories')}</option>
+                <option value="pro">{t('food_sort_pro', lang === 'id' ? 'Protein tertinggi' : 'Highest protein')}</option>
+              </select>
+            </div>
+          )}
 
           {/* Grid of Foods */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
@@ -343,14 +423,32 @@ export const NutritionView: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleAddPresetFood(food)}
-                  className="px-2.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 font-bold text-xs border border-teal-500/40 flex items-center gap-1 shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Log
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {fromApi && (
+                    <button
+                      onClick={() => toggleFav(food)}
+                      title={favIds[food.id] ? t('food_fav_remove', lang === 'id' ? 'Hapus dari favorit' : 'Remove from favorites') : t('food_fav_add', lang === 'id' ? 'Tambah ke favorit' : 'Add to favorites')}
+                      aria-label={favIds[food.id] ? t('food_fav_remove', lang === 'id' ? 'Hapus dari favorit' : 'Remove from favorites') : t('food_fav_add', lang === 'id' ? 'Tambah ke favorit' : 'Add to favorites')}
+                      aria-pressed={!!favIds[food.id]}
+                      className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      <Star className={`w-4 h-4 ${favIds[food.id] ? 'text-amber-400 fill-amber-400' : 'text-slate-500'}`} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleAddPresetFood(food)}
+                    className="px-2.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 font-bold text-xs border border-teal-500/40 flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Log
+                  </button>
+                </div>
               </div>
             ))}
+            {filteredFoods.length === 0 && (
+              <div className="col-span-full text-center py-8 text-xs text-slate-400 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                {t('food_filter_empty', lang === 'id' ? 'Tidak ada makanan di filter ini.' : 'No foods in this filter.')}
+              </div>
+            )}
           </div>
         </div>
 

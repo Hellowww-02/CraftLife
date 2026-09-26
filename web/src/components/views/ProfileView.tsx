@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost, apiUploadFile, apiBase } from '../../api/client';
 import { life } from '../../api/life';
 import { t } from '../../i18n';
-import { User, Camera, Trash2, Save } from 'lucide-react';
+import { User, Camera, Trash2, Save, RotateCcw } from 'lucide-react';
 
 /** Daftar class (parity db.AVATAR_CLASSES) sebagai fallback bila katalog gagal dimuat. */
 const CLASS_KEYS = ['warrior', 'mage', 'archer', 'healer', 'rogue'];
@@ -202,6 +203,7 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
   const { user, rebirthCharacter, updateUserProfile } = useGame();
   const [status, setStatus] = useState<any>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  useEscapeClose(modalOpen, () => setModalOpen(false));
   const [confirmText, setConfirmText] = useState('');
 
   const load = () => {
@@ -274,7 +276,7 @@ const RebirthCard: React.FC<{ lang: string; showToast: (k: any, a: string, b: st
       {modalOpen && (
         <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="ct-dialog max-w-md w-full p-6 space-y-4">
-            <h3 className="text-lg font-black text-slate-100">{t('profile_rebirth_confirm_title', '🌀 Konfirmasi Rebirth')}</h3>
+            <h3 className="text-lg font-black text-slate-100 flex items-center gap-2"><RotateCcw className="w-4 h-4 text-violet-400" /> {t('profile_rebirth_confirm_title', 'Konfirmasi Rebirth')}</h3>
             <p className="text-sm font-bold text-rose-300">{t('profile_rebirth_confirm_warning', 'Anda yakin ingin melakukan Rebirth?')}</p>
             <p className="text-xs text-slate-400 leading-relaxed">{t('profile_rebirth_confirm_detail', 'Progres akan direset, tetapi inventory, pet, task, dan folder dipertahankan.')}</p>
             <p className="text-xs text-emerald-300">{t('profile_rebirth_confirm_benefit', '✅ +{xp}% XP  ·  +{gold}% Gold  (permanen)').replace('{xp}', '10').replace('{gold}', '5')}</p>

@@ -9,6 +9,8 @@
  * langsung terlihat), sehingga kenangan tidak lagi terputus dari album.
  */
 import React, { useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { X, Star, StickyNote, Image as ImageIcon, Tag, Heart, Check } from 'lucide-react';
 import { MEMORY_EMOJIS, normalizeTags, tagsToInput } from './memoryUtils';
 
@@ -75,6 +77,8 @@ const btnGhost = 'ct-btn ct-btn-secondary ct-btn-sm';
 const LoveMemoryDialog: React.FC<LoveMemoryDialogProps> = ({
   open, mode, initial, photos = [], onClose, onSave, saving, today, photoThumb, tr,
 }) => {
+  useEscapeClose(open, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   // Nilai awal dihitung sekali saat mount; pemanggil memakai `key` ber-nonce agar
   // dialog selalu segar (lihat komentar serupa di LoveEventDialog A09).
   const [form, setForm] = useState<LoveMemoryForm>(() => {
@@ -107,6 +111,7 @@ const LoveMemoryDialog: React.FC<LoveMemoryDialogProps> = ({
   return (
     <div className="ct-backdrop fixed inset-0 z-[120] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={trapRef}
         className="ct-dialog w-full max-w-lg p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         data-testid="love-memory-dialog"

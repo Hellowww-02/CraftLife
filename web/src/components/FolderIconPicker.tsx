@@ -6,6 +6,8 @@
  * + tombol reset.
  */
 import React from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { t } from '../i18n';
 
 export const FOLDER_ICON_SET: string[] = [
@@ -22,6 +24,8 @@ export const FolderIconPicker: React.FC<{
   onPick: (icon: string) => void;
   onClose: () => void;
 }> = ({ current, onPick, onClose }) => {
+  useEscapeClose(true, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const label = (icon: string) => (
     <button
       key={icon}
@@ -39,6 +43,7 @@ export const FolderIconPicker: React.FC<{
   return (
     <div className="ct-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={trapRef}
         className="bg-slate-900 border border-slate-700 rounded-2xl p-5 max-w-sm w-full shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
 import { t } from '../../i18n';
@@ -16,6 +17,7 @@ export const DailiesView: React.FC = () => {
   const { dailies, addDaily, editDaily, duplicateDaily, deleteDaily, toggleDaily, failDaily, useDailyFreeze, reorderDailies, moveTaskAcrossFolders, lang, user } = useGame();
   const dailyFolders = useModeFolders('daily');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 

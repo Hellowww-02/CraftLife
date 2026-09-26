@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { saveFileToComputer, downloadTargetInfo, downloadApiFile, apiPost, apiBase } from '../../api/client';
 import {
@@ -213,6 +214,7 @@ export const LearningView: React.FC = () => {
 
   // New notebook modal
   const [showNewNbModal, setShowNewNbModal] = useState(false);
+  useEscapeClose(showNewNbModal, () => setShowNewNbModal(false));
   const [newNbTitle, setNewNbTitle] = useState('');
   const [newNbDesc, setNewNbDesc] = useState('');
   const [newNbIcon, setNewNbIcon] = useState('📚');
@@ -236,6 +238,7 @@ export const LearningView: React.FC = () => {
   const [chatFontSize, setChatFontSize] = useState(13);
   const [studioFontSize, setStudioFontSize] = useState(13);
   const [renaming, setRenaming] = useState(false);
+  useEscapeClose(renaming, () => setRenaming(false));
   const [renameTitle, setRenameTitle] = useState('');
   // A15: ikon notebook ikut bisa diubah lewat dialog ganti nama (rail kiri).
   const [renameIcon, setRenameIcon] = useState('📚');
@@ -245,6 +248,7 @@ export const LearningView: React.FC = () => {
     id: string; title: string; content: string;
     fileName: string; mimeType: string; fileSize: number; hasFile: boolean;
   } | null>(null);
+  useEscapeClose(viewingSource !== null, () => setViewingSource(null));
   const [reextracting, setReextracting] = useState(false);
   // A07: judul notebook di topbar bisa diganti langsung (inline-rename).
   // Draf disinkronkan setiap kali notebook aktif berganti (lihat useEffect di bawah).

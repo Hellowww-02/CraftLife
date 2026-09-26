@@ -1,4 +1,6 @@
 import React from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { t } from '../i18n';
 import { X } from 'lucide-react';
 
@@ -27,9 +29,12 @@ const RANKS = [
 ];
 
 export const RankDialog: React.FC<{ rank: RankInfo; onClose: () => void }> = ({ rank, onClose }) => {
+  useEscapeClose(true, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   return (
     <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={trapRef}
         className="ct-dialog w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >

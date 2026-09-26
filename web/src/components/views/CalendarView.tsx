@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
@@ -25,6 +26,7 @@ export const CalendarView: React.FC = () => {
   const [year, setYear] = useState(now.getFullYear());
   const [holidays, setHolidays] = useState<HolidayMap>({});
   const [noteDialog, setNoteDialog] = useState<string | null>(null); // date_str
+  useEscapeClose(noteDialog !== null, () => setNoteDialog(null));
   const [draft, setDraft] = useState('');
 
   const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;

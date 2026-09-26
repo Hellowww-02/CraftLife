@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
 import { t } from '../../i18n';
@@ -12,6 +13,7 @@ export const QuestsView: React.FC = () => {
   const questFolders = useModeFolders('todo');
   const [selectedFolderFilter, setSelectedFolderFilter] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   const [isTemplateOpen, setIsTemplateOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 

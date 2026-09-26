@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import {
   Bell, BellOff, Plus, RefreshCw, Pencil, Trash2, Play, FolderOpen, X, Volume2,
 } from 'lucide-react';
@@ -75,9 +76,11 @@ export const RemindersView: React.FC = () => {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState<null | { mode: 'add' } | { mode: 'edit'; rem: ReminderItem }>(null);
+  useEscapeClose(formOpen !== null, () => setFormOpen(null));
   const [deleteTarget, setDeleteTarget] = useState<ReminderItem | null>(null);
   const [testTarget, setTestTarget] = useState<ReminderItem | null>(null);
   const [pastConfirm, setPastConfirm] = useState<(() => void) | null>(null);
+  useEscapeClose(pastConfirm !== null, () => setPastConfirm(null));
   const [err, setErr] = useState<string | null>(null);
   const [form, setForm] = useState<ReminderForm>(emptyForm(now));
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -185,6 +188,26 @@ export const RemindersView: React.FC = () => {
 
   // ── Parity _toggle_selected / _delete_selected ──
   const doToggle = () => { if (selectedId) { stopReminderLoop(); toggleReminder(selectedId); } };
+  // G01: tunda pengingat terpilih — payload penuh dgn datetime digeser
+  // (semantik = user mengedit jam manual; repeat & suara ikut utuh).
+  const snooze = (minutes: number) => {
+    const r = reminders.find((x) => x.id === selectedId);
+    if (!r) return;
+    const d = new Date(Date.now() + minutes * 60000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const reminderDatetime = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+    stopReminderLoop();
+    editReminder(r.id, {
+      title: r.title,
+      description: r.description || '',
+      reminderDatetime,
+      repeat: r.repeat,
+      repeatDays: r.repeatDays || '',
+      repeatUntil: r.repeatUntil || '',
+      soundType: r.sound,
+      soundFile: r.sound === 'custom' ? r.soundFile : undefined,
+    });
+  };
   const doDelete = () => {
     if (!deleteTarget) return;
     stopReminderLoop();
@@ -300,6 +323,19 @@ export const RemindersView: React.FC = () => {
           className="ct-btn ct-btn-sm flex items-center gap-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 disabled:opacity-40">
           <Play className="w-3.5 h-3.5" /> {tr('reminders_test')}
         </button>
+        {/* G01: tunda cepat pengingat terpilih */}
+        <span className="text-[11px] text-slate-500 font-semibold ml-1">{tr('reminder_snooze')}:</span>
+        {([
+          [10, tr('reminder_snooze_10m')],
+          [60, tr('reminder_snooze_1h')],
+          [1440, tr('reminder_snooze_tomorrow')],
+        ] as const).map(([min, label]) => (
+          <button key={min} type="button" onClick={() => snooze(min)} disabled={!selectedId}
+            title={`${tr('reminder_snooze')} ${label}`}
+            className="ct-btn ct-btn-secondary ct-btn-sm disabled:opacity-40">
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* ── Dialog tambah/edit (parity ReminderDialog) ── */}

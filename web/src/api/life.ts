@@ -19,6 +19,10 @@ export const life = {
   addCustomFood: (body: Record<string, unknown>) => apiPost<any>('/api/food/custom', body),
   logFood: (body: Record<string, unknown>) => apiPost<any>('/api/food/log', body),
   deleteFoodLog: (id: string) => apiPost<any>(`/api/food/log/${id}/delete`, {}),
+  foodFavorites: () => apiGet<any>('/api/food/favorites'),
+  foodRecent: () => apiGet<any>('/api/food/recent'),
+  setFoodFavorite: (id: string, fav: boolean) =>
+    apiPost<any>(`/api/food/${id}/favorite`, { fav }),
   nutritionGoals: () => apiGet<any>('/api/nutrition/goals'),
   saveNutritionGoals: (body: Record<string, unknown>) => apiPost<any>('/api/nutrition/goals', body),
   saveHealthGoals: (body: Record<string, unknown>) => apiPost<any>('/api/health/goals', body),
@@ -52,6 +56,11 @@ export const life = {
     apiPost<any>(`/api/economy/${id}/move`, { folderId }),
   updateEconomy: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/economy/${id}/update`, body),
+  getBudgets: (month?: string) => apiGet<any>(`/api/budgets${month ? `?month=${month}` : ''}`),
+  addBudget: (body: Record<string, unknown>) => apiPost<any>('/api/budgets', body),
+  updateBudget: (id: string, body: Record<string, unknown>) =>
+    apiPost<any>(`/api/budgets/${id}/update`, body),
+  deleteBudget: (id: string) => apiPost<any>(`/api/budgets/${id}/delete`, {}),
   updateDebt: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/debts/${id}/update`, body),
   updateSubscription: (id: string, body: Record<string, unknown>) =>

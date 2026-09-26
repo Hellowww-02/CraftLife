@@ -99,7 +99,7 @@ export const LeaderboardView: React.FC = () => {
     <div className="space-y-4 w-full mx-auto max-w-5xl">
       <div className="flex items-center gap-2">
         <Trophy className="w-6 h-6 text-amber-400" />
-        <h2 className="text-xl font-black text-slate-100">{t('leaderboard_title', '🏆  Leaderboard')}</h2>
+        <h2 className="text-xl font-black text-slate-100 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> {t('leaderboard_title', 'Leaderboard')}</h2>
       </div>
 
       {/* Parity: combo mode (urutan sama seperti PyQt) */}

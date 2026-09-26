@@ -222,7 +222,7 @@ interface GameContextType {
   addNote: (title: string, content: string, folderId?: string | null) => void;
   archiveNote: (id: string, archived: boolean) => void;
   duplicateNoteItem: (id: string) => void;
-  updateNote: (id: string, title: string, content: string, folderId?: string | null) => void;
+  updateNote: (id: string, title: string, content: string, folderId?: string | null, pinned?: boolean) => void;
   deleteNote: (id: string) => void;
   reorderNotes: (orderedIds: string[]) => void;
 
@@ -1344,8 +1344,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     life.addNote({ title, content, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
-  const updateNote = useCallback((id: string, title: string, content: string, folderId?: string | null) => {
-    life.updateNote(id, { title, content, folderId }).then((res) => applyLive(res)).catch(notifyApiErr);
+  const updateNote = useCallback((id: string, title: string, content: string, folderId?: string | null, pinned?: boolean) => {
+    life.updateNote(id, { title, content, folderId, pinned }).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const deleteNote = useCallback((id: string) => {

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { CountUp } from './CountUp';
 import { useGame } from '../context/GameContext';
 import { studio } from '../api/studio';
 import { AVATAR_CLASSES } from '../data/gameData';
@@ -63,6 +65,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     return () => window.clearInterval(t);
   }, []);
   const unread = notifs.filter((n) => !n.isRead).length;
+  useEscapeClose(notifOpen, () => setNotifOpen(false));
+  // E02: tandai dibaca optimistis (API best-effort; polling 30 dtk meluruskan).
+  const markRead = (id?: string) => {
+    setNotifs((prev) => prev.map((n) => (id && n.id !== id ? n : { ...n, isRead: true })));
+    studio.markNotifications(id).catch(() => loadNotifs());
+  };
   const currentClass = AVATAR_CLASSES[user.avatarClass] || AVATAR_CLASSES.warrior;
   const unclaimedAchievements = achievements.filter((a) => a.isUnlocked && !a.isClaimed).length;
 
@@ -78,7 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const hasBuffs = buffChips.length > 0;
 
   return (
-    <header className="shrink-0 z-30 ct-surface-solid border-b ct-border px-4 py-2.5">
+    <header className="relative shrink-0 z-30 ct-surface-solid border-b ct-border px-4 py-2.5">
       <div className="flex items-center justify-between gap-3">
         {/* Left: Mobile Toggle + User Avatar & Vitals */}
         <div className="flex items-center gap-3">
@@ -182,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               best-effort; status sync lihat Settings → Cloud & Sync. */}
           <div className="ct-sheen flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 font-extrabold text-xs sm:text-sm ct-num overflow-hidden">
             <Coins className="w-3.5 h-3.5 text-amber-400" />
-            <span>{(user.gold ?? 0).toLocaleString()}</span>
+            <CountUp value={user.gold ?? 0} />
           </div>
 
           {/* Buff count (mobile-only; daftar lengkap tampil di strip bawah pada desktop) */}
@@ -227,6 +235,56 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
           )}
+
+          {/* E02: pusat notifikasi (state + polling sudah ada, UI dihidupkan lagi). */}
+          <div className="relative">
+            <button
+              onClick={() => setNotifOpen((v) => !v)}
+              className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors ct-press"
+              title={t('notif_title', 'Notifikasi')}
+              aria-label={t('notif_title', 'Notifikasi')}
+              aria-expanded={notifOpen}
+            >
+              <Bell className="w-4 h-4" />
+              {unread > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <div role="dialog" aria-label={t('notif_title', 'Notifikasi')} className="absolute right-0 top-full mt-2 w-80 max-w-[85vw] ct-dialog p-3 z-[60] space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black text-slate-100">{t('notif_title', 'Notifikasi')}</h3>
+                  {unread > 0 && (
+                    <button onClick={() => markRead()} className="text-[11px] font-bold text-sky-400 hover:text-sky-300">
+                      {t('notif_mark_all', 'Baca Semua')}
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-72 overflow-y-auto space-y-1.5">
+                  {notifs.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-4">{t('notif_empty', 'Tidak ada notifikasi.')}</p>
+                  )}
+                  {notifs.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => markRead(n.id)}
+                      className={`w-full text-left px-2.5 py-2 rounded-xl text-xs transition-colors ${n.isRead ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-200 bg-sky-500/10 hover:bg-sky-500/20'}`}
+                    >
+                      <span className="flex items-start gap-2">
+                        {!n.isRead && <span className="mt-1 w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" aria-hidden="true" />}
+                        <span className="min-w-0">
+                          <span className="block leading-snug">{n.message}</span>
+                          <span className="block text-[10px] text-slate-500 mt-0.5">{n.createdAt}</span>
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Settings Button */}
           {onOpenSettings && (

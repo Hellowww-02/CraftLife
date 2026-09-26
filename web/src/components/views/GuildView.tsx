@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
@@ -41,6 +42,7 @@ export const GuildView: React.FC = () => {
   const [invites, setInvites] = useState<{ id: string; guildName: string }[]>([]);
   const [rewards, setRewards] = useState<any[]>([]);
   const [rewardDlg, setRewardDlg] = useState(false);
+  useEscapeClose(rewardDlg, () => setRewardDlg(false));
   const [bossList, setBossList] = useState<BossItem[]>([]);
   const [skills, setSkills] = useState<Record<string, { name: string; icon: string; mp_cost: number; desc: string }>>({});
 
@@ -71,6 +73,7 @@ export const GuildView: React.FC = () => {
   const [tier, setTier] = useState<(typeof TIERS)[number]>('all');
   const [bossId, setBossId] = useState('');
   const [teamDlg, setTeamDlg] = useState(false);
+  useEscapeClose(teamDlg, () => setTeamDlg(false));
   const [teamSel, setTeamSel] = useState<Set<string>>(new Set());
 
   // ── Custom boss dialog (parity CustomBossDialog) ──
@@ -87,6 +90,7 @@ export const GuildView: React.FC = () => {
 
   // ── Hasil serangan boss (parity _perform_action → _show) ──
   const [attackModal, setAttackModal] = useState<{ title: string; body: string; variant: 'info' | 'success' } | null>(null);
+  useEscapeClose(attackModal !== null, () => setAttackModal(null));
 
   // ── Guild chat dialog (parity GuildChatDialog lokal: send + clear leader + poll 3s) ──
   const [chatOpen, setChatOpen] = useState(false);

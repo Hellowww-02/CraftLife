@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { rpg } from '../api/rpg';
 import { X, Eye, EyeOff, ChevronUp, ChevronDown } from 'lucide-react';
 
 type WidgetCfg = { key: string; visible: boolean; compact: boolean };
 
 export const DashboardWidgetsDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  useEscapeClose(true, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   const [cfg, setCfg] = useState<WidgetCfg[]>([]);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -54,7 +58,7 @@ export const DashboardWidgetsDialog: React.FC<{ onClose: () => void }> = ({ onCl
 
   return (
     <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="ct-dialog max-w-md w-full p-6 space-y-3">
+      <div ref={trapRef} className="ct-dialog max-w-md w-full p-6 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-slate-100">Atur Widget Dashboard</h3>
           <button onClick={onClose} className="ct-btn ct-btn-ghost ct-btn-icon-sm text-slate-400"><X className="w-4 h-4" /></button>

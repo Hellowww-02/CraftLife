@@ -3,6 +3,8 @@
  * new Habit / Daily / Quest from a single title field, no full editor).
  */
 import React, { useState } from 'react';
+import { useEscapeClose } from '../hooks/useEscapeClose';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useGame } from '../context/GameContext';
 import { Plus, X, Zap, CalendarCheck, CheckSquare } from 'lucide-react';
 
@@ -17,6 +19,8 @@ const MODES: { key: QuickAddMode; icon: React.ReactNode; labelId: string; labelE
 export const QuickAddDialog: React.FC = () => {
   const { addHabit, addDaily, addQuest, lang } = useGame();
   const [open, setOpen] = useState(false);
+  useEscapeClose(open, () => setOpen(false));
+  const trapRef = useFocusTrap<HTMLFormElement>(open);
   const [mode, setMode] = useState<QuickAddMode>('habit');
   const [title, setTitle] = useState('');
 
@@ -66,6 +70,7 @@ export const QuickAddDialog: React.FC = () => {
         <div className="ct-backdrop fixed inset-0 z-[70] flex items-start justify-center pt-24 p-4">
           <form
             onSubmit={submit}
+            ref={trapRef}
             className="ct-dialog max-w-md w-full p-5 space-y-4"
           >
             <div className="flex items-center justify-between">

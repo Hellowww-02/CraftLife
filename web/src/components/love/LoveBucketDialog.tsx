@@ -7,6 +7,8 @@
  * pratinjau hitung mundur target dan (di mode Edit) penanda "sudah tercapai".
  */
 import React, { useState } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { X, CalendarDays, Star, StickyNote, CheckSquare, ListChecks } from 'lucide-react';
 import { BUCKET_CATEGORIES, BUCKET_PRIORITIES, daysTo, targetBadge } from './memoryUtils';
 
@@ -63,6 +65,8 @@ const LoveBucketDialog: React.FC<LoveBucketDialogProps> = ({
   open, mode, initial, onClose, onSave, saving, today, tr,
 }) => {
   const [form, setForm] = useState<LoveBucketForm>(() => buildInitialBucketForm(initial));
+  useEscapeClose(open, onClose);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const [error, setError] = useState('');
   if (!open) return null;
 
@@ -91,6 +95,7 @@ const LoveBucketDialog: React.FC<LoveBucketDialogProps> = ({
   return (
     <div className="ct-backdrop fixed inset-0 z-[120] flex items-center justify-center p-4" onClick={onClose}>
       <div
+        ref={trapRef}
         className="ct-dialog w-full max-w-lg p-5 space-y-3 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         data-testid="love-bucket-dialog"

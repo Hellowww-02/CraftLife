@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
@@ -219,7 +220,9 @@ export const LoveSpaceView: React.FC<{ onNavigate?: (view: string) => void }> = 
 
   // ── Profile edit (parity _LoveProfileDialog: sisi kamu + pasangan + relasi) ──
   const [showTracking, setShowTracking] = useState(false);
+  useEscapeClose(showTracking, () => setShowTracking(false));
   const [showProfile, setShowProfile] = useState(false);
+  useEscapeClose(showProfile, () => setShowProfile(false));
   const [profPartner, setProfPartner] = useState(loveSpace.partnerName || '');
   const [profMy, setProfMy] = useState((loveSpace as any).myName || '');
   const [profStart, setProfStart] = useState((loveSpace as any).startDate || loveSpace.anniversaryDate || today);
