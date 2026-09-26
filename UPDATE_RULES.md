@@ -7,7 +7,7 @@ released. It supersedes any ad-hoc instruction given earlier in a chat session.
 | | |
 |---|---|
 | **Applies to** | CraftLife (`/home/user/CraftLife`) — desktop (PyQt6 + WebEngine), local API, React UI, SQLite, optional Supabase cloud |
-| **Current version** | `v1.6.3` “Quality of Life+” (commit phase `A01–A14` + fix `A15`) |
+| **Current version** | `v1.6.7` “Performance & Polish” (phase `D01–D05`) |
 | **Owner** | Project maintainer |
 | **Status of this file** | Living document — update it whenever the process itself changes |
 
@@ -24,7 +24,7 @@ released. It supersedes any ad-hoc instruction given earlier in a chat session.
 5. Copy-paste starter for a new session:
 
 ```text
-Repo: /home/user/CraftLife   (CraftLife v1.6.3, commit phase A01–A14 + A15)
+Repo: /home/user/CraftLife   (CraftLife v1.6.7, phase D01–D05)
 Read and follow UPDATE_RULES.md for this session.
 Request: <what you want fixed or built>, <acceptance criteria>, <scope limits>.
 Deliverable: complete the work, verify it, then report the Ten-Point Phase Report (§3) and the

@@ -135,7 +135,16 @@ from pathlib import Path
 # v1.6.5 (selesai 2026-09-23): food database update — dedupe 850→774 (0
 # duplikat), 9 koreksi gizi, 33 item baru (ciki/kerupuk/minuman), migrasi DB
 # lama idempoten (sinkron kanonik + gabung duplikat semantik, log aman).
-APP_VERSION = "1.6.5"
+# v1.6.7 (selesai 2026-09-25): D01 code-split per view (JS awal -72%), D02
+# ErrorBoundary dwibahasa, D03a tab Anggaran Economy, D03b favorit & terakhir
+# Nutrition, D04 sapu Esc 47 dialog + CountUp + dialog pintasan + sapu emoji
+# sub-header. Nol fitur dikurangi; migrasi aditif (economy_budgets,
+# user_food_favorites) + export/impor ikut.
+# v1.6.7 batch 2 (selesai 2026-09-25): E01 palet keyboard + aksi tugas, E02
+# lonceng notifikasi, E03 timer tidur musik, E04 focus trap 13 dialog, F01 50
+# makanan + F02 50 minuman baru (katalog 774->874, seed otomatis idempoten),
+# F03 sortir grid nutrisi + preset porsi. i18n: +5 key -> total 4.447.
+APP_VERSION = "1.6.7"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 

@@ -9,7 +9,7 @@
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.6.5-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.6.7-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -34,9 +34,23 @@ sync and online social features, but the app never requires it.
 
 - **Local first** — one SQLite database, stored on your machine, updated in place.
 - **No fake success** — online actions only complete after the server confirms.
-- **Two languages** — every screen ships in Indonesian and English (4,409 strings).
+- **Two languages** — every screen ships in Indonesian and English (4,447 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
+
+## ✨ What's New in v1.6.7
+
+| Area | Highlights |
+|------|------------|
+| ⚡ Performance | Per-view code splitting: initial JS 1,614 → 444 kB (−72%), each page loads on demand with the familiar skeleton |
+| 🛡️ Crash safety | Bilingual error boundaries per view + root: a crashing page shows a recovery panel instead of a blank screen |
+| 💰 Economy Budgets | New Budgets tab: monthly per-category limits with live spend tracking, On track / Almost over / Over budget states |
+| 🍱 Nutrition | Favorite foods (star any item) plus a Recent filter with your last 10 logged foods |
+| ✨ Polish | Esc closes all 47 dialogs, count-up hero numbers, `?` keyboard-shortcut help, Lucide icons replace structural emoji in headers |
+| ⌨️ Command Palette | Full keyboard control (↑↓ + Enter, Ctrl+1–9 quick pages), grouped Pages/Actions sections, one-tap complete for Habits, Dailies & Quests |
+| 🔔 Notifications | Restored navbar bell: unread badge, dropdown history, per-item and mark-all-read, Esc closes |
+| 🎵 Music + ♿ a11y | Sleep timer (15/30/60 min) with live countdown and auto-pause; Tab focus trapped in all major dialogs |
+| 🍱 Food & drink catalog | +100 items (50 regional foods, 50 drinks incl. single-origin coffees, jamu & wedang) — catalog now 874 entries; sortable grid (name/calories/protein) + ½×/1×/2× portion presets |
 
 ## ✨ What's New in v1.6.5
 
@@ -209,8 +223,8 @@ CraftLife/
 ├── cloud_api.py          Cloud HTTP surface for the UI
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
-├── translations.py       UI strings, Indonesian + English (4,409 keys)
-├── updater.py            Auto-update from GitHub Releases (v1.6.5, SHA-256)
+├── translations.py       UI strings, Indonesian + English (4,447 keys)
+├── updater.py            Auto-update from GitHub Releases (v1.6.7, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
 ├── mathtools.py          Math text and LaTeX conversion
@@ -248,6 +262,7 @@ Design docs and phase reports kept in the repo:
 | [OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md) | Release operator runbook (build → zip → tag → publish → verify) |
 | [RELEASE_NOTES_v1.6.4.md](RELEASE_NOTES_v1.6.4.md) | v1.6.4 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.5.md](RELEASE_NOTES_v1.6.5.md) | v1.6.5 GitHub Release notes |
+| [RELEASE_NOTES_v1.6.7.md](RELEASE_NOTES_v1.6.7.md) | v1.6.7 GitHub Release notes |
 | [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |
 | [UPDATE_ROADMAP_P47_P63.md](UPDATE_ROADMAP_P47_P63.md) | v1.6.0 fix roadmap |
 | [2026-09-08-P47-P63-PHASE-SUMMARY.md](2026-09-08-P47-P63-PHASE-SUMMARY.md) | v1.6.0 consolidated phase report |
@@ -315,6 +330,13 @@ To ship an auto-update (full runbook:
 
 Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/releases).
 
+- **v1.6.7 "Performance & Polish"** (25 Sep 2026) — Per-view code splitting
+  (−72% initial JS), bilingual crash recovery, Economy Budgets tab, food
+  favorites + recent, Esc for all 47 dialogs, count-up numbers, shortcut
+  help, Lucide header icons, palette keyboard nav + task actions, a
+  notification center, a music sleep timer, dialog focus traps, +100
+  foods & drinks (catalog 874), sortable nutrition grid, and portion
+  presets. Zero features removed.
 - **v1.6.5 "Food Database Update"** (23 Sep 2026) — Deduplicated food
   catalog (850 → 774, zero duplicates), 9 nutrition corrections, 33 new
   Indonesian snacks and drinks with EN translations, and an in-place
@@ -374,6 +396,6 @@ the exact error. Never attach `.env`, `craftlife.db`, or API keys.
 
 **Complete real quests. Keep your data. Level up your life.**
 
-*CraftLife v1.6.4 — "Study & Stability"*
+*CraftLife v1.6.7 — "Study & Stability"*
 
 </div>

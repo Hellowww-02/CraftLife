@@ -432,6 +432,21 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
 
+    # D03a (v1.6.7): anggaran pengeluaran bulanan per kategori. month='' berarti
+    # berulang tiap bulan; baris per-bulan spesifik dicadangkan untuk override.
+    c.execute("""CREATE TABLE IF NOT EXISTS economy_budgets(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        category TEXT NOT NULL,      -- '*' = semua pengeluaran
+        month TEXT NOT NULL DEFAULT '',  -- '' = berulang, atau YYYY-MM
+        amount REAL NOT NULL,
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT(datetime('now')),
+        updated_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, category, month)
+    )""")
+
     c.execute("""CREATE TABLE IF NOT EXISTS inventory(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -1036,6 +1051,17 @@ def init_db():
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     )""")
 
+    # D03b (v1.6.7): makanan favorit user (acuan ke food_items, cascade ikut).
+    c.execute("""CREATE TABLE IF NOT EXISTS user_food_favorites(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        food_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(food_id) REFERENCES food_items(id) ON DELETE CASCADE,
+        UNIQUE(user_id, food_id)
+    )""")
+
     c.execute("""CREATE TABLE IF NOT EXISTS food_achievements(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -1241,6 +1267,8 @@ def init_db():
         FOREIGN KEY(folder_id) REFERENCES note_folders(id) ON DELETE SET NULL
     )""")
     _safe_alter(c, "notes", "sort_order", "INTEGER DEFAULT 0")
+    # G02 (v1.6.7): sematkan catatan (kolom selama ini tak ada → isPinned selalu false).
+    _safe_alter(c, "notes", "pinned", "INTEGER DEFAULT 0")
     # A08: sitasi jawaban AI (JSON) pada riwayat chat — DB lama belum punya kolomnya.
     _safe_alter(c, "learning_chats", "citations", "TEXT")
 
@@ -2174,7 +2202,9 @@ EXPORT_TABLES = [
     'notes',
     'recipe_items',
     'food_logs',
+    'user_food_favorites',
     'economy_items',
+    'economy_budgets',
     'debts',
     'savings',
     'investments',
@@ -2238,6 +2268,14 @@ def export_tracker_data(user_id):
                 LEFT JOIN food_items fi ON fl.food_id = fi.id
                 WHERE fl.user_id = ?
             """, (user_id,)).fetchall()
+        elif table == "user_food_favorites":
+            # Sertakan nama + flag custom agar impor bisa mapping ulang food_id.
+            rows = conn.execute("""
+                SELECT uf.*, fi.name as food_name, fi.is_custom as food_custom
+                FROM user_food_favorites uf
+                JOIN food_items fi ON uf.food_id = fi.id
+                WHERE uf.user_id = ?
+            """, (user_id,)).fetchall()
         else:
             # Tabel lain yang memiliki kolom user_id
             rows = conn.execute(f"SELECT * FROM {table} WHERE user_id=?", (user_id,)).fetchall()
@@ -2280,6 +2318,59 @@ def clear_tracker_data(user_id):
         conn.close()
 
 # ========== HELPER: DAPATKAN ID DEFAULT FOOD BERDASARKAN NAMA ==========
+@retry_on_lock
+def set_food_favorite(user_id, food_id, fav):
+    """Tandai/hapus favorit. Idempoten; abaikan food_id tak dikenal."""
+    conn = get_conn()
+    try:
+        fid = int(food_id)
+    except (TypeError, ValueError):
+        conn.close()
+        return {"ok": False}
+    exists = conn.execute("SELECT id FROM food_items WHERE id=?", (fid,)).fetchone()
+    if not exists:
+        conn.close()
+        return {"ok": False}
+    if fav:
+        conn.execute("INSERT OR IGNORE INTO user_food_favorites(user_id, food_id) VALUES(?,?)",
+                     (user_id, fid))
+    else:
+        conn.execute("DELETE FROM user_food_favorites WHERE user_id=? AND food_id=?",
+                     (user_id, fid))
+    conn.commit()
+    conn.close()
+    return {"ok": True, "fav": bool(fav)}
+
+def get_favorite_foods(user_id):
+    """Baris food_items yg difavoritkan user (urutan nama)."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT fi.* FROM user_food_favorites uf
+        JOIN food_items fi ON fi.id = uf.food_id
+        WHERE uf.user_id = ? ORDER BY fi.name""", (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_recent_foods(user_id, limit=10):
+    """Makanan berbeda yg terakhir dicatat (dari food_logs, terbaru dulu)."""
+    try:
+        limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        limit = 10
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT fi.*, MAX(fl.id) AS _r FROM food_logs fl
+        JOIN food_items fi ON fi.id = fl.food_id
+        WHERE fl.user_id = ?
+        GROUP BY fl.food_id ORDER BY _r DESC LIMIT ?""", (user_id, limit)).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d.pop("_r", None)
+        out.append(d)
+    return out
+
 def get_default_food_id_by_name(name):
     """Cari ID makanan default (is_custom=0) berdasarkan nama."""
     conn = get_conn()
@@ -2499,6 +2590,22 @@ def import_tracker_data(user_id, data, preserve_progress=False):
                 list(insert_row.values())
             )
         
+        # 4d2. user_food_favorites (D03b v1.6.7): mapping custom via mapping,
+        # default via nama (pola sama seperti food_logs di atas).
+        rows = data['tables'].get('user_food_favorites', [])
+        for row in rows:
+            new_fid = None
+            if row.get('food_custom'):
+                new_fid = mapping['food_items'].get(row.get('food_id'))
+            elif row.get('food_name'):
+                new_fid = get_default_food_id_by_name(row.get('food_name'))
+            if not new_fid:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO user_food_favorites(user_id, food_id) VALUES(?,?)",
+                (user_id, new_fid)
+            )
+
         # 4e. economy_items (opsional folder_id)
         rows = data['tables'].get('economy_items', [])
         for row in rows:
@@ -2516,6 +2623,18 @@ def import_tracker_data(user_id, data, preserve_progress=False):
                 list(insert_row.values())
             )
         
+        # 4e2. economy_budgets (D03a v1.6.7): tanpa FK selain user_id.
+        rows = data['tables'].get('economy_budgets', [])
+        for row in rows:
+            insert_row = {k: v for k, v in row.items() if k != 'id'}
+            insert_row['user_id'] = user_id
+            cols = ','.join(insert_row.keys())
+            placeholders = ','.join(['?'] * len(insert_row))
+            conn.execute(
+                f"INSERT INTO economy_budgets ({cols}) VALUES ({placeholders})",
+                list(insert_row.values())
+            )
+
         # 4f. Riwayat task dan log repetisi perlu memetakan ID task/activity baru.
         for row in data['tables'].get('task_history', []):
             task_type = row.get('task_type')
@@ -7916,6 +8035,98 @@ def delete_economy_item(user_id, item_id):
     conn.commit()
     conn.close()
 
+@retry_on_lock
+def add_budget(user_id, category, amount, month="", notes=""):
+    """Tambah/ plung anggaran: kategori sama + bulan sama = update jumlah (idempoten)."""
+    category = (category or "").strip()[:64] or "*"
+    month = (month or "").strip()[:7]
+    if month and (len(month) != 7 or month[4] != "-" or not month.replace("-", "").isdigit()):
+        month = ""
+    try:
+        amount = max(0.0, float(amount or 0))
+    except (TypeError, ValueError):
+        amount = 0.0
+    notes = (notes or "").strip()[:500]
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM economy_budgets WHERE user_id=? AND category=? COLLATE NOCASE AND month=?",
+        (user_id, category, month)).fetchone()
+    if row:
+        conn.execute("UPDATE economy_budgets SET amount=?, notes=?, updated_at=datetime('now') WHERE id=?",
+                     (amount, notes, row["id"] if isinstance(row, dict) else row[0]))
+        bid = row["id"] if isinstance(row, dict) else row[0]
+    else:
+        cur = conn.execute("INSERT INTO economy_budgets(user_id, category, month, amount, notes) VALUES(?,?,?,?,?)",
+                           (user_id, category, month, amount, notes))
+        bid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"ok": True, "id": bid}
+
+def get_budgets(user_id, month):
+    """Anggaran + realisasi pengeluaran bulan YYYY-MM (berulang '' selalu ikut)."""
+    month = (month or "")[:7]
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM economy_budgets WHERE user_id=? AND month IN ('', ?) ORDER BY category",
+                        (user_id, month)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d["category"] == "*":
+            spent = conn.execute("SELECT COALESCE(SUM(amount),0) FROM economy_items "
+                                 "WHERE user_id=? AND type='expense' AND substr(date,1,7)=?",
+                                 (user_id, month)).fetchone()[0]
+        else:
+            spent = conn.execute("SELECT COALESCE(SUM(amount),0) FROM economy_items "
+                                 "WHERE user_id=? AND type='expense' AND substr(date,1,7)=? "
+                                 "AND category=? COLLATE NOCASE",
+                                 (user_id, month, d["category"])).fetchone()[0]
+        spent = float(spent or 0)
+        amt = float(d["amount"] or 0)
+        d["spent"] = spent
+        d["remaining"] = amt - spent
+        d["pct"] = (spent / amt * 100.0) if amt > 0 else (100.0 if spent > 0 else 0.0)
+        out.append(d)
+    conn.close()
+    return out
+
+@retry_on_lock
+def update_budget(budget_id, user_id, **kwargs):
+    """Update parsial: hanya field yg dikirim yg berubah (None = biarkan)."""
+    sets, vals = [], []
+    if kwargs.get("category") is not None:
+        sets.append("category=?")
+        vals.append((kwargs.get("category") or "").strip()[:64] or "*")
+    if kwargs.get("amount") is not None:
+        try:
+            sets.append("amount=?")
+            vals.append(max(0.0, float(kwargs.get("amount"))))
+        except (TypeError, ValueError):
+            sets.pop()
+    if kwargs.get("notes") is not None:
+        sets.append("notes=?")
+        vals.append((kwargs.get("notes") or "").strip()[:500])
+    if not sets:
+        return {"ok": True}
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE economy_budgets SET " + ", ".join(sets) + " WHERE id=? AND user_id=?",
+                     (*vals, budget_id, user_id))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+@retry_on_lock
+def delete_budget(user_id, budget_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM economy_budgets WHERE id=? AND user_id=?", (budget_id, user_id))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
 def duplicate_economy_item(user_id, item_id):
     """Duplikasi item ekonomi (tanpa folder_id biar user pilih sendiri)."""
     conn = get_conn()
@@ -11140,7 +11351,7 @@ def add_note(user_id, folder_id, title, content=""):
     conn.close()
     return {"ok": True, "note_id": note_id}
 
-def update_note(note_id, user_id, title=None, content=None, folder_id=None, zoom_level=None):
+def update_note(note_id, user_id, title=None, content=None, folder_id=None, zoom_level=None, pinned=None):
     updates = []
     values = []
     if title is not None:
@@ -11155,6 +11366,9 @@ def update_note(note_id, user_id, title=None, content=None, folder_id=None, zoom
     if zoom_level is not None:
         updates.append("zoom_level=?")
         values.append(zoom_level)
+    if pinned is not None:
+        updates.append("pinned=?")
+        values.append(1 if pinned else 0)
     if not updates:
         return
     updates.append("updated_at=datetime('now')")

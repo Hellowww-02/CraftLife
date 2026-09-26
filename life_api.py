@@ -730,6 +730,34 @@ def _nutrition_export(uid: int, fmt: str, days: int = 30):
     return {"__file_bytes__": payload, "mime": mime, "name": name}
 
 
+def _food_out(r: dict) -> dict:
+    """Satu baris food_items -> bentuk API (dipakai items/favorites/recent)."""
+    name = r.get("name") or ""
+    if r.get("is_custom"):
+        # Makanan custom user: tidak ada terjemahan → nameId == nameEn.
+        name_id, name_en = name, name
+    else:
+        # Makanan default: name di DB = nama Indonesia; nameEn dari
+        # FOOD_NAMES_MAP (parity get_food_name PyQt).
+        name_id = name
+        try:
+            name_en = db.get_food_name(name, "en") or name
+        except Exception:
+            name_en = name
+    return {
+        "id": str(r.get("id")),
+        "name": name,
+        "nameId": name_id,
+        "nameEn": name_en,
+        "icon": r.get("icon") or "🍽️",
+        "calories": int(r.get("calories") or 0),
+        "protein": float(r.get("protein") or 0),
+        "carbs": float(r.get("carbs") or 0),
+        "fat": float(r.get("fat") or 0),
+        "isCustom": bool(r.get("is_custom")),
+    }
+
+
 def handle_get(path: str, uid: int, qs=None):
     qs = qs or {}
     # ── P7: Reminder parity ──
@@ -846,33 +874,21 @@ def handle_get(path: str, uid: int, qs=None):
             items = db.get_food_items(uid, include_default=True) or []
         except Exception:
             items = []
-        out = []
-        for r in items:
-            name = r.get("name") or ""
-            if r.get("is_custom"):
-                # Makanan custom user: tidak ada terjemahan → nameId == nameEn.
-                name_id, name_en = name, name
-            else:
-                # Makanan default: name di DB = nama Indonesia; nameEn dari
-                # FOOD_NAMES_MAP (parity get_food_name PyQt).
-                name_id = name
-                try:
-                    name_en = db.get_food_name(name, "en") or name
-                except Exception:
-                    name_en = name
-            out.append({
-                "id": str(r.get("id")),
-                "name": name,
-                "nameId": name_id,
-                "nameEn": name_en,
-                "icon": r.get("icon") or "🍽️",
-                "calories": int(r.get("calories") or 0),
-                "protein": float(r.get("protein") or 0),
-                "carbs": float(r.get("carbs") or 0),
-                "fat": float(r.get("fat") or 0),
-                "isCustom": bool(r.get("is_custom")),
-            })
-        return {"ok": True, "items": out}
+        return {"ok": True, "items": [_food_out(r) for r in items]}
+    if path == "/api/food/favorites":
+        # D03b (v1.6.7): makanan favorit user.
+        try:
+            items = db.get_favorite_foods(uid) or []
+        except Exception:
+            items = []
+        return {"ok": True, "favorites": [_food_out(r) for r in items]}
+    if path == "/api/food/recent":
+        # D03b (v1.6.7): 10 makanan berbeda yg terakhir dicatat.
+        try:
+            items = db.get_recent_foods(uid) or []
+        except Exception:
+            items = []
+        return {"ok": True, "recent": [_food_out(r) for r in items]}
     if path == "/api/nutrition/goals":
         try:
             g = db.get_nutrition_goals(uid) or {}
@@ -892,6 +908,10 @@ def handle_get(path: str, uid: int, qs=None):
         return {"ok": True, "waterLog": s["waterLog"]}
     if path == "/api/economy":
         return {"ok": True, "transactions": snapshot(uid)["transactions"]}
+    if path == "/api/budgets":
+        # D03a (v1.6.7): anggaran + realisasi bulan berjalan (default bulan server ini).
+        month = ((qs.get("month") or [_today()[:7]])[0] or _today()[:7])[:7]
+        return {"ok": True, "month": month, "budgets": db.get_budgets(uid, month)}
     if path == "/api/debts":
         return {"ok": True, "debts": snapshot(uid)["debts"]}
     if path == "/api/notes":
@@ -1119,6 +1139,11 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         n = db.apply_template_by_mode(uid, "sport", key)
         return {"result": {"ok": True, "n": n}}
 
+    if len(parts) >= 4 and parts[1] == "food" and parts[3] == "favorite":
+        # D03b (v1.6.7): tandai/hapus favorit (body {fav: bool}).
+        fav = body.get("fav")
+        fav = True if fav is None else bool(fav)
+        return {"result": db.set_food_favorite(uid, parts[2], fav)}
     if path == "/api/food/custom":
         result = db.add_custom_food(
             uid,
@@ -1423,6 +1448,26 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
         db.delete_economy_item(uid, int(parts[2]))
         return {"result": {"ok": True}}
 
+    if path == "/api/budgets":
+        return {"result": db.add_budget(
+            uid, body.get("category"), body.get("amount"),
+            month=body.get("month") or "", notes=body.get("notes") or "")}
+
+    if len(parts) >= 4 and parts[1] == "budgets" and parts[3] == "update":
+        kw = {}
+        if body.get("category") is not None:
+            kw["category"] = body.get("category")
+        if body.get("amount") is not None:
+            kw["amount"] = body.get("amount")
+        if body.get("notes") is not None:
+            kw["notes"] = body.get("notes")
+        db.update_budget(int(parts[2]), uid, **kw)
+        return {"result": {"ok": True}}
+
+    if len(parts) >= 4 and parts[1] == "budgets" and parts[3] == "delete":
+        db.delete_budget(uid, int(parts[2]))
+        return {"result": {"ok": True}}
+
     if path == "/api/debts":
         result = db.add_debt(
             uid,
@@ -1516,6 +1561,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
                 content=body.get("content"),
                 folder_id=int(body["folderId"]) if body.get("folderId") else None,
                 zoom_level=body.get("zoomLevel") or body.get("zoom_level"),
+                # G02: None = tak diubah (partial-safe); True/False diteruskan.
+                pinned=body.get("pinned"),
             )
             return {"result": result}
         if parts[3] == "delete":
