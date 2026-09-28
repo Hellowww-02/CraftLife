@@ -13,7 +13,7 @@ export interface InfographicData {
   stats: { value: string; label: string }[];
   points: { heading: string; text: string }[];
 }
-export interface SlideDeckData { title: string; slides: { title: string; bullets: string[] }[]; }
+export interface SlideDeckData { title: string; slides: { title: string; bullets: string[]; notes?: string }[]; }
 
 type Tr = (key: string, vars?: Record<string, string | number>, fallback?: string) => string;
 
@@ -66,10 +66,15 @@ export function parseInfographic(raw: unknown): InfographicData | null {
 export function parseSlideDeck(raw: unknown): SlideDeckData | null {
   const d = asObj(raw);
   if (!d || !Array.isArray(d.slides)) return null;
-  const slides = (d.slides as any[]).filter((s) => s && typeof s === 'object').slice(0, 25).map((s) => ({
-    title: String(s.title || ''),
-    bullets: ((s.bullets || []) as any[]).map((b) => String(b ?? '')).slice(0, 8),
-  }));
+  const slides = (d.slides as any[]).filter((s) => s && typeof s === 'object').slice(0, 25).map((s) => {
+    const slide: { title: string; bullets: string[]; notes?: string } = {
+      title: String(s.title || ''),
+      bullets: ((s.bullets || []) as any[]).map((b) => String(b ?? '')).slice(0, 8),
+    };
+    // H01/H03: speaker notes opsional dari prompt baru (deck lama tetap valid).
+    if (s.notes) slide.notes = String(s.notes).slice(0, 1000);
+    return slide;
+  });
   if (!slides.length) return null;
   return { title: String(d.title || ''), slides };
 }
@@ -175,25 +180,85 @@ export const InfographicView: React.FC<{ data: unknown; tr: Tr }> = ({ data, tr 
 export const SlideDeckView: React.FC<{ data: unknown; tr: Tr }> = ({ data, tr }) => {
   const deck = parseSlideDeck(data);
   const [idx, setIdx] = useState(0);
+  const [showNotes, setShowNotes] = useState(false);
   if (!deck) return <EmptyOrRaw raw={data} tr={tr} />;
   const total = deck.slides.length;
   const i = Math.max(0, Math.min(total - 1, idx));
   const s = deck.slides[i];
   const btn = 'px-3 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-40 bg-slate-900 border-slate-700 text-slate-200 hover:border-violet-500/50';
+  const anyNotes = deck.slides.some((sl) => sl.notes);
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-      {deck.title && <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">{deck.title}</p>}
-      <h4 className="font-bold text-sm text-slate-100">{s.title || `${i + 1}`}</h4>
-      {s.bullets.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {s.bullets.map((b, bi) => (
-            <li key={bi} className="text-[11px] text-slate-300 flex gap-1.5"><span className="text-violet-300">•</span><span>{b}</span></li>
+    // H03 (v1.7.0): viewer presentasi premium — panggung slide 16:10, titik
+    // navigasi, keyboard ←/→, dan panel catatan presenter (field `notes` H01).
+    <div
+      className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60"
+      tabIndex={0}
+      role="group"
+      aria-label={tr('learning_slide_deck_aria', {}, 'Penampil presentasi')}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowRight' && i < total - 1) { e.preventDefault(); setIdx(i + 1); }
+        else if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); setIdx(i - 1); }
+      }}
+    >
+      {deck.title && <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{deck.title}</p>}
+
+      {/* Panggung slide */}
+      <div className="relative rounded-xl border border-slate-700/70 bg-gradient-to-br from-slate-900 via-slate-950 to-violet-950/40 p-5 min-h-[190px] flex flex-col overflow-hidden">
+        <span className="absolute top-2.5 right-3 text-[9px] font-bold text-slate-500 ct-nlm-num">{tr('learning_slide_of', { n: i + 1, total }, `${i + 1} / ${total}`)}</span>
+        <div className="h-0.5 w-10 rounded-full bg-violet-500/70 mb-3" aria-hidden="true" />
+        <h4 className="font-bold text-base text-slate-100 break-words">{s.title || `${i + 1}`}</h4>
+        {s.bullets.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {s.bullets.map((b, bi) => (
+              <li key={bi} className="text-[11px] text-slate-300 flex gap-1.5">
+                <span className="text-violet-300 shrink-0" aria-hidden="true">▸</span>
+                <span className="break-words min-w-0">{b}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Titik navigasi slide */}
+      {total > 1 && (
+        <div className="flex items-center justify-center gap-1.5" role="tablist" aria-label={tr('learning_slide_of', { n: i + 1, total }, `${i + 1} / ${total}`)}>
+          {deck.slides.map((_, di) => (
+            <button
+              key={di}
+              type="button"
+              role="tab"
+              aria-selected={di === i}
+              aria-label={tr('learning_slide_go', { n: di + 1 }, `Slide ${di + 1}`)}
+              onClick={() => setIdx(di)}
+              className={`h-1.5 rounded-full transition-all ${di === i ? 'w-5 bg-violet-400' : 'w-1.5 bg-slate-700 hover:bg-slate-600'}`}
+            />
           ))}
-        </ul>
+        </div>
       )}
-      <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-800/70">
+
+      {/* Catatan presenter (H01: field notes) */}
+      {s.notes && showNotes && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-2.5">
+          <p className="text-[9px] uppercase tracking-wider font-bold text-amber-300/90 mb-1">{tr('learning_slide_notes', {}, 'Catatan presenter')}</p>
+          <p className="text-[11px] text-slate-300 break-words">{s.notes}</p>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/70">
         <button disabled={i === 0} onClick={() => setIdx(i - 1)} className={btn}>‹ {tr('learning_slide_prev', {}, 'Sebelumnya')}</button>
-        <span className="text-[10px] text-slate-400 ct-nlm-num">{tr('learning_slide_of', { n: i + 1, total }, `${i + 1} / ${total}`)}</span>
+        <div className="flex items-center gap-1.5">
+          {anyNotes && (
+            <button
+              type="button"
+              onClick={() => setShowNotes((v) => !v)}
+              aria-pressed={showNotes}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-colors ${showNotes ? 'bg-amber-500/20 border-amber-500/50 text-amber-200' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-amber-500/40'}`}
+              title={tr('learning_slide_notes', {}, 'Catatan presenter')}
+            >
+              📝 {tr('learning_slide_notes_short', {}, 'Catatan')}
+            </button>
+          )}
+        </div>
         <button disabled={i >= total - 1} onClick={() => setIdx(i + 1)} className={btn}>{tr('learning_slide_next', {}, 'Berikutnya')} ›</button>
       </div>
     </div>

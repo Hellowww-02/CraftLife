@@ -16,6 +16,16 @@ const tr = (key: string, vars?: Record<string, string | number>) => {
 };
 
 const EQUIP_TYPES = ['weapon', 'armor', 'shoes', 'accessory'] as const;
+// H05: urutan sub-tab kategori toko (label mengikuti kunci shop_type_*).
+const SHOP_CATS: { id: string; icon: string }[] = [
+  { id: 'all', icon: '🏪' },
+  { id: 'weapon', icon: '⚔️' },
+  { id: 'armor', icon: '🛡️' },
+  { id: 'tool', icon: '⛏️' },
+  { id: 'consumable', icon: '🧪' },
+  { id: 'legendary', icon: '✨' },
+  { id: 'special', icon: '🔥' },
+];
 // P26: semua item NON-consumable berhak masuk slot equipment (1 per slot, maks 10),
 // sinkron dengan backend `_is_equippable_item` (bukan consumable). Consumable
 // (potion/apple/ice_block) TIDAK masuk slot — tetap dipakai lewat tombol Use.
@@ -36,6 +46,8 @@ export const ShopView: React.FC = () => {
   const PETS_DATA = livePets() as Record<string, any>;
 
   const [tab, setTab] = useState<'items' | 'pets' | 'inventory'>('items');
+  // H05 (v1.7.0): sub-tab kategori item (frontend murni — data katalog sama).
+  const [shopCat, setShopCat] = useState<string>('all');
   const [sellDlg, setSellDlg] = useState<{ inv: any; it: any } | null>(null);
 
   const invMap = useMemo(() => new Map(inventory.map((i: any) => [i.itemId, i])), [inventory]);
@@ -89,10 +101,37 @@ export const ShopView: React.FC = () => {
         ))}
       </div>
 
-      {/* ── TAB ITEMS (4 kolom) ── */}
+      {/* ── TAB ITEMS: sub-tab kategori + grid (H05) ── */}
       {tab === 'items' && (
+        <>
+        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label={tr('shop_category_aria')}>
+          {SHOP_CATS.map((c) => {
+            const n = c.id === 'all' ? visibleItems.length : visibleItems.filter((i: any) => i.type === c.id).length;
+            if (!n) return null; // kategori kosong disembunyikan
+            const on = shopCat === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setShopCat(c.id)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-colors ${
+                  on ? 'bg-amber-500/15 border-amber-500/60 text-amber-200'
+                     : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                }`}
+              >
+                <span aria-hidden="true">{c.icon}</span>
+                {c.id === 'all' ? tr('shop_cat_all') : tr(`shop_type_${c.id}`)}
+                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-slate-800/90 text-slate-400 ct-nlm-num">{n}</span>
+              </button>
+            );
+          })}
+        </div>
         <section className="ct-reveal grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {visibleItems.map((it: any) => {
+          {visibleItems
+            .filter((it: any) => shopCat === 'all' || it.type === shopCat)
+            .map((it: any) => {
             const inv: any = invMap.get(it.id);
             // backend snapshot pakai `quantity`, bukan `qty` — kalau salah, qty selalu
             // 0 & item yang SUDAH dimiliki tetap tampil "Buy" (bug P25).
@@ -197,6 +236,7 @@ export const ShopView: React.FC = () => {
             );
           })}
         </section>
+        </>
       )}
 
       {/* ── TAB INVENTORY (subtabs baru; parity source-of-truth backend inventory) ── */}

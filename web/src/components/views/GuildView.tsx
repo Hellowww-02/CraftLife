@@ -89,8 +89,10 @@ export const GuildView: React.FC = () => {
   const [inviteFriendDlg, setInviteFriendDlg] = useState(false);
 
   // ── Hasil serangan boss (parity _perform_action → _show) ──
-  const [attackModal, setAttackModal] = useState<{ title: string; body: string; variant: 'info' | 'success' } | null>(null);
-  useEscapeClose(attackModal !== null, () => setAttackModal(null));
+  // H08 (v1.7.1): hasil serangan tidak lagi tampil sebagai popup modal, tetapi
+  // sebagai KOTAK PESAN di dalam arena (konsep duel Pokémon) — state lama
+  // `attackModal` digantikan `arenaMsg` dengan isi informasi yang identik.
+  const [arenaMsg, setArenaMsg] = useState<{ title: string; body: string; variant: 'info' | 'success' } | null>(null);
 
   // ── Guild chat dialog (parity GuildChatDialog lokal: send + clear leader + poll 3s) ──
   const [chatOpen, setChatOpen] = useState(false);
@@ -193,13 +195,13 @@ export const GuildView: React.FC = () => {
         if (m.defeated) {
           let body = String(m.msg || '');
           if (m.extra_effect) body += '\n' + m.extra_effect;
-          setAttackModal({ title: tr('victory_title'), body, variant: 'success' });
+          pushAttackResult({ title: tr('victory_title'), body, variant: 'success' });
           reload();
           return;
         }
         // BLOCK — ditangani terpisah (parity _perform_action)
         if (action === 'block') {
-          setAttackModal({
+          pushAttackResult({
             title: tr('boss_block_title'),
             body: tr('boss_block_result', { reduction: Number(m.block_reduction || 0) }),
             variant: 'info',
@@ -239,13 +241,73 @@ export const GuildView: React.FC = () => {
         if (m.shield_used) body += '\n' + tr('boss_shield_used');
         if (m.revived) body += tr('attack_totem_revive');
         if (action === 'ultimate' && m.extra_effect) body += '\n' + m.extra_effect;
-        setAttackModal({ title: tr('attack_title'), body, variant: m.revived ? 'success' : 'info' });
+        pushAttackResult({ title: tr('attack_title'), body, variant: m.revived ? 'success' : 'info' });
         reload();
       })
       .catch((e) => showToast('info', String(e?.message || e), ''));
   };
 
   const myHpZero = (user.hp || 0) <= 0;
+
+  // ═══ H04 (v1.7.0): efek arena EVENT-DRIVEN + log pertempuran ═══
+  // Semua animasi dipicu perubahan data (selisih HP), bukan loop idle (R10).
+  // Log & float bersifat aditif — logika serangan di atas tidak diubah.
+  const [battleLog, setBattleLog] = useState<{ id: number; text: string; kind: 'info' | 'win' }[]>([]);
+  const [floats, setFloats] = useState<{ id: number; text: string; kind: 'deal' | 'take' | 'heal'; left: number; top: number }[]>([]);
+  const [stageFx, setStageFx] = useState('');
+  const [bossFx, setBossFx] = useState('');
+  const fxId = useRef(0);
+  const prevBossHp = useRef<number>(guild.bossHp ?? 0);
+  const prevUserHp = useRef<number>(user.hp ?? 0);
+
+  const spawnFloat = (text: string, kind: 'deal' | 'take' | 'heal', topPct: number) => {
+    const id = ++fxId.current;
+    setFloats((f) => [...f.slice(-5), { id, text, kind, left: 32 + Math.random() * 36, top: topPct }]);
+    window.setTimeout(() => setFloats((f) => f.filter((x) => x.id !== id)), 1000);
+  };
+  const pulse = (setter: React.Dispatch<React.SetStateAction<string>>, cls: string, ms: number) => {
+    setter('');
+    requestAnimationFrame(() => setter(cls));
+    window.setTimeout(() => setter((c) => (c === cls ? '' : c)), ms);
+  };
+
+  // Damage ke boss: HP guild turun → angka melayang + goyang.
+  useEffect(() => {
+    const now = guild.bossHp ?? 0;
+    const prev = prevBossHp.current;
+    prevBossHp.current = now;
+    if (prev > 0 && now < prev) {
+      spawnFloat(`-${Math.round(prev - now)}`, 'deal', 24);
+      pulse(setBossFx, 'ct-boss-hit', 480);
+      pulse(setStageFx, 'ct-arena-shake', 480);
+    }
+  }, [guild.bossHp]);
+
+  // Damage ke pemain / heal: HP user berubah → kilat merah atau float hijau.
+  useEffect(() => {
+    const now = user.hp ?? 0;
+    const prev = prevUserHp.current;
+    prevUserHp.current = now;
+    if (prev > now) {
+      spawnFloat(`-${Math.round(prev - now)}`, 'take', 66);
+      pulse(setStageFx, 'ct-arena-hurt', 560);
+    } else if (now > prev && prev > 0) {
+      spawnFloat(`+${Math.round(now - prev)}`, 'heal', 66);
+    }
+  }, [user.hp]);
+
+  // Wrapper hasil serangan: tulis ke log pertempuran + kotak pesan arena.
+  const pushAttackResult = (modal: { title: string; body: string; variant: 'info' | 'success' }) => {
+    const line = `${modal.title} · ${String(modal.body).split('\n')[0]}`;
+    setBattleLog((log) => [{ id: ++fxId.current, text: line, kind: modal.variant === 'success' ? 'win' as const : 'info' as const }, ...log].slice(0, 8));
+    setArenaMsg(modal);
+  };
+
+  // Boss baru dipanggil → pesan pertarungan lama (mis. kemenangan) dibersihkan.
+  const bossAlive = (guild.bossMaxHp || 0) > 0 ? 1 : 0;
+  useEffect(() => {
+    if (bossAlive === 1) setArenaMsg(null);
+  }, [bossAlive]);
 
   // ═══ Admin block (parity load(): admin tidak pakai guild lokal) ═══
   if ((user as any).isAdmin) {
@@ -415,17 +477,78 @@ export const GuildView: React.FC = () => {
         </div>
       </section>
 
-      {/* SECTION BOSS (parity _make_boss_section + _boss_selector) */}
-      <section className="ct-panel ct-war-panel p-4 space-y-3">
-        <h3 className="text-sm font-black text-slate-100">{tr('guild_boss_battle')}</h3>
+      {/* SECTION BOSS (parity _make_boss_section + _boss_selector)
+          H04 (v1.7.0): direkonstruksi menjadi panggung arena interaktif —
+          semua fungsi & handler identik, hanya presentasi yang berubah. */}
+      <section className="ct-panel p-4 space-y-3" aria-label={tr('guild_boss_battle')}>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black text-slate-100">⚔️ {tr('guild_boss_battle')}</h3>
+          {guild.bossMaxHp > 0 && (
+            <span className="text-[9px] font-black uppercase tracking-[0.18em] px-2 py-0.5 rounded-full border"
+              style={{ color: tierColor, borderColor: `color-mix(in srgb, ${tierColor} 55%, transparent)`, background: `color-mix(in srgb, ${tierColor} 14%, transparent)` }}>
+              ● LIVE
+            </span>
+          )}
+        </div>
+        {/* H08 (v1.7.1): kotak pesan pertarungan ala duel Pokémon — hasil serangan
+            tampil DI SINI (bukan popup), tetap ada saat boss tumbang (kemenangan),
+            dan dibersihkan otomatis ketika boss baru dipanggil. */}
+        {arenaMsg && (
+          <div className={`ct-arena-msg ${arenaMsg.variant === 'success' ? 'is-win' : ''}`} role="status" aria-live="polite" aria-label={tr('guild_battle_box_aria')}>
+            <div className="flex items-start gap-2.5">
+              <span className="text-lg leading-none shrink-0 mt-0.5" aria-hidden="true">{arenaMsg.variant === 'success' ? '🏆' : '⚔️'}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black text-slate-100">{arenaMsg.title}</p>
+                <pre className="text-[11px] leading-relaxed text-slate-300 whitespace-pre-wrap break-words font-sans mt-1 max-h-36 overflow-y-auto">{arenaMsg.body}</pre>
+              </div>
+              <button
+                type="button"
+                onClick={() => setArenaMsg(null)}
+                aria-label={tr('btn_close')}
+                title={tr('btn_close')}
+                className="shrink-0 p-1 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800/70 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
         {guild.bossMaxHp > 0 ? (
           <>
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold" style={{ color: tierColor }}>{bossTitle}</span>
-              <span className="text-slate-400 font-mono">{tr('guild_boss_hp', { hp: guild.bossHp ?? 0, max_hp: guild.bossMaxHp })}</span>
-            </div>
-            <div className="h-5 rounded-xl ct-bar-track overflow-hidden">
-              <div className="h-full ct-bar-fill" style={{ width: `${Math.max(3, (guild.bossHp / guild.bossMaxHp) * 100)}%`, background: tierColor }} />
+            {/* Panggung arena: boss + HP bar + angka damage melayang (event-driven) */}
+            <div className={`ct-arena ${stageFx} px-5 pt-4 pb-5`} role="region" aria-label={tr('guild_boss_battle')}>
+              {floats.map((f) => (
+                <span key={f.id} className={`ct-dmg-float is-${f.kind}`} style={{ left: `${f.left}%`, top: `${f.top}%` }} aria-hidden="true">{f.text}</span>
+              ))}
+              <div className="relative flex flex-col items-center gap-2.5">
+                <div className={`ct-boss-plate ${bossFx}`} style={{ color: tierColor }} aria-hidden="true">{guild.bossIcon || '🐉'}</div>
+                <p className="font-black text-sm text-center" style={{ color: tierColor }}>{bossTitle}</p>
+                <div className="w-full max-w-md space-y-1">
+                  <div className="flex justify-between text-[10px] font-bold">
+                    <span style={{ color: tierColor }}>HP</span>
+                    <span className="text-slate-300 ct-nlm-num">{tr('guild_boss_hp', { hp: Math.max(0, Math.round(guild.bossHp ?? 0)), max_hp: Math.round(guild.bossMaxHp) })}</span>
+                  </div>
+                  <div className="h-4 rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden" role="progressbar"
+                    aria-valuenow={Math.max(0, Math.round(guild.bossHp ?? 0))} aria-valuemin={0} aria-valuemax={Math.round(guild.bossMaxHp)} aria-label="HP Boss">
+                    <div className="h-full rounded-lg" style={{
+                      width: `${Math.max(2, ((guild.bossHp ?? 0) / guild.bossMaxHp) * 100)}%`,
+                      background: `linear-gradient(90deg, ${tierColor}, color-mix(in srgb, ${tierColor} 60%, #ffffff))`,
+                      transition: 'width var(--ct-t-slow) var(--ct-ease)',
+                    }} />
+                  </div>
+                </div>
+              </div>
+              {/* Status pemain di dasar panggung */}
+              <div className="relative mt-4 grid grid-cols-2 gap-2 text-center max-w-md mx-auto">
+                <div className="rounded-lg bg-slate-950/60 border border-slate-800/80 px-2 py-1.5">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">{tr('nav_hp_abbr')}</p>
+                  <p className="text-xs font-black text-emerald-300 ct-nlm-num">{user.hp ?? 0}/{user.maxHp ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-slate-950/60 border border-slate-800/80 px-2 py-1.5">
+                  <p className="text-[9px] uppercase tracking-wider text-slate-500 font-bold">{tr('nav_mp_abbr')}</p>
+                  <p className="text-xs font-black text-sky-300 ct-nlm-num">{user.mp ?? 0}/{user.maxMp ?? 0}</p>
+                </div>
+              </div>
             </div>
             <p className="text-xs text-slate-400">
               {tr('guild_boss_atk_info', { atk: guild.bossAttack ?? 0, bonus: bossDamageBonus, total: 25 + bossDamageBonus })}
@@ -444,13 +567,22 @@ export const GuildView: React.FC = () => {
             ) : (
               <div className="grid grid-cols-2 gap-2.5">
                 <button type="button" title={tr('boss_action_light_tip')} onClick={() => attack('light')}
-                  className="ct-btn ct-btn-gold h-11 text-xs font-black">{tr('boss_action_light_label')}</button>
+                  className="ct-btn ct-btn-gold h-11 text-xs font-black">⚔️ {tr('boss_action_light_label')}</button>
                 <button type="button" title={tr('boss_action_heavy_tip')} onClick={() => attack('heavy')}
-                  className="ct-btn ct-btn-danger h-11 text-xs font-black">{tr('boss_action_heavy_label')}</button>
+                  className="ct-btn ct-btn-danger h-11 text-xs font-black">💥 {tr('boss_action_heavy_label')}</button>
                 <button type="button" title={tr('boss_action_block_tip')} onClick={() => attack('block')}
-                  className="ct-btn ct-btn-secondary h-11 text-xs font-black">{tr('boss_action_block_label')}</button>
+                  className="ct-btn ct-btn-secondary h-11 text-xs font-black">🛡️ {tr('boss_action_block_label')}</button>
                 <button type="button" title={tr('boss_action_ultimate_tip')} onClick={() => attack('ultimate')}
-                  className="ct-btn ct-btn-primary h-11 text-xs font-black">{tr('boss_action_ultimate_label')}</button>
+                  className="ct-btn ct-btn-primary h-11 text-xs font-black">⚡ {tr('boss_action_ultimate_label')}</button>
+              </div>
+            )}
+            {/* H04: log pertempuran lokal (aditif) — 8 aksi terakhir */}
+            {battleLog.length > 0 && (
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 space-y-1" aria-live="polite">
+                <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">📜 {tr('guild_battle_log')}</p>
+                {battleLog.map((l) => (
+                  <p key={l.id} className={`text-[10px] truncate ${l.kind === 'win' ? 'text-amber-300' : 'text-slate-400'}`}>▸ {l.text}</p>
+                ))}
               </div>
             )}
           </>
@@ -481,9 +613,12 @@ export const GuildView: React.FC = () => {
                 {tr('cboss_btn')}
               </button>
             </div>
-            {/* Info boss terpilih (parity _update_boss_info: spyglass = detail penuh) */}
+            {/* Info boss terpilih (parity _update_boss_info: spyglass = detail penuh)
+                H04: dibungkus kartu pratinjau arena + piringan ikon tier. */}
             {selectedBoss && (
-              <div className="text-xs text-slate-300 whitespace-pre-line">
+              <div className="ct-arena p-4 flex items-start gap-4">
+                <div className="ct-boss-plate shrink-0" style={{ color: TIER_COLORS[selectedBoss.tier] || '#f0a800' }} aria-hidden="true">{selectedBoss.icon}</div>
+                <div className="min-w-0 flex-1 text-xs text-slate-300 whitespace-pre-line">
                 {hasSpyglass ? (
                   <>
                     <span style={{ color: TIER_COLORS[selectedBoss.tier] || '#f0a800' }}>
@@ -511,6 +646,7 @@ export const GuildView: React.FC = () => {
                     {`\n\n${tr('guild_spyglass_buy_hint')}`}
                   </>
                 )}
+                </div>
               </div>
             )}
             {hasSpyglass && (
@@ -590,24 +726,8 @@ export const GuildView: React.FC = () => {
         </div>
       )}
 
-      {/* ── Dialog hasil serangan boss (parity _perform_action → _show) ── */}
-      {attackModal && (
-        <div className="ct-backdrop fixed inset-0 z-[70] flex items-center justify-center p-4">
-          <div className="ct-dialog max-w-sm w-full p-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-100">
-                {attackModal.variant === 'success' ? '🏆' : '⚔️'} {attackModal.title}
-              </h3>
-              <button type="button" onClick={() => setAttackModal(null)} className="text-slate-400"><X className="w-5 h-5" /></button>
-            </div>
-            <pre className="text-xs text-slate-200 whitespace-pre-wrap break-words font-sans">{attackModal.body}</pre>
-            <div className="flex justify-end">
-              <button type="button" onClick={() => setAttackModal(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">{tr('btn_close')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* H08 (v1.7.1): dialog hasil serangan dihapus — digantikan kotak pesan
+          di dalam seksi arena (lihat ct-arena-msg di atas judul LIVE). */}
 
       {/* ── Dialog reward (parity _show_unclaimed_rewards) ── */}
       {rewardDlg && rewards.length > 0 && (

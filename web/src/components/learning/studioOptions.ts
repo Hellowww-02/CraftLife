@@ -156,6 +156,35 @@ const FOCUS: StudioOption = {
   placeholderFallback: 'mis. Bab 3 — Termodinamika',
 };
 
+// H01 (v1.7.0): opsi kualitas baru — level peserta & nada penyampaian.
+const AUDIENCE: StudioOption = {
+  id: 'audience', kind: 'choice',
+  labelKey: 'learning_opt_audience', labelFallback: 'Level peserta',
+  hintKey: 'learning_opt_audience_hint', hintFallback: 'Kedalaman penjelasan disesuaikan level ini.',
+  choices: [
+    { value: 'intermediate', labelKey: 'learning_opt_audience_intermediate', labelFallback: 'Menengah' },
+    { value: 'beginner', labelKey: 'learning_opt_audience_beginner', labelFallback: 'Pemula' },
+    { value: 'advanced', labelKey: 'learning_opt_audience_advanced', labelFallback: 'Lanjut' },
+  ],
+};
+
+const TONE: StudioOption = {
+  id: 'tone', kind: 'choice', advanced: true,
+  labelKey: 'learning_opt_tone', labelFallback: 'Nada penyampaian',
+  choices: [
+    { value: 'academic', labelKey: 'learning_opt_tone_academic', labelFallback: 'Akademis' },
+    { value: 'friendly', labelKey: 'learning_opt_tone_friendly', labelFallback: 'Ramah' },
+    { value: 'exam', labelKey: 'learning_opt_tone_exam', labelFallback: 'Fokus ujian' },
+  ],
+};
+
+const EXAMPLES: StudioOption = {
+  id: 'includeExamples', kind: 'toggle', advanced: true,
+  labelKey: 'learning_opt_include_examples', labelFallback: 'Sertakan contoh & analogi',
+  hintKey: 'learning_opt_include_examples_hint',
+  hintFallback: 'AI wajib menyelipkan contoh konkret pada hasil.',
+};
+
 /** Definisi kontrol per tipe Studio. */
 export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
   // A04: dua counter terpisah (PG & Esai, total ≤ 30) — kontrolnya komponen khusus
@@ -163,6 +192,9 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
   quiz: [
     DIFFICULTY,
     LANGUAGE,
+    AUDIENCE,
+    TONE,
+    EXAMPLES,
     FOCUS,
     {
       id: 'instructions', kind: 'text', advanced: true, rows: 3,
@@ -187,6 +219,8 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
     },
     DIFFICULTY,
     LANGUAGE,
+    AUDIENCE,
+    EXAMPLES,
     FOCUS,
   ],
   podcast: [
@@ -209,6 +243,7 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
       ],
     },
     LANGUAGE,
+    AUDIENCE,
     {
       id: 'instructions', kind: 'text', advanced: true, rows: 3,
       labelKey: 'learning_opt_custom_instructions', labelFallback: 'Instruksi tambahan',
@@ -252,6 +287,9 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
       labelKey: 'learning_opt_exercises', labelFallback: 'Jumlah soal latihan',
     },
     LANGUAGE,
+    AUDIENCE,
+    TONE,
+    EXAMPLES,
     FOCUS,
   ],
   faq: [
@@ -268,6 +306,8 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
       ],
     },
     LANGUAGE,
+    AUDIENCE,
+    EXAMPLES,
     FOCUS,
   ],
   timeline: [
@@ -308,6 +348,9 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
       ],
     },
     LANGUAGE,
+    AUDIENCE,
+    TONE,
+    EXAMPLES,
     FOCUS,
   ],
   'briefing-doc': [
@@ -321,6 +364,9 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
       ],
     },
     LANGUAGE,
+    AUDIENCE,
+    TONE,
+    EXAMPLES,
     FOCUS,
   ],
   'data-table': [
@@ -349,6 +395,8 @@ export const STUDIO_OPTIONS: Record<StudioKind, StudioOption[]> = {
       labelKey: 'learning_opt_slide_bullets', labelFallback: 'Poin per slide',
     },
     LANGUAGE,
+    AUDIENCE,
+    TONE,
     FOCUS,
   ],
 };
@@ -380,6 +428,10 @@ export function studioDefaults(kind: StudioKind): Record<string, any> {
   if (kind === 'data-table') { out.tableRows = 8; out.language = 'auto'; }
   if (kind === 'infographic') { out.infoPoints = 6; out.language = 'auto'; }
   if (kind === 'slide-deck') { out.slideCount = 8; out.slideBullets = 4; out.language = 'auto'; }
+  // H01 (v1.7.0): default opsi kualitas baru — hasil default lebih kaya dari sebelumnya.
+  if ('audience' in out) out.audience = 'intermediate';
+  if ('tone' in out) out.tone = 'academic';
+  if ('includeExamples' in out) out.includeExamples = true;
   return out;
 }
 
@@ -428,6 +480,10 @@ export function buildStudioPayload(kind: StudioKind, cfg: Record<string, any>): 
     if (s(cfg.language) && cfg.language !== 'auto') body.language = cfg.language;
     if (s(cfg.focus)) body.focus = s(cfg.focus).slice(0, 200);
     if (s(cfg.instructions)) body.instructions = s(cfg.instructions).slice(0, 600);
+    // H01: opsi kualitas baru (divalidasi ulang oleh server; absen = default server).
+    if (s(cfg.audience)) body.audience = cfg.audience;
+    if (s(cfg.tone)) body.tone = cfg.tone;
+    if (cfg.includeExamples !== undefined) body.includeExamples = cfg.includeExamples !== false;
   };
   switch (kind) {
     case 'quiz': {

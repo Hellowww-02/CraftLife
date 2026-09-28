@@ -1,28 +1,26 @@
 /**
- * StudioArtifactList.tsx — daftar artefak Studio (A06).
+ * StudioArtifactList.tsx — pemilih artefak Studio berbentuk DROPDOWN (H02, v1.7.0).
  *
- * Permintaan user: *"setiap generate studio berbentuk list ke bawah — ada di dalam list rapi."*
+ * A06 dulu menampilkan semua hasil sebagai list vertikal (max-h 420px) di bawah
+ * pratinjau interaktif — list itu menutupi/mengecilkan preview (keluhan user
+ * v1.7.0: "interactive preview jadi kecil"). Sekarang riwayat artefak menjadi
+ * SATU combobox ringkas:
  *
- * Sebelumnya hasil generate hanya tampil satu per satu di area `max-h-[360px]` untuk tipe
- * yang sedang aktif, ditambah daftar riwayat kecil (chip `gtype + topic + tanggal`) yang
- * mudah terlupakan. Sekarang SEMUA hasil generate adalah satu daftar vertikal:
+ *  - trigger menampilkan artefak aktif (ikon tipe · judul · badge tipe · jumlah
+ *    item · waktu relatif);
+ *  - panel dropdown: pencarian judul + urutan (Terbaru/Terlama/Tipe) + daftar
+ *    dikelompokkan per tipe; klik baris = buka artefak di pratinjau interaktif;
+ *  - baris aksi artefak terpilih: Ganti nama · Ekspor (.md/.txt, +.csv/.html
+ *    sesuai tipe) · Duplikat · Hapus.
  *
- *  - kartu artefak: ikon tipe · judul · badge tipe · waktu relatif · jumlah item
- *    ("15 soal" / "20 kartu" / "18 giliran" / "340 kata") · ukuran · tanggal;
- *  - filter chips per tipe · pencarian judul · urutan (Terbaru/Terlama/Tipe);
- *  - klik kartu → pratinjau isi terlihat tepat di bawah kartu (akordeon, satu scroll);
- *  - aksi per kartu: **Buka** (tampilan interaktif) · **Ganti nama** · **Ekspor .md** ·
- *    **Ekspor .txt** · **Duplikat** · **Hapus**.
- *
- * Komponen ini tidak menyimpan data sendiri — semua aksi diteruskan ke pemanggil
- * (LearningView) supaya state notebook tetap satu sumber kebenaran.
+ * Komponen tidak menyimpan data — semua aksi diteruskan ke LearningView supaya
+ * state notebook tetap satu sumber kebenaran. Keyboard penuh: ↑↓ Enter Esc
+ * (aria listbox/option), focus trap tidak diperlukan karena panel bukan modal.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Search, ArrowDownUp, Pencil, Copy, Trash2, Download, ExternalLink, ChevronDown,
-  FileText, Layers, Clock, ListChecks, X, Check, Inbox,
+  Search, ArrowDownUp, Pencil, Copy, Trash2, Download, ChevronDown, Check, Inbox, X,
 } from 'lucide-react';
-import { parseDataTable, parseInfographic, parseSlideDeck } from './StudioNewViews';
 
 export interface ArtifactItem {
   id: string;
@@ -38,7 +36,7 @@ export interface ArtifactItem {
 
 export interface StudioArtifactListProps {
   artifacts: ArtifactItem[];
-  /** Tipe yang sedang ditampilkan di area interaktif (ditandai "aktif"). */
+  /** Tipe yang sedang ditampilkan di area interaktif (fallback penanda aktif). */
   activeType?: string;
   activeArtifactId?: string | null;
   tr: (key: string, vars?: Record<string, string | number>, fallback?: string) => string;
@@ -96,14 +94,7 @@ function relTime(iso: string, tr: StudioArtifactListProps['tr']): string {
   return String(iso || '').slice(0, 10);
 }
 
-function humanSize(bytes: number): string {
-  const b = Number(bytes) || 0;
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
-}
-
-/** Item count per tipe → teks yang tepat ("15 soal" / "20 kartu" / "18 giliran" / "340 kata"). */
+/** Item count per tipe → teks yang tepat ("15 soal" / "20 kartu" / "18 giliran"). */
 function itemLabel(a: ArtifactItem, tr: StudioArtifactListProps['tr']): string {
   const meta = TYPE_META[a.gtype] || TYPE_META[normalizeType(a.gtype)] || { icon: '📄', scope: 'words' };
   if (meta.scope === 'quiz') return tr('learning_artifact_items_quiz', { n: a.itemCount || 0 }, '{n} soal');
@@ -115,201 +106,28 @@ function itemLabel(a: ArtifactItem, tr: StudioArtifactListProps['tr']): string {
   return tr('learning_artifact_items_words', { n: a.words || 0 }, '{n} kata');
 }
 
-/**
- * Pratinjau isi artefak (dibaca dari `content` milik kartu itu sendiri, read-only).
- * Quiz & flashcards ditampilkan sebagai daftar tanya-jawab; podcast sebagai dialog;
- * mind map sebagai JSON; tipe teks apa adanya.
- */
-export const ArtifactPreview: React.FC<{
-  artifact: ArtifactItem;
-  tr: StudioArtifactListProps['tr'];
-}> = ({ artifact, tr }) => {
-  const type = normalizeType(artifact.gtype);
-  const raw = String(artifact.content || '').trim();
-  const strip = (t: string) => t.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-
-  const quiz = useMemo(() => {
-    if (type !== 'quiz') return null;
-    try {
-      const data = JSON.parse(strip(raw));
-      const qs = Array.isArray(data) ? data : data.questions || [];
-      return qs as any[];
-    } catch {
-      return null;
-    }
-  }, [type, raw]);
-
-  const cards = useMemo(() => {
-    if (type !== 'flashcards') return null;
-    try {
-      const data = JSON.parse(strip(raw));
-      const arr = Array.isArray(data) ? data : data.cards || data.flashcards || [];
-      return arr as any[];
-    } catch {
-      return null;
-    }
-  }, [type, raw]);
-
-  const podcast = useMemo(() => {
-    if (type !== 'podcast') return null;
-    return raw.split('\n').filter((l) => l.includes('|')).map((l) => {
-      const [sp, ...rest] = l.split('|');
-      return { speaker: sp.trim().replace('HOST_A', 'Alex').replace('HOST_B', 'Sam'), line: rest.join('|').trim() };
-    });
-  }, [type, raw]);
-
-  // C05: pratinjau ringkas 3 tipe JSON baru.
-  const table = useMemo(() => (type === 'data-table' ? parseDataTable(raw) : null), [type, raw]);
-  const info = useMemo(() => (type === 'infographic' ? parseInfographic(raw) : null), [type, raw]);
-  const deck = useMemo(() => (type === 'slide-deck' ? parseSlideDeck(raw) : null), [type, raw]);
-
-  if (quiz) {
-    return (
-      <div className="space-y-2">
-        {quiz.length === 0 && <p className="text-[11px] text-slate-500">{tr('learning_artifact_empty_content', {}, '(isi kosong)')}</p>}
-        {quiz.map((q: any, i: number) => {
-          const isEssay = String(q.type || '').toLowerCase() === 'essay'
-            || (!q.options?.length && (q.modelAnswer || q.model_answer));
-          const answer = q.answer ?? q.correctAnswerIndex ?? 0;
-          return (
-            <div key={i} className="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5">
-              <p className="text-[11px] font-semibold text-slate-200">
-                {i + 1}. {q.question || q.q || ''}
-                {isEssay && <span className="ml-1.5 text-[9px] uppercase px-1 py-0.5 rounded bg-violet-500/20 text-violet-300">Essay</span>}
-              </p>
-              {isEssay ? (
-                <p className="text-[10px] text-slate-400 mt-1">
-                  <span className="font-bold text-slate-300">{tr('quiz_model_answer', {}, '💡 Jawaban contoh')}:</span>{' '}
-                  {q.modelAnswer || q.model_answer || '-'}
-                </p>
-              ) : (
-                <ul className="mt-1 space-y-0.5">
-                  {(q.options || []).map((opt: string, oi: number) => (
-                    <li key={oi} className={`text-[10px] ${oi === Number(answer) ? 'text-emerald-300 font-semibold' : 'text-slate-400'}`}>
-                      {oi === Number(answer) ? '✅ ' : '• '}{opt}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {(q.explanation || q.explain) && (
-                <p className="text-[10px] text-slate-500 mt-1">{q.explanation || q.explain}</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  if (cards) {
-    return (
-      <div className="space-y-1.5">
-        {cards.length === 0 && <p className="text-[11px] text-slate-500">{tr('learning_artifact_empty_content', {}, '(isi kosong)')}</p>}
-        {cards.map((c: any, i: number) => (
-          <div key={i} className="bg-slate-950/60 border border-slate-800 rounded-xl p-2.5">
-            <p className="text-[11px] font-semibold text-slate-200">{i + 1}. {c.front || c.question || ''}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">{c.back || c.answer || ''}</p>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (podcast) {
-    return (
-      <div className="space-y-1.5">
-        {podcast.length === 0 && <p className="text-[11px] text-slate-500">{tr('learning_artifact_empty_content', {}, '(isi kosong)')}</p>}
-        {podcast.map((p, i) => (
-          <p key={i} className="text-[11px] text-slate-300">
-            <span className="font-bold text-violet-300">{p.speaker}:</span> {p.line}
-          </p>
-        ))}
-      </div>
-    );
-  }
-
-  if (table) {
-    return (
-      <div className="overflow-x-auto rounded-xl border border-slate-800">
-        <table className="w-full text-[10px] text-slate-200">
-          <thead><tr>{table.columns.map((c, i) => (<th key={i} className="text-left font-bold px-2 py-1.5 bg-slate-900 text-violet-200 border-b border-slate-800">{c}</th>))}</tr></thead>
-          <tbody>{table.rows.slice(0, 8).map((r, i) => (<tr key={i} className={i % 2 ? 'bg-slate-950/40' : ''}>{r.map((c, j) => (<td key={j} className="px-2 py-1 border-b border-slate-800/60">{c}</td>))}</tr>))}</tbody>
-        </table>
-        {table.rows.length > 8 && <p className="text-[9px] text-slate-500 px-2 py-1">+{table.rows.length - 8}</p>}
-      </div>
-    );
-  }
-
-  if (deck) {
-    return (
-      <ol className="space-y-1">
-        {deck.slides.map((s, i) => (
-          <li key={i} className="text-[11px] text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl px-2.5 py-1.5">
-            <span className="font-bold text-violet-300">{i + 1}.</span> {s.title}
-            <span className="text-slate-500"> · {s.bullets.length}</span>
-          </li>
-        ))}
-      </ol>
-    );
-  }
-
-  if (info) {
-    return (
-      <div className="space-y-1.5">
-        {info.stats.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {info.stats.map((s, i) => (
-              <span key={i} className="px-2 py-1 rounded-lg bg-violet-600/20 border border-violet-500/40 text-[10px] font-bold text-violet-100">{s.value} · <span className="font-normal text-violet-300">{s.label}</span></span>
-            ))}
-          </div>
-        )}
-        {info.points.map((p, i) => (
-          <div key={i} className="bg-slate-950/60 border border-slate-800 rounded-xl p-2">
-            <p className="text-[11px] font-bold text-slate-200">{i + 1}. {p.heading}</p>
-            <p className="text-[10px] text-slate-400">{p.text}</p>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (type === 'mindmap') {
-    try {
-      return <pre className="text-[10px] text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 overflow-x-auto">{JSON.stringify(JSON.parse(strip(raw)), null, 2)}</pre>;
-    } catch {
-      return <pre className="text-[10px] text-slate-300 whitespace-pre-wrap bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 max-h-52 overflow-y-auto">{raw}</pre>;
-    }
-  }
-
-  return (
-    <pre className="text-[10px] text-slate-300 whitespace-pre-wrap bg-slate-950/60 border border-slate-800 rounded-xl p-2.5 max-h-52 overflow-y-auto">
-      {raw || tr('learning_artifact_empty_content', {}, '(isi kosong)')}
-    </pre>
-  );
-};
-
 const StudioArtifactList: React.FC<StudioArtifactListProps> = ({
   artifacts, activeType, activeArtifactId, tr, busy,
   onOpen, onRename, onDuplicate, onDelete, onExport, onSelectType,
 }) => {
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<string>('all');
   const [sort, setSort] = useState<'newest' | 'oldest' | 'type'>('newest');
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<ArtifactItem | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
-  // Daftar tipe yang benar-benar ada di notebook ini → chip filter dinamis.
-  const types = useMemo(() => {
-    const set = new Set<string>();
-    artifacts.forEach((a) => set.add(normalizeType(a.gtype)));
-    return Array.from(set);
-  }, [artifacts]);
+  const active = useMemo(
+    () => artifacts.find((a) => (activeArtifactId ? String(a.id) === String(activeArtifactId) : normalizeType(a.gtype) === normalizeType(activeType || ''))) || artifacts[0] || null,
+    [artifacts, activeArtifactId, activeType],
+  );
 
+  // Daftar terfilter + terurut (dipakai panel dropdown).
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = artifacts.filter((a) => {
-      if (filter !== 'all' && normalizeType(a.gtype) !== filter) return false;
       if (!q) return true;
       return `${a.title || ''} ${a.gtype || ''}`.toLowerCase().includes(q);
     });
@@ -320,7 +138,18 @@ const StudioArtifactList: React.FC<StudioArtifactListProps> = ({
       return sort === 'newest' ? tb - ta : ta - tb;
     });
     return list;
-  }, [artifacts, filter, query, sort]);
+  }, [artifacts, query, sort]);
+
+  // Grup per tipe (urutan grup mengikuti kemunculan di `filtered`).
+  const groups = useMemo(() => {
+    const map = new Map<string, ArtifactItem[]>();
+    for (const a of filtered) {
+      const t = normalizeType(a.gtype);
+      if (!map.has(t)) map.set(t, []);
+      map.get(t)!.push(a);
+    }
+    return Array.from(map.entries());
+  }, [filtered]);
 
   const typeLabel = (t: string) => {
     const n = normalizeType(t);
@@ -329,190 +158,235 @@ const StudioArtifactList: React.FC<StudioArtifactListProps> = ({
     return tr(`learning_studio_${key}`, {}, n);
   };
 
-  const startRename = (a: ArtifactItem) => {
-    setRenaming(a);
-    setRenameValue(a.title || '');
+  // Tutup saat klik di luar dropdown.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  // Fokus ke pencarian tiap panel terbuka.
+  useEffect(() => {
+    if (open) window.setTimeout(() => searchRef.current?.focus(), 30);
+  }, [open]);
+
+  const selectArtifact = (a: ArtifactItem) => {
+    setOpen(false);
+    onSelectType?.(a.gtype);
+    onOpen(a);
+    triggerRef.current?.focus();
   };
 
+  const onPanelKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const panel = rootRef.current?.querySelector<HTMLElement>('[data-artifact-panel]');
+      if (!panel) return;
+      const rows = Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-artifact-row]'));
+      if (!rows.length) return;
+      const idx = rows.findIndex((r) => r === document.activeElement);
+      const next = e.key === 'ArrowDown'
+        ? rows[Math.min(rows.length - 1, idx + 1)]
+        : rows[Math.max(0, idx <= 0 ? 0 : idx - 1)];
+      next?.focus();
+    }
+  };
+
+  const activeMeta = active ? (TYPE_META[normalizeType(active.gtype)] || { icon: '📄' }) : { icon: '📄' };
+  const activeT = active ? normalizeType(active.gtype) : '';
+
   return (
-    <div className="space-y-2.5">
-      {/* Header + kontrol */}
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-2">
+      {/* Header */}
+      <div className="flex items-center gap-2">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
           {tr('learning_artifacts', {}, 'Hasil Studio')}
         </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold">
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold ct-nlm-num">
           {tr('learning_artifacts_count', { n: artifacts.length }, '{n} hasil')}
         </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <div className="relative">
-            <Search className="w-3 h-3 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={tr('learning_artifact_search_ph', {}, 'Cari hasil…')}
-              className="w-28 sm:w-40 bg-slate-950 border border-slate-800 rounded-lg pl-6 pr-2 py-1 text-[11px] text-slate-200"
-            />
-          </div>
-          <button
-            onClick={() => setSort(sort === 'newest' ? 'oldest' : sort === 'oldest' ? 'type' : 'newest')}
-            className="flex items-center gap-1 px-2 py-1 bg-slate-950 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-300"
-            title={tr('learning_artifact_sort', {}, 'Urutan')}
-          >
-            <ArrowDownUp className="w-3 h-3" />
-            {sort === 'newest' ? tr('learning_artifact_sort_newest', {}, 'Terbaru')
-              : sort === 'oldest' ? tr('learning_artifact_sort_oldest', {}, 'Terlama')
-                : tr('learning_artifact_sort_type', {}, 'Tipe')}
-          </button>
-        </div>
       </div>
 
-      {/* Filter chips */}
-      {artifacts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${filter === 'all' ? 'bg-violet-600/25 border-violet-500/60 text-violet-100' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-violet-500/40'}`}
+      {/* Dropdown pemilih artefak */}
+      <div className="relative" ref={rootRef}>
+        <button
+          type="button"
+          ref={triggerRef}
+          onClick={() => setOpen((v) => !v)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true); }
+          }}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={tr('learning_artifact_select', {}, 'Pilih hasil Studio')}
+          className={`w-full flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+            open ? 'bg-violet-950/30 border-violet-500/50' : 'bg-slate-950 border-slate-800 hover:border-violet-500/40'
+          }`}
+        >
+          {active ? (
+            <>
+              <span className="text-lg leading-none shrink-0" aria-hidden="true">{activeMeta.icon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-100 truncate">{active.title || tr('learning_generic_topic', {}, '(topik umum)')}</span>
+                  <span className="text-[9px] uppercase px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold shrink-0">{typeLabel(active.gtype)}</span>
+                </span>
+                <span className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 ct-nlm-num">
+                  <span>{itemLabel(active, tr)}</span>
+                  <span>· {relTime(active.createdAt || '', tr)}</span>
+                </span>
+              </span>
+            </>
+          ) : (
+            <span className="flex items-center gap-2 flex-1 text-xs text-slate-500">
+              <Inbox className="w-4 h-4" aria-hidden="true" />
+              {tr('learning_artifact_empty_title', {}, 'Belum ada hasil Studio')}
+            </span>
+          )}
+          <ChevronDown
+            aria-hidden="true"
+            className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {open && (
+          <div
+            data-artifact-panel
+            onKeyDown={onPanelKey}
+            className="absolute left-0 right-0 top-full mt-2 z-30 ct-dialog p-0 overflow-hidden ct-pop"
           >
-            {tr('learning_artifact_filter_all', {}, 'Semua')} ({artifacts.length})
-          </button>
-          {types.map((t) => {
-            const n = artifacts.filter((a) => normalizeType(a.gtype) === t).length;
-            return (
+            {/* Kontrol: cari + urutan */}
+            <div className="flex items-center gap-1.5 p-2 border-b border-slate-800/80">
+              <div className="relative flex-1">
+                <Search className="w-3 h-3 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={tr('learning_artifact_search_ph', {}, 'Cari hasil…')}
+                  aria-label={tr('learning_artifact_search_ph', {}, 'Cari hasil…')}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-6 pr-2 py-1.5 text-[11px] text-slate-200 focus:outline-none focus:border-violet-500"
+                />
+              </div>
               <button
-                key={t}
-                onClick={() => setFilter(filter === t ? 'all' : t)}
-                className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${filter === t ? 'bg-violet-600/25 border-violet-500/60 text-violet-100' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-violet-500/40'}`}
+                type="button"
+                onClick={() => setSort(sort === 'newest' ? 'oldest' : sort === 'oldest' ? 'type' : 'newest')}
+                className="flex items-center gap-1 px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-300 hover:border-violet-500/40 shrink-0"
+                title={tr('learning_artifact_sort', {}, 'Urutan')}
               >
-                {TYPE_META[t]?.icon || '📄'} {typeLabel(t)} ({n})
+                <ArrowDownUp className="w-3 h-3" aria-hidden="true" />
+                {sort === 'newest' ? tr('learning_artifact_sort_newest', {}, 'Terbaru')
+                  : sort === 'oldest' ? tr('learning_artifact_sort_oldest', {}, 'Terlama')
+                    : tr('learning_artifact_sort_type', {}, 'Tipe')}
               </button>
-            );
-          })}
-        </div>
-      )}
+            </div>
 
-      {/* Daftar (list ke bawah) */}
-      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-        {artifacts.length === 0 && (
-          <div className="text-center py-8 bg-slate-950/40 border border-slate-800/80 rounded-xl">
-            <Inbox className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-            <p className="text-sm font-medium text-slate-400">{tr('learning_artifact_empty_title', {}, 'Belum ada hasil Studio')}</p>
-            <p className="text-[11px] text-slate-500 mt-1">{tr('learning_artifact_empty_hint', {}, 'Pilih salah satu tipe di atas untuk membuat materi baru.')}</p>
-          </div>
-        )}
-
-        {artifacts.length > 0 && filtered.length === 0 && (
-          <p className="text-[11px] text-slate-500 text-center py-4">{tr('learning_artifact_empty_filtered', {}, 'Tidak ada hasil untuk filter ini.')}</p>
-        )}
-
-        {filtered.map((a) => {
-          const t = normalizeType(a.gtype);
-          const isOpen = expanded === a.id;
-          const isActive = activeArtifactId ? activeArtifactId === a.id : activeType === a.gtype;
-          return (
-            <div
-              key={a.id}
-              className={`rounded-xl border transition-colors ${isActive ? 'bg-violet-950/25 border-violet-500/40' : 'bg-slate-950/70 border-slate-800'}`}
-            >
-              <div className="flex items-start gap-2 p-2.5">
-                <button
-                  onClick={() => { setExpanded(isOpen ? null : a.id); onSelectType?.(a.gtype); }}
-                  className="flex items-start gap-2 flex-1 min-w-0 text-left"
-                  title={tr('learning_artifact_preview', {}, 'Pratinjau')}
-                >
-                  <span className="text-base leading-none mt-0.5">{TYPE_META[t]?.icon || '📄'}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-bold text-slate-100 truncate">{a.title || tr('learning_generic_topic', {}, '(topik umum)')}</span>
-                      <span className="text-[9px] uppercase px-1 py-0.5 rounded bg-slate-700/60 text-slate-300 shrink-0">{typeLabel(a.gtype)}</span>
-                      {isActive && <span className="text-[9px] font-bold text-violet-300 shrink-0">• {tr('learning_artifact_active', {}, 'aktif')}</span>}
-                    </span>
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10px] text-slate-500">
-                      <span className="flex items-center gap-1"><ListChecks className="w-2.5 h-2.5" />{itemLabel(a, tr)}</span>
-                      <span className="flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{relTime(a.createdAt || '', tr)}</span>
-                      <span className="flex items-center gap-1"><FileText className="w-2.5 h-2.5" />{humanSize(a.sizeBytes || 0)}</span>
-                      {a.updatedAt && a.updatedAt !== a.createdAt && <span>✎ {tr('learning_artifact_edited', {}, 'diedit')}</span>}
-                    </span>
-                  </span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                </button>
-              </div>
-
-              {/* Aksi kartu */}
-              <div className="flex flex-wrap items-center gap-1 px-2.5 pb-2.5">
-                <button
-                  disabled={busy}
-                  onClick={() => onOpen(a)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-600/25 hover:bg-violet-600/40 border border-violet-500/40 text-violet-100 text-[10px] font-bold disabled:opacity-50"
-                  title={tr('learning_artifact_open_hint', {}, 'Tampilkan versi interaktif (kuis bisa dikerjakan)')}
-                >
-                  <ExternalLink className="w-3 h-3" />{tr('learning_artifact_open', {}, 'Buka')}
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => startRename(a)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
-                >
-                  <Pencil className="w-3 h-3" />{tr('learning_artifact_rename', {}, 'Ganti nama')}
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => onExport(a, 'md')}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
-                >
-                  <Download className="w-3 h-3" />{tr('learning_artifact_export_md', {}, 'Ekspor .md')}
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => onExport(a, 'txt')}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
-                >
-                  <Download className="w-3 h-3" />{tr('learning_artifact_export_txt', {}, 'Ekspor .txt')}
-                </button>
-                {t === 'data-table' && (
-                  <button
-                    disabled={busy}
-                    onClick={() => onExport(a, 'csv')}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
-                  >
-                    <Download className="w-3 h-3" />{tr('learning_artifact_export_csv', {}, 'Ekspor .csv')}
-                  </button>
-                )}
-                {t === 'slide-deck' && (
-                  <button
-                    disabled={busy}
-                    onClick={() => onExport(a, 'html')}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
-                  >
-                    <Download className="w-3 h-3" />{tr('learning_artifact_export_html', {}, 'Ekspor .html')}
-                  </button>
-                )}
-                <button
-                  disabled={busy}
-                  onClick={() => onDuplicate(a)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
-                >
-                  <Copy className="w-3 h-3" />{tr('learning_artifact_duplicate', {}, 'Duplikat')}
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => onDelete(a)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 text-[10px] font-bold ml-auto disabled:opacity-50"
-                >
-                  <Trash2 className="w-3 h-3" />{tr('learning_artifact_delete', {}, 'Hapus')}
-                </button>
-              </div>
-
-              {/* Pratinjau akordeon (satu list, satu scroll) */}
-              {isOpen && (
-                <div className="px-2.5 pb-2.5 border-t border-slate-800/70 pt-2">
-                  <ArtifactPreview artifact={a} tr={tr} />
+            {/* Daftar (grup per tipe) */}
+            <div role="listbox" aria-label={tr('learning_artifacts', {}, 'Hasil Studio')} className="max-h-72 overflow-y-auto p-1.5">
+              {artifacts.length === 0 && (
+                <div className="text-center py-6 px-3">
+                  <Inbox className="w-7 h-7 mx-auto mb-2 text-slate-600" aria-hidden="true" />
+                  <p className="text-xs font-medium text-slate-400">{tr('learning_artifact_empty_title', {}, 'Belum ada hasil Studio')}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">{tr('learning_artifact_empty_hint', {}, 'Pilih salah satu tipe di atas untuk membuat materi baru.')}</p>
                 </div>
               )}
+              {artifacts.length > 0 && filtered.length === 0 && (
+                <p className="text-[11px] text-slate-500 text-center py-4">{tr('learning_artifact_empty_filtered', {}, 'Tidak ada hasil untuk filter ini.')}</p>
+              )}
+              {groups.map(([t, items]) => (
+                <div key={t}>
+                  <p className="px-2 pt-2 pb-1 text-[9px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5">
+                    <span aria-hidden="true">{TYPE_META[t]?.icon || '📄'}</span>
+                    {typeLabel(t)}
+                    <span className="ct-nlm-num">({items.length})</span>
+                  </p>
+                  {items.map((a) => {
+                    const isActive = active ? String(active.id) === String(a.id) : false;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        data-artifact-row
+                        onClick={() => selectArtifact(a)}
+                        className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${
+                          isActive ? 'bg-violet-600/25 text-violet-100' : 'text-slate-300 hover:bg-slate-800/70'
+                        }`}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[11px] font-semibold truncate">{a.title || tr('learning_generic_topic', {}, '(topik umum)')}</span>
+                          <span className="block text-[9px] text-slate-500 ct-nlm-num">{itemLabel(a, tr)} · {relTime(a.createdAt || '', tr)}</span>
+                        </span>
+                        {isActive && <Check className="w-3.5 h-3.5 text-violet-300 shrink-0" aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
-          );
-        })}
+          </div>
+        )}
       </div>
+
+      {/* Baris aksi artefak terpilih */}
+      {active && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { setRenaming(active); setRenameValue(active.title || ''); }}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
+            title={tr('learning_artifact_rename', {}, 'Ganti nama')}
+          >
+            <Pencil className="w-3 h-3" aria-hidden="true" />{tr('learning_artifact_rename', {}, 'Ganti nama')}
+          </button>
+          <span className="flex items-center gap-0.5 rounded-lg bg-slate-950 border border-slate-800 px-1 py-0.5">
+            <Download className="w-3 h-3 text-slate-500 mx-0.5" aria-hidden="true" />
+            {(['md', 'txt'] as ('md' | 'txt' | 'csv' | 'html')[])
+              .concat(activeT === 'data-table' ? ['csv'] : [], activeT === 'slide-deck' ? ['html'] : [])
+              .map((fmt) => (
+              <button
+                key={fmt}
+                type="button"
+                disabled={busy}
+                onClick={() => onExport(active, fmt)}
+                className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-slate-300 hover:bg-slate-800 disabled:opacity-50 ct-nlm-num"
+                title={tr('learning_artifact_export_fmt', { fmt }, 'Ekspor .{fmt}')}
+              >
+                .{fmt}
+              </button>
+            ))}
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onDuplicate(active)}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold disabled:opacity-50"
+            title={tr('learning_artifact_duplicate', {}, 'Duplikat')}
+          >
+            <Copy className="w-3 h-3" aria-hidden="true" />{tr('learning_artifact_duplicate', {}, 'Duplikat')}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onDelete(active)}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 text-[10px] font-bold disabled:opacity-50 ml-auto"
+            title={tr('learning_artifact_delete', {}, 'Hapus')}
+          >
+            <Trash2 className="w-3 h-3" aria-hidden="true" />{tr('learning_artifact_delete', {}, 'Hapus')}
+          </button>
+        </div>
+      )}
 
       {/* Dialog ganti nama */}
       {renaming && (
@@ -529,18 +403,20 @@ const StudioArtifactList: React.FC<StudioArtifactListProps> = ({
               }}
               maxLength={120}
               placeholder={tr('learning_artifact_rename_ph', {}, 'mis. Kuis Bab 3')}
+              aria-label={tr('learning_artifact_rename_title', {}, 'Nama baru hasil Studio')}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-violet-500"
             />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setRenaming(null)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[11px] font-bold">
-                <X className="w-3 h-3" />{tr('msg_cancel', {}, 'Batal')}
+              <button type="button" onClick={() => setRenaming(null)} className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[11px] font-bold">
+                <X className="w-3 h-3" aria-hidden="true" />{tr('msg_cancel', {}, 'Batal')}
               </button>
               <button
+                type="button"
                 disabled={!renameValue.trim()}
                 onClick={() => { onRename(renaming, renameValue.trim()); setRenaming(null); }}
                 className="flex items-center gap-1 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-[11px] font-bold"
               >
-                <Check className="w-3 h-3" />{tr('msg_ok', {}, 'OK')}
+                <Check className="w-3 h-3" aria-hidden="true" />{tr('msg_ok', {}, 'OK')}
               </button>
             </div>
           </div>

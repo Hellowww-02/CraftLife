@@ -554,6 +554,9 @@ export const LearningView: React.FC = () => {
   // Flashcards state
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
+  // H03 (v1.7.0): urutan tampil flashcard lokal — null = urutan asli dari server;
+  // array permutasi bila user menekan Acak. Tidak pernah mengubah data notebook.
+  const [flashOrder, setFlashOrder] = useState<number[] | null>(null);
 
   // Quiz state
   // A04: kunci jawaban TIDAK lagi memakai indeks soal. `activeNotebook` di-refetch
@@ -705,18 +708,78 @@ export const LearningView: React.FC = () => {
       );
     }
     const idx = Math.min(currentCardIndex, cards.length - 1);
+    // H03 (v1.7.0): flashcard premium — flip 3D, hint/contoh dari server (H01),
+    // shuffle lokal, navigasi keyboard. Urutan asli tidak pernah diubah.
+    const order = flashOrder && flashOrder.length === cards.length
+      ? flashOrder : cards.map((_: any, i: number) => i);
+    const card: any = cards[order[idx]] || {};
+    const goPrev = () => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p > 0 ? p - 1 : cards.length - 1)); };
+    const goNext = () => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p < cards.length - 1 ? p + 1 : 0)); };
+    const shuffleCards = () => {
+      const a = cards.map((_: any, i: number) => i);
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+      setFlashOrder(a); setCurrentCardIndex(0); setIsCardFlipped(false);
+    };
     return (
-      <div className="flex flex-col items-center space-y-4 py-2">
-        <div onClick={() => setIsCardFlipped(!isCardFlipped)} className="w-full min-h-[200px] p-6 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700/80 rounded-2xl shadow-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:border-violet-500/50 select-none">
-          <span className="text-xs font-bold text-slate-500 mb-1">{idx + 1} / {cards.length}</span>
-          <span className="text-xs font-bold uppercase tracking-wider text-violet-400 mb-2">{isCardFlipped ? tr('answer', 'Answer') : tr('question', 'Question')}</span>
-          <p className="text-base font-semibold text-slate-100">{isCardFlipped ? cards[idx]?.answer : cards[idx]?.question}</p>
-          <span className="text-[11px] text-slate-500 mt-2">{tr('click_to_flip', 'Click to flip')}</span>
+      <div className="flex flex-col items-center space-y-3 py-2">
+        {/* Progres tumpukan */}
+        <div className="w-full flex items-center gap-3">
+          <div className="ct-quiz-progress flex-1"><span style={{ width: `${((idx + 1) / cards.length) * 100}%` }} /></div>
+          <span className="text-[10px] font-bold text-slate-500 ct-nlm-num shrink-0">{idx + 1} / {cards.length}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p > 0 ? p - 1 : cards.length - 1)); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200">{tr('prev', '‹ Prev')}</button>
+
+        {/* Kartu flip 3D (keyboard: spasi/enter balik, ← → pindah) */}
+        <div
+          className={`ct-flip-scene ${isCardFlipped ? 'is-flipped' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label={tr('learning_cards_flip_aria', 'Kartu flashcard — tekan spasi untuk membalik')}
+          onClick={() => setIsCardFlipped(!isCardFlipped)}
+          onKeyDown={(e) => {
+            if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setIsCardFlipped((v) => !v); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+          }}
+        >
+          <div className="ct-flip-inner">
+            {/* Sisi depan: pertanyaan (+ petunjuk bila ada) */}
+            <div className="ct-flip-face rounded-2xl border border-slate-700/80 bg-gradient-to-br from-slate-900 to-slate-950 p-6 items-center justify-center text-center select-none hover:border-violet-500/50 transition-colors">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-violet-400 mb-2">{tr('question', 'Question')}</span>
+              <p className="text-base font-semibold text-slate-100 break-words min-w-0">{card.question}</p>
+              {card.hint && (
+                <p className="mt-3 max-w-full text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5 break-words">
+                  💡 {card.hint}
+                </p>
+              )}
+              <span className="ct-flip-hint text-slate-500">{tr('learning_cards_flip_hint', 'Klik / spasi untuk membalik · ← → pindah kartu')}</span>
+            </div>
+            {/* Sisi belakang: jawaban (+ contoh bila ada) */}
+            <div className="ct-flip-face ct-flip-back rounded-2xl border border-violet-500/40 bg-gradient-to-br from-violet-950/70 to-slate-950 p-6 items-center justify-center text-center select-none">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-violet-300 mb-2">{tr('answer', 'Answer')}</span>
+              <p className="text-base font-semibold text-slate-100 break-words min-w-0">{card.answer}</p>
+              {card.example && (
+                <p className="mt-3 max-w-full text-[11px] text-emerald-200/90 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2.5 py-1.5 break-words">
+                  🧪 {card.example}
+                </p>
+              )}
+              <span className="ct-flip-hint text-slate-400">{tr('learning_cards_flip_hint', 'Klik / spasi untuk membalik · ← → pindah kartu')}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Kontrol */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button onClick={goPrev} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200" title={tr('prev', '‹ Prev')}>{tr('prev', '‹ Prev')}</button>
           <button onClick={() => setIsCardFlipped(!isCardFlipped)} className="px-3 py-1.5 bg-violet-600/30 hover:bg-violet-600/40 text-violet-300 text-xs font-bold rounded-lg border border-violet-500/30">{tr('flip', 'Flip')}</button>
-          <button onClick={() => { setIsCardFlipped(false); setCurrentCardIndex((p) => (p < cards.length - 1 ? p + 1 : 0)); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200">{tr('next', 'Next ›')}</button>
+          <button onClick={goNext} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-200" title={tr('next', 'Next ›')}>{tr('next', 'Next ›')}</button>
+          <button onClick={shuffleCards} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-300 flex items-center gap-1" title={tr('learning_cards_shuffle', 'Acak urutan')}>
+            <RotateCcw className="w-3 h-3" aria-hidden="true" />{tr('learning_cards_shuffle', 'Acak urutan')}
+          </button>
+          {flashOrder && (
+            <button onClick={() => { setFlashOrder(null); setCurrentCardIndex(0); setIsCardFlipped(false); }} className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-xs font-bold rounded-lg text-slate-400 border border-slate-700">
+              {tr('learning_cards_order_reset', 'Urutan asli')}
+            </button>
+          )}
         </div>
       </div>
     );
@@ -749,28 +812,95 @@ export const LearningView: React.FC = () => {
     const scorePct = scoreTotal ? Math.round((scoreGot / scoreTotal) * 100) : 0;
     const fmtScore = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
+    // H03: jumlah terjawab (untuk bar progres sebelum evaluasi).
+    const answeredCount = items.filter((q) => (q.isEssay
+      ? String(essayAnswers[q.key] ?? '').trim().length > 0
+      : selectedAnswers[q.key] !== undefined)).length;
+    const jumpToQuestion = (key: string) => {
+      document.getElementById(`quiz-q-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+
     return (
       <div className="space-y-4">
+        {/* H03 (v1.7.0): progres + navigasi cepat antar soal */}
+        <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2.5">
+          <div className="flex items-center gap-3">
+            <div className="ct-quiz-progress flex-1">
+              <span style={{ width: `${items.length ? ((quizReviewed ? items.length : answeredCount) / items.length) * 100 : 0}%` }} />
+            </div>
+            <span className="text-[10px] font-bold text-slate-500 ct-nlm-num shrink-0">
+              {quizReviewed
+                ? trv('learning_quiz_progress_reviewed', '{n} soal dinilai', { n: items.length })
+                : trv('learning_quiz_progress', '{done}/{n} terjawab', { done: answeredCount, n: items.length })}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((q, qIndex) => {
+              let cls = '';
+              if (quizReviewed) {
+                if (q.isEssay) cls = (Number(essayMarks[q.key]) || 0) > 0 ? 'is-correct' : '';
+                else cls = Number(selectedAnswers[q.key]) === Number(q.correctAnswerIndex) ? 'is-correct' : 'is-wrong';
+              } else if (q.isEssay ? String(essayAnswers[q.key] ?? '').trim() : selectedAnswers[q.key] !== undefined) {
+                cls = 'is-current';
+              }
+              return (
+                <button
+                  key={q.key}
+                  type="button"
+                  onClick={() => jumpToQuestion(q.key)}
+                  className={`ct-quiz-chip ${cls}`}
+                  title={trv('learning_quiz_jump', 'Lompat ke soal {n}', { n: qIndex + 1 })}
+                  aria-label={trv('learning_quiz_jump', 'Lompat ke soal {n}', { n: qIndex + 1 })}
+                >
+                  {qIndex + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         {quizReviewed && (
-          <div className="p-3 bg-violet-950/40 border border-violet-500/40 rounded-xl space-y-1">
-            <div className="text-sm font-black text-violet-100">
-              {tr('quiz_score', 'Skor')}: {fmtScore(scoreGot)}/{scoreTotal} ({scorePct}%)
-            </div>
-            <div className="text-[11px] text-violet-200/80">
-              {trv('learning_quiz_score_detail', 'PG {mcCorrect}/{mcTotal} · Essay {essayPoints}/{essayTotal}', {
-                mcCorrect, mcTotal: mcItems.length, essayPoints: fmtScore(essayPoints), essayTotal: essayItems.length,
-              })}
-            </div>
-            <div className="text-[10px] text-violet-200/60">
-              {trv('learning_quiz_score_hint', 'Nilai essay diisi mandiri (Sesuai = 1 · Sebagian = 0.5).', {})}
+          // H03 (v1.7.0): hero hasil dengan ring skor SVG (warnanya mengikuti nilai).
+          <div className="p-4 bg-gradient-to-br from-violet-950/60 to-slate-950 border border-violet-500/40 rounded-xl">
+            <div className="flex items-center gap-4">
+              <div className="relative w-16 h-16 shrink-0" role="img" aria-label={trv('learning_quiz_score_aria', 'Skor {pct} persen', { pct: scorePct })}>
+                <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90" aria-hidden="true">
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(139,92,246,0.18)" strokeWidth="3.5" />
+                  <circle
+                    cx="18" cy="18" r="15.5" fill="none"
+                    stroke={scorePct >= 70 ? '#34d399' : scorePct >= 40 ? '#a78bfa' : '#fb7185'}
+                    strokeWidth="3.5" strokeLinecap="round"
+                    strokeDasharray={`${(scorePct / 100) * 97.4} 97.4`}
+                    style={{ transition: 'stroke-dasharray var(--ct-t-slow) var(--ct-ease)' }}
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-black text-slate-100 ct-nlm-num">{scorePct}%</span>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-black text-violet-100">
+                  {tr('quiz_score', 'Skor')}: {fmtScore(scoreGot)}/{scoreTotal}
+                </div>
+                <div className="text-[11px] text-violet-200/80">
+                  {trv('learning_quiz_score_detail', 'PG {mcCorrect}/{mcTotal} · Essay {essayPoints}/{essayTotal}', {
+                    mcCorrect, mcTotal: mcItems.length, essayPoints: fmtScore(essayPoints), essayTotal: essayItems.length,
+                  })}
+                </div>
+                <div className="text-[10px] text-violet-200/60">
+                  {trv('learning_quiz_score_hint', 'Nilai essay diisi mandiri (Sesuai = 1 · Sebagian = 0.5).', {})}
+                </div>
+              </div>
             </div>
           </div>
         )}
         {items.map((q, qIndex) => {
           const userChoice = selectedAnswers[q.key];
           const isCorrect = Number(userChoice) === Number(q.correctAnswerIndex);
+          // H03: setelah evaluasi, border kartu menandai benar/salah sekilas.
+          const reviewBorder = !quizReviewed ? 'border-slate-800'
+            : q.isEssay
+              ? ((Number(essayMarks[q.key]) || 0) > 0 ? 'border-emerald-500/40' : 'border-slate-700')
+              : (isCorrect ? 'border-emerald-500/40' : 'border-rose-500/40');
           return (
-            <div key={q.key} className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+            <div key={q.key} id={`quiz-q-${q.key}`} className={`p-3 bg-slate-950/70 border ${reviewBorder} rounded-xl space-y-2 scroll-mt-4`}>
               <h4 className="font-bold text-sm text-slate-200">{qIndex + 1}. {q.question}{q.isEssay && <span className="ml-2 text-[10px] uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 align-middle">Essay</span>}</h4>
               {q.isEssay ? (
                 <>
@@ -1441,8 +1571,27 @@ export const LearningView: React.FC = () => {
                   <p className="text-[9px] text-slate-500">{tr('learning_dialog_quick_hint', '⚡ Langsung generate dengan pengaturan terakhir')}</p>
                 </div>
 
-                {/* Output area (parity studio_output_stack) — A06: bisa dilipat karena
-                    daftar artefak di bawahnya kini menjadi isi utama panel. */}
+                {/* H02 (v1.7.0): riwayat artefak = DROPDOWN ringkas (dulu list vertikal
+                    A06 yang menutupi pratinjau). Pilih artefak di sini → pratinjau
+                    interaktif di bawah langsung menampilkannya. */}
+                <div className="pt-2 border-t border-slate-800/80">
+                  <StudioArtifactList
+                    artifacts={artifacts}
+                    activeType={activeStudioType}
+                    activeArtifactId={selectedGen ? String(selectedGen.id) : interactiveArtifactId}
+                    tr={trq}
+                    busy={isAiLoading}
+                    onOpen={handleOpenArtifact}
+                    onRename={handleRenameArtifact}
+                    onDuplicate={handleDuplicateArtifact}
+                    onDelete={handleDeleteArtifact}
+                    onExport={handleExportArtifact}
+                    onSelectType={(t) => setActiveStudioType(normalizeArtifactType(t))}
+                  />
+                </div>
+
+                {/* Output area (parity studio_output_stack) — H02: pratinjau interaktif
+                    menjadi isi utama panel (bisa dilipat bila perlu ruang generate). */}
                 <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
                   <button
                     onClick={() => setShowStudioPreview((v) => !v)}
@@ -1459,30 +1608,13 @@ export const LearningView: React.FC = () => {
                   )}
                 </div>
                 {showStudioPreview && (
-                  <div style={{ fontSize: studioFontSize }} className="overflow-y-auto max-h-[360px] space-y-3">
+                  // H02 (v1.7.0): tanpa max-h — pratinjau interaktif mendapat seluruh
+                  // ruang panel (dulu dibatasi 360px dan tertutup list artefak).
+                  <div style={{ fontSize: studioFontSize }} className="space-y-3 min-h-[320px]">
                     {activeStudioType === 'flashcards' ? renderFlashcards() : activeStudioType === 'quiz' ? renderQuiz() : activeStudioType === 'podcast' ? renderPodcast() : renderStudioMarkdown()}
                   </div>
                 )}
 
-                {/* A06: daftar artefak Studio (list ke bawah) — menggantikan riwayat chip kecil.
-                    Kartu: judul · tipe · waktu relatif · jumlah item · ukuran, dengan aksi
-                    Buka / Ganti nama / Ekspor .md / Ekspor .txt / Duplikat / Hapus, plus
-                    pratinjau isi yang terbuka tepat di bawah kartu (satu scroll). */}
-                <div className="pt-2 border-t border-slate-800/80">
-                  <StudioArtifactList
-                    artifacts={artifacts}
-                    activeType={activeStudioType}
-                    activeArtifactId={selectedGen ? String(selectedGen.id) : interactiveArtifactId}
-                    tr={trq}
-                    busy={isAiLoading}
-                    onOpen={handleOpenArtifact}
-                    onRename={handleRenameArtifact}
-                    onDuplicate={handleDuplicateArtifact}
-                    onDelete={handleDeleteArtifact}
-                    onExport={handleExportArtifact}
-                    onSelectType={(t) => setActiveStudioType(normalizeArtifactType(t))}
-                  />
-                </div>
             </section>
           }
         />

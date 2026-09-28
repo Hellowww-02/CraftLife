@@ -5,20 +5,13 @@ import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost, saveFileToComputer, downloadTargetInfo, openDownloadsFolder } from '../../api/client';
 import {
   cloudConflict,
-  cloudDevices,
-  cloudLogin,
-  cloudLogout,
-  cloudMigrateLocal,
-  cloudQueueRetry,
-  cloudRegister,
-  cloudRevokeDevice,
   cloudStatus,
-  cloudSyncNow,
-  type CloudDevice,
   type CloudStatus,
 } from '../../api/cloud';
+// H06 (v1.7.0): konfigurasi cloud dipindah ke dialog profesional.
+import CloudAccountDialog, { cloudErrMsg } from '../CloudAccountDialog';
 import { t } from '../../i18n';
-import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Cloud, RefreshCw, LogOut, Smartphone, Palette, Database, RefreshCcw, FolderOpen } from 'lucide-react';
+import { Settings, User, Volume2, VolumeX, Globe, Download, Upload, Trash2, Cloud, Palette, Database, RefreshCcw, FolderOpen } from 'lucide-react';
 
 // ===== Parity SettingsPage: panel admin (debug cheats, gated is_admin) =====
 const AdminDebugPanel: React.FC = () => {
@@ -268,11 +261,9 @@ export const SettingsView: React.FC = () => {
 
   const [cloud, setCloud] = useState<CloudStatus | null>(null);
   const [cloudBusy, setCloudBusy] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [devices, setDevices] = useState<CloudDevice[]>([]);
-  const [showDevices, setShowDevices] = useState(false);
-  useEscapeClose(showDevices, () => setShowDevices(false));
+  // H06 (v1.7.0): seluruh konfigurasi cloud dipindah ke dialog profesional.
+  const [cloudDlg, setCloudDlg] = useState(false);
+  useEscapeClose(cloudDlg, () => setCloudDlg(false));
 
   // Parity SettingsPage state: theme, currency, font scale, high contrast
   const [themes, setThemes] = useState<ThemeRow[]>([]);
@@ -453,13 +444,14 @@ export const SettingsView: React.FC = () => {
       if (result?.status) setCloud(result.status);
       else await loadCloud();
       if (result?.ok === false) {
-        showToast('info', t('cloud_error', 'Cloud error').replace('{error}', String(result.error || result.code || 'error')), '');
+        // H06: kode error server → teks bilingual (bukan lagi "HTTP 400").
+        showToast('info', cloudErrMsg(String(result.error || result.code || 'cloud_unknown_error')), '');
       } else if (okMsg) {
         showToast('success', okMsg, '');
       }
       return result;
     } catch (err: any) {
-      showToast('info', String(err?.message || err), '');
+      showToast('info', cloudErrMsg(err), '');
     } finally {
       setCloudBusy(false);
     }
@@ -511,16 +503,47 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* ===== Cloud & Sync (sudah ada, dipertahankan) ===== */}
+      {/* ===== Cloud & Sync — H06 (v1.7.0): kartu status ringkas + dialog
+            konfigurasi profesional (semua fungsi lama pindah ke dialog). ===== */}
       <div className="ct-panel rounded-3xl p-6 space-y-4">
-        <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-          <Cloud className="w-4 h-4 text-sky-400" />
-          <span>{t('cloud_group', 'Cloud & Sync')}</span>
-        </h3>
-        <p className="text-xs text-slate-400 whitespace-pre-wrap">{statusText}</p>
-        {cloud?.configured && cloud.realtime_connected && (
-          <p className="text-[11px] text-emerald-400">{t('cloud_realtime_on', 'Realtime aktif')}</p>
-        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+            <Cloud className="w-4 h-4 text-sky-400" />
+            <span>{t('cloud_group', 'Cloud & Sync')}</span>
+          </h3>
+          <button
+            type="button"
+            onClick={() => setCloudDlg(true)}
+            className="ct-btn ct-btn-primary ct-btn-sm inline-flex items-center gap-1.5 font-black"
+          >
+            <Cloud className="w-3.5 h-3.5" aria-hidden="true" />
+            {t('cloud_dialog_open', 'Konfigurasi Cloud')}
+          </button>
+        </div>
+
+        {/* Kartu status */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold ${
+              linked ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40' : 'bg-slate-800/70 text-slate-400 border-slate-700'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${linked ? 'bg-emerald-400' : 'bg-slate-600'}`} aria-hidden="true" />
+              {linked ? t('cloud_badge_linked', 'Terhubung') : t('cloud_badge_unlinked', 'Belum terhubung')}
+            </span>
+            {linked && cloud?.email && <span className="text-[11px] text-slate-300 truncate">{cloud.email}</span>}
+            {cloud?.configured && cloud.realtime_connected && (
+              <span className="text-[10px] font-bold text-sky-300">{t('cloud_realtime_on', 'Realtime aktif')}</span>
+            )}
+            {pending > 0 && (
+              <span className="text-[10px] font-bold text-amber-300 ct-nlm-num">
+                {t('cloud_queue_pending', '{n} antrean').replace('{n}', String(pending))}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 whitespace-pre-wrap">{statusText}</p>
+        </div>
+
+        {/* Konflik data tetap tampil di halaman (aksi juga tersedia di dialog) */}
         {conflict && (
           <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
             <p className="text-xs text-amber-200">{t('cloud_conflict_hint', 'Data tracker berubah di perangkat ini dan perangkat lain. Pilih sumber yang ingin dipertahankan.')}</p>
@@ -534,67 +557,16 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
         )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('cloud_email', 'Cloud email')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('cloud_password', 'Password cloud (min. 8)')} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-xs" />
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <button disabled={cloudBusy || linked} onClick={() => runCloud(() => cloudRegister(email, password), t('cloud_verification_sent', 'Cek inbox untuk verifikasi email.'))} className="px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-40">
-            {t('cloud_create_account', 'Buat Akun Cloud')}
-          </button>
-          <button disabled={cloudBusy || linked} onClick={() => runCloud(() => cloudLogin(email, password), t('cloud_account_created', 'Akun terhubung.'))} className="px-3 py-2 rounded-xl bg-sky-500 text-slate-950 text-xs font-black disabled:opacity-40">
-            {t('cloud_signin_link', 'Sign In & Link')}
-          </button>
-          <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudSyncNow(), t('cloud_sync_success', 'Cloud sync selesai.'))} className="px-3 py-2 rounded-xl bg-yellow-500 disabled:opacity-40 text-slate-950 text-xs font-black inline-flex items-center gap-1">
-            <RefreshCw className="w-3 h-3" /> {t('cloud_sync_now', 'Sync Sekarang')}
-          </button>
-          <button disabled={cloudBusy || !linked} onClick={() => { if (window.confirm(t('cloud_migrate_local', 'Antrikan data lokal ke cloud?'))) runCloud(() => cloudMigrateLocal()); }} className="ct-btn ct-btn-secondary ct-btn-sm disabled:opacity-40">
-            {t('cloud_migrate_local', 'Migrasikan Data Lokal')}
-          </button>
-          <button disabled={cloudBusy || !linked} onClick={async () => {
-            setShowDevices(true);
-            try {
-              const d = await cloudDevices();
-              setDevices(d.devices || []);
-              if (d.register_error) showToast('info', d.register_error, '');
-            } catch (e: any) {
-              showToast('info', String(e?.message || e), '');
-            }
-          }} className="ct-btn ct-btn-secondary ct-btn-sm inline-flex items-center gap-1 disabled:opacity-40">
-            <Smartphone className="w-3 h-3" /> {t('cloud_devices_title', 'Kelola Perangkat')}
-          </button>
-          <button disabled={cloudBusy || !linked} onClick={() => runCloud(() => cloudQueueRetry())} className="ct-btn ct-btn-secondary ct-btn-sm disabled:opacity-40">
-            {t('cloud_queue_retry', 'Coba Lagi')}
-          </button>
-          <button disabled={cloudBusy || !cloud?.linked} onClick={() => runCloud(() => cloudLogout())} className="ct-btn ct-btn-danger ct-btn-sm inline-flex items-center gap-1">
-            <LogOut className="w-3 h-3" /> {t('cloud_sign_out', 'Sign Out Cloud')}
-          </button>
-        </div>
-
-        {showDevices && (
-          <div className="ct-body-tile p-3 space-y-2">
-            <p className="text-[11px] text-slate-500">{t('cloud_devices_info', 'UUID perangkat bukan credential.')}</p>
-            {(devices.length ? devices : []).map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-2 text-xs text-slate-300">
-                <span>{d.current ? '★ ' : ''}{d.device_name || d.id} · {d.platform} · {d.revoked_at ? t('cloud_device_revoked', 'revoked') : t('cloud_device_active', 'active')}</span>
-                {!d.current && !d.revoked_at && (
-                  <button className="text-rose-400" onClick={async () => {
-                    try {
-                      await cloudRevokeDevice(d.id);
-                      const next = await cloudDevices();
-                      setDevices(next.devices || []);
-                    } catch (e: any) {
-                      showToast('info', String(e?.message || e), '');
-                    }
-                  }}>{t('cloud_device_revoke', 'Revoke')}</button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
+      {/* Dialog konfigurasi cloud (H06) */}
+      <CloudAccountDialog
+        open={cloudDlg}
+        onClose={() => { setCloudDlg(false); void loadCloud(); }}
+        cloud={cloud}
+        busy={cloudBusy}
+        runCloud={runCloud}
+      />
 
       {/* ===== P62: Pemeliharaan Data (cleanup history tracker) ===== */}
       <MaintenanceSection />
