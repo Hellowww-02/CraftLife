@@ -47,6 +47,51 @@ def _public_personal(personal):
     }
 
 
+def classify_cloud_error(exc: Exception) -> dict:
+    """H06 (v1.7.0): terjemahkan exception Supabase/jaringan menjadi KODE
+    terstruktur supaya web tidak pernah menampilkan "HTTP 400" mentah.
+
+    Frontend memetakan `code` → pesan bilingual (cloud_err_<code>); `error`
+    tetap diisi agar klien lama (PyQt6/desktop) tidak berubah perilakunya.
+    """
+    msg = str(exc or "")
+    low = msg.lower()
+    if "invalid login credentials" in low or "invalid_credentials" in low:
+        code = "auth_invalid_credentials"
+    elif "email not confirmed" in low or "email_not_confirmed" in low:
+        code = "auth_email_not_confirmed"
+    elif "already registered" in low or "already been registered" in low or "user already" in low:
+        code = "auth_email_exists"
+    elif "rate limit" in low or "too many requests" in low or " 429" in low:
+        code = "cloud_rate_limited"
+    elif "migration" in low and ("not applied" in low or "not_applied" in low):
+        code = "cloud_migration_not_applied"
+    elif any(k in low for k in ("network", "connection", "connect", "timeout", "timed out",
+                                "resolve", "dns", "getaddrinfo", "unreachable", "refused",
+                                "name or service not known", "temporarily unavailable")):
+        code = "cloud_network_error"
+    elif "supabase" in low and any(k in low for k in ("url", "key", "missing", "unset", "not configured", "not_configured", "env")):
+        code = "cloud_not_configured"
+    elif any(k in low for k in ("no module named", "importerror", "modulenotfounderror", "pip install")):
+        code = "cloud_sdk_missing"
+    elif "jwt" in low or "token" in low or "session" in low or "auth_required" in low:
+        code = "auth_session_expired"
+    else:
+        code = "cloud_unknown_error"
+    return {"ok": False, "code": code, "error": code, "detail": msg[:300]}
+
+
+def _sync_out(result: dict) -> dict:
+    """H06: hasil sync `ok:false` WAJIB membawa `error` — tanpa itu client web
+    melempar fallback "HTTP 400" dan user mengira sinkronisasi rusak total."""
+    out = _sync_out(result)  # H06: ok:false selalu membawa error/code
+    if not out.get("ok", True) and not out.get("error"):
+        code = out.get("code") or "cloud_sync_failed"
+        out["error"] = code
+        out.setdefault("code", code)
+    return out
+
+
 def public_status(uid: int) -> dict:
     service = get_sync_service()
     try:
@@ -192,8 +237,11 @@ def handle_post(path: str, uid: int, body: dict):
         email = str(body.get("email") or "").strip()
         password = str(body.get("password") or "")
         if "@" not in email or len(password) < 8:
-            return {"ok": False, "error": "credentials_invalid"}
-        result = cloud.sign_up(email, password)
+            return {"ok": False, "code": "credentials_invalid", "error": "credentials_invalid"}
+        try:
+            result = cloud.sign_up(email, password)
+        except Exception as exc:  # H06: AuthApiError → kode terstruktur
+            return classify_cloud_error(exc)
         return {
             "ok": True,
             "verification_required": bool(result.get("verification_required")),
@@ -203,9 +251,12 @@ def handle_post(path: str, uid: int, body: dict):
         email = str(body.get("email") or "").strip()
         password = str(body.get("password") or "")
         if "@" not in email or len(password) < 8:
-            return {"ok": False, "error": "credentials_invalid"}
-        auth = cloud.sign_in(email, password)
-        linked = cloud.link_local_account(uid, auth)
+            return {"ok": False, "code": "credentials_invalid", "error": "credentials_invalid"}
+        try:
+            auth = cloud.sign_in(email, password)
+            linked = cloud.link_local_account(uid, auth)
+        except Exception as exc:  # H06: kredensial salah / email belum dikonfirmasi
+            return classify_cloud_error(exc)
         try:
             sync.start_realtime(uid)
         except Exception:
@@ -223,7 +274,7 @@ def handle_post(path: str, uid: int, body: dict):
             sync.start_realtime(uid)
         except Exception:
             pass
-        out = _slim_sync_result(result)
+        out = _sync_out(result)  # H06: ok:false selalu membawa error/code
         out["status"] = public_status(uid)
         return out
 
@@ -231,7 +282,7 @@ def handle_post(path: str, uid: int, body: dict):
         preview = sync.initial_migration_preview(uid)
         sync.enqueue_initial_migration(uid)
         result = sync.sync_now(uid, force_retry=True)
-        out = _slim_sync_result(result)
+        out = _sync_out(result)  # H06: ok:false selalu membawa error/code
         out["preview"] = preview
         out["status"] = public_status(uid)
         return out
@@ -244,13 +295,13 @@ def handle_post(path: str, uid: int, body: dict):
             result = sync.resolve_personal_conflict_use_cloud(uid)
         else:
             return {"ok": False, "error": "invalid_choice"}
-        out = _slim_sync_result(result)
+        out = _sync_out(result)  # H06: ok:false selalu membawa error/code
         out["status"] = public_status(uid)
         return out
 
     if path == "/api/cloud/queue/retry":
         result = sync.retry_failed_now(uid)
-        out = _slim_sync_result(result)
+        out = _sync_out(result)  # H06: ok:false selalu membawa error/code
         out["status"] = public_status(uid)
         return out
 

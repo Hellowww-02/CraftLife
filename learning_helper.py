@@ -884,7 +884,9 @@ def generate_studio_content(studio_type: str, query: str, context_chunks: list, 
                             absolute_dates: bool = None, focus: str = None,
                             instructions: str = None, table_rows: int = None,
                             info_points: int = None, slide_count: int = None,
-                            slide_bullets: int = None, files: list = None) -> str:
+                            slide_bullets: int = None, audience: str = None,
+                            tone: str = None, include_examples: bool = None,
+                            files: list = None) -> str:
     """Generate konten Studio berdasarkan type.
 
     A04: quiz memakai DUA counter terpisah — `mc_count` (pilihan ganda) dan `essay_count`
@@ -984,6 +986,31 @@ def generate_studio_content(studio_type: str, query: str, context_chunks: list, 
                   f"{str(instructions).strip()}") if str(instructions or "").strip() else ""
     # Ditempel ke SEMUA prompt di bawah (durutan: kesulitan → fokus → instruksi).
     extra = difficulty_line + focus_line + instr_line
+
+    # H01 (v1.7.0): parameter kualitas baru — semua OPSIONAL (None = perilaku lama).
+    # `audience` menyetel kedalaman penjelasan; `tone` menyetel gaya bahasa;
+    # `include_examples` mewajibkan contoh/analogi konkret pada hasil yang relevan.
+    _aud_map = {
+        "beginner": ("PEMULA — jelaskan dari dasar: definisikan setiap istilah penting, "
+                     "hindari jargon tanpa penjelasan, gunakan analogi sehari-hari."),
+        "intermediate": ("MENENGAH — anggap pembaca menguasai dasar; fokus pada pendalaman, "
+                         "hubungan antar-konsep, dan penerapan."),
+        "advanced": ("LANJUT — asumsikan penguasaan materi dasar; tekankan analisis, "
+                     "pengecualian, batasan, dan studi kasus kompleks."),
+    }
+    _tone_map = {
+        "academic": "NADA: akademis formal — istilah presisi, objektif, tanpa basa-basi.",
+        "friendly": ("NADA: ramah dan menyemangati — seperti tutor pribadi, kalimat pendek "
+                     "yang hangat tanpa kehilangan akurasi."),
+        "exam": ("NADA: fokus ujian — soroti poin yang sering diujikan, jebakan umum, "
+                 "dan cara menjawab cepat yang mendapat poin penuh."),
+    }
+    audience_line = f"\nLEVEL PESERTA: {_aud_map[audience]}" if audience in _aud_map else ""
+    tone_line = f"\n{_tone_map[tone]}" if tone in _tone_map else ""
+    examples_line = ("\nCONTOH: sertakan minimal SATU contoh konkret, angka nyata dari sumber, "
+                     "atau analogi di setiap bagian/kartu/soal yang relevan."
+                     if include_examples else "")
+    extra = extra + audience_line + tone_line + examples_line
 
     # Podcast / Audio Overview
     _host_map = {
@@ -1103,14 +1130,18 @@ Konteks:\n{context}\n\nTopik: {query or 'Topik utama'}
 
 Format JSON WAJIB seperti ini (jangan tambah markdown):
 {{"central": "Topik Utama", "branches": [{{"label": "Cabang 1", "children": [{{"label": "sub 1", "children": [{{"label": "anak 1", "children": []}}]}}, "sub 2"]}}, {{"label": "Cabang 2", "children": []}}]}}
-Setiap elemen `children` boleh berupa teks ATAU object {{"label": ..., "children": [...]}} (maksimal kedalaman {depth_i}).""",
+Setiap elemen `children` boleh berupa teks ATAU object {{"label": ..., "children": [...]}} (maksimal kedalaman {depth_i}).
+
+KUALITAS (wajib): cabang utama saling terpisah topiknya (tidak tumpang tindih) dan bersama-sama mencakup inti materi; label singkat (maks 5 kata); daun paling dalam berupa fakta/istilah spesifik dari sumber, bukan pengulangan label induknya.""",
 
         "study_guide": f"""Buatkan STUDY GUIDE lengkap dari konteks berikut.
 Bahasa: {language_name}.{extra}
 Konteks:\n{context}\n\nBuat dengan format (HANYA bagian berikut, urut, tanpa bagian lain):
 # Study Guide: [Judul]
 {sec_lines}
-Topik: {query or 'Semua materi'}""",
+Topik: {query or 'Semua materi'}
+
+KUALITAS (wajib): setiap konsep kunci dijelaskan apa-adanya + mengapa penting; setiap contoh diambil/diadaptasi dari konteks atau analogi yang tepat; latihan soal bervariasi level dan disertai kunci jawaban ringkas; gunakan **tebal** untuk istilah penting pertama kali muncul; akhiri dengan 2-3 "kesalahan umum yang harus dihindari" bila relevan.""",
 
         "quiz": f"""Buatkan QUIZ interaktif (seperti fitur Quiz di NotebookLM) dari konteks berikut.
 Konteks:\n{context}\n\nTopik: {query or 'Semua materi'}
@@ -1122,15 +1153,19 @@ ATURAN OUTPUT WAJIB:
 - Buat TEPAT {quiz_count} pertanyaan: {quiz_mc} pilihan ganda ("type":"mc") dan {quiz_essay} esai ("type":"essay"). {count_note}
 - WAJIB: SETIAP soal punya field "type" bernilai "mc" atau "essay" — tanpa field ini aplikasi tidak bisa mengenali/menilai soal tersebut.
 - Pilihan ganda ("type":"mc"): 4 opsi, tepat satu jawaban benar (index 0-3), plus penjelasan singkat mengapa benar.
-- Esai ("type":"essay"): JANGAN sertakan "options"; WAJIB sertakan "model_answer" berisi jawaban contoh yang baik dan lengkap (2-5 kalimat).
-- Variasikan kesulitan: ingatan, pemahaman, penerapan, analisis.
+- Esai ("type":"essay"): JANGAN sertakan "options"; WAJIB sertakan "model_answer" berisi jawaban contoh yang baik dan lengkap (2-5 kalimat, terstruktur: poin utama lalu pendukung).
+- Variasikan level kognitif secara sadar: minimal 1 soal ingatan, 1 pemahaman, 1 penerapan, dan 1 analisis (sesuaikan proporsinya dengan jumlah soal).
+- KUALITAS SOAL (wajib): soal menguji pemahaman dari sources, bukan hafalan trivial; setiap opsi salah (distractor) harus masuk akal dan berasal dari miskonsepsi nyata, bukan asal beda; hindari soal yang jawabannya bisa ditebak dari panjang kalimat.
+- "explain" wajib berkualitas: sebutkan MENGAPA jawaban benar dan MENGAPA pengecoh terkuat salah (1-2 kalimat).
+- Sebar soal merata ke sub-topik yang benar-benar ada di konteks; jangan menumpuk di satu bagian.
+- Tambahkan field opsional "topic" (2-4 kata) per soal yang menandai sub-topik soal tersebut.
 ATURAN JSON KETAT (WAJIB DIPATUHI):
 - Setiap key WAJIB diikuti titik dua (:) — JANGAN pernah menulis koma setelah nama key (contoh SALAH: "q","teks").
 - Key penjelasan WAJIB bernama "explain" (BUKAN "explanation").
 - JANGAN tambah koma di akhir objek/array (no trailing comma).
 - Semua teks memakai tanda kutip ganda; hindari tanda kutip ganda di dalam teks.
 Format persis:
-{{"title":"Judul Quiz","questions":[{{"type":"mc","q":"Pertanyaan?","options":["A","B","C","D"],"answer":0,"explain":"Karena..."}},{{"type":"essay","q":"Jelaskan...","model_answer":"Jawaban contoh..."}}]}}""",
+{{"title":"Judul Quiz","questions":[{{"type":"mc","q":"Pertanyaan?","options":["A","B","C","D"],"answer":0,"explain":"Karena...","topic":"Sub-topik"}},{{"type":"essay","q":"Jelaskan...","model_answer":"Jawaban contoh...","topic":"Sub-topik"}}]}}""",
 
         "faq": f"""Buatkan FAQ berisi TEPAT {faq_i} pertanyaan dari konteks.
 Bahasa: {language_name}.{faq_style_line}{extra}
@@ -1139,7 +1174,9 @@ Q1: ...
 A1: ...
 Q2: ...
 A2: ...
-Topik: {query or 'Umum'}""",
+Topik: {query or 'Umum'}
+
+KUALITAS (wajib): susun dari pertanyaan paling mendasar ke lanjutan; pertanyaan = hal yang benar-benar ditanyakan orang tentang topik ini (bukan parafrase judul); jawaban langsung menjawab di kalimat pertama lalu menjelaskan; tanpa pertanyaan duplikat; sisipkan angka/fakta dari sumber bila ada.""",
 
         "timeline": f"""Buatkan TIMELINE kronologis dari konteks.
 Bahasa: {language_name}.{gran_line}{abs_line}{extra}
@@ -1147,7 +1184,9 @@ Konteks:\n{context}\n\nFormat:
 - **2024-01-15 / Tahap 1:** Deskripsi
 - **Februari 2024:** ...
 Jika tidak ada tanggal, buat urutan logis Tahap 1,2,3...
-Topik: {query or 'Urutan'}""",
+Topik: {query or 'Urutan'}
+
+KUALITAS (wajib): setiap entri = tanggal/penanda waktu tebal + SATU kalimat inti peristiwa + (opsional) satu kalimat dampak/akibatnya. Urutkan kronologis ketat, jangan melompat. Bila sumber memberi angka/tokoh, masukkan. Hindari entri yang hanya mengulang judul topik.""",
 
         "flashcards": f"""Buatkan {flash_count} FLASHCARDS interaktif untuk belajar dari konteks berikut.
 Bahasa: {language_name}.{card_line}{extra}
@@ -1158,12 +1197,16 @@ ATURAN OUTPUT WAJIB:
 - Setiap item WAJIB memiliki key "front" dan "back".
 - Variasikan kartu: konsep, contoh, perbandingan, benar/salah, penerapan, dan mini problem (sesuai gaya kartu di atas).
 - Pertanyaan singkat dan jelas; jawaban padat tetapi cukup menjelaskan.
+- KUALITAS KARTU (wajib): satu kartu = SATU ide (atomic); sisi "back" harus bisa dipahami berdiri sendiri tanpa membuka sumber; bila ada rumus/istilah sulit, beri cara mengingatnya.
+- Tambahkan field opsional "hint" (petunjuk 1 kalimat) dan "example" (contoh pemakaian 1 kalimat) bila benar-benar membantu; jangan dipaksakan bila tidak relevan.
 Format persis:
-[{{"front":"Pertanyaan 1","back":"Jawaban 1"}},{{"front":"Pertanyaan 2","back":"Jawaban 2"}}]""",
+[{{"front":"Pertanyaan 1","back":"Jawaban 1","hint":"Petunjuk singkat","example":"Contoh pemakaian"}},{{"front":"Pertanyaan 2","back":"Jawaban 2"}}]""",
 
         "summary": f"""Buatkan RINGKASAN EKSEKUTIF dari konteks berikut.
 Bahasa: {language_name}.{sum_len_line}{sum_style_line}{extra}
-Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}""",
+Konteks:\n{context}\n\nTopik: {query or 'Ringkasan'}
+
+KUALITAS (wajib): mulai dengan SATU kalimat temuan paling penting; pertahankan angka, nama, dan fakta kunci dari sumber; sebutkan nuansa/persyaratan penting (jangan menyederhanakan berlebihan); tutup dengan implikasi praktis. Dilarang menambah informasi yang tidak ada di konteks; dilarang kalimat pengisi.""",
 
         "briefing_doc": f"""Buatkan BRIEFING DOC — laporan terstruktur siap baca dari konteks berikut.
 Bahasa: {language_name}.{brief_len_line}{extra}
@@ -1179,7 +1222,9 @@ Format WAJIB (markdown, urut, tanpa bagian lain):
 ## Kesimpulan & Tindak Lanjut
 (1 paragraf + 2-4 langkah konkret berbentuk checklist - [ ] ...)
 ## Sumber Dirujuk
-(daftar judul sumber dari konteks, satu per baris diawali - )""",
+(daftar judul sumber dari konteks, satu per baris diawali - )
+
+KUALITAS (wajib): standar laporan eksekutif profesional — Ringkasan Eksekutif menyebut APAA yang terjadi, MENGAPA penting, dan APA kesimpulannya dalam satu paragraf; Temuan Kunci memuat angka/fakta dari sumber (jangan klaim kosong); Detail menyajikan analisis, bukan pengulangan ringkasan; Tindak Lanjut berupa langkah yang bisa langsung dijalankan. Jangan mengarang fakta di luar konteks.""",
 
         "data_table": f"""Buatkan DATA TABLE — tabel perbandingan dari konteks berikut.
 Bahasa isi sel: {language_name}.{extra}
@@ -1188,6 +1233,7 @@ ATURAN OUTPUT WAJIB:
 - Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
 - TEPAT {table_rows_i} baris data dan 2-6 kolom yang relevan untuk perbandingan.
 - Setiap baris WAJIB punya sel sebanyak jumlah kolom (string pendek, tanpa newline).
+- KUALITAS (wajib): pilih kolom yang benar-benar membedakan antar baris (bukan kolom yang isinya sama semua); sel ringkas namun informatif (angka + satuan bila ada); urutkan baris logis (mis. terbesar→terkecil, atau sesuai sumber). Kolom pertama = nama/label entitas.
 - JANGAN tambah koma di akhir objek/array (no trailing comma).
 Format persis:
 {{"title":"Judul Tabel","columns":["Aspek","A","B"],"rows":[["Baris 1","...","..."]]}}""",
@@ -1197,8 +1243,9 @@ Bahasa: {language_name}.{extra}
 Konteks:\n{context}\n\nTopik: {query or 'Sorotan'}
 ATURAN OUTPUT WAJIB:
 - Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
-- "stats": 2-4 angka/fakta mencolok (value singkat maks 12 karakter, label maks 8 kata).
-- "points": TEPAT {info_points_i} poin (heading maks 6 kata, text 1-2 kalimat).
+- "stats": 2-4 angka/fakta paling mencolok (value singkat maks 12 karakter, label maks 8 kata). Prioritaskan angka/kuantitas nyata dari sumber (persentase, jumlah, tahun); bila tidak ada, pakai fakta singkat yang paling mudah diingat.
+- "subtitle": 1 kalimat ringkas yang membingkai seluruh infografik.
+- "points": TEPAT {info_points_i} poin (heading maks 6 kata, text 1-2 kalimat). Urutkan dari yang paling penting; tiap poin harus menambah informasi baru (jangan mengulang stat).
 - JANGAN tambah koma di akhir objek/array (no trailing comma).
 Format persis:
 {{"title":"Judul","subtitle":"Subjudul singkat","stats":[{{"value":"80%","label":"..."}}],"points":[{{"heading":"...","text":"..."}}]}}""",
@@ -1210,9 +1257,12 @@ ATURAN OUTPUT WAJIB:
 - Output HANYA satu JSON object valid tanpa teks lain, tanpa Markdown, tanpa code fence.
 - TEPAT {slide_count_i} slide: slide 1 = judul/pembuka (bullets boleh kosong), slide terakhir = kesimpulan/penutup.
 - Slide 2 sampai terakhir: "title" (maks 10 kata) + 2-{slide_bullets_i} "bullets" (tiap bullet maks 20 kata).
+- ALUR PRESENTASI (wajib): pembuka menarik (pertanyaan/fakta mengejutkan dari sumber) → isi tersusun logis (satu gagasan besar per slide) → penutup berisi kesimpulan + ajakan bertindak.
+- KUALITAS BULLET (wajib): bullet adalah INSIGHT, bukan label — tulis inti pesan, bukan kata tunggal seperti "Definisi"; mulai dengan kata kerja/angka bila memungkinkan; jangan ulangi judul slide di bullet pertama.
+- WAJIB sertakan field "notes" (speaker notes 1-3 kalimat) di SETIAP slide berisi penjelasan yang diucapkan presenter: data pendukung, contoh, atau transisi ke slide berikutnya.
 - JANGAN tambah koma di akhir objek/array (no trailing comma).
 Format persis:
-{{"title":"Judul Deck","slides":[{{"title":"Pembuka","bullets":[]}},{{"title":"Isi 1","bullets":["...","..."]}}]}}""",
+{{"title":"Judul Deck","slides":[{{"title":"Pembuka","bullets":[],"notes":"Yang diucapkan presenter..."}},{{"title":"Isi 1","bullets":["...","..."],"notes":"Penjelasan untuk presenter..."}}]}}""",
     }
 
     prompt = prompts.get(studio_type, prompts["summary"])

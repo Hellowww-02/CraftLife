@@ -4272,7 +4272,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path.startswith("/api/cloud"):
                 import cloud_api
-                extra = cloud_api.handle_post(path, uid, body)
+                try:
+                    extra = cloud_api.handle_post(path, uid, body)
+                except Exception as cloud_exc:
+                    # H06 (v1.7.0): exception Supabase (AuthApiError, jaringan,
+                    # SDK hilang, .env kosong) dipetakan ke kode terstruktur —
+                    # sebelumnya bocor sebagai "HTTP 400" mentah di web.
+                    extra = cloud_api.classify_cloud_error(cloud_exc)
                 if extra is not None:
                     code = 200 if extra.get("ok", True) else 400
                     self._send(code, extra)

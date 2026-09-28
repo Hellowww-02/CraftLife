@@ -9,7 +9,7 @@
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.6.7-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.7.0-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -37,6 +37,17 @@ sync and online social features, but the app never requires it.
 - **Two languages** — every screen ships in Indonesian and English (4,447 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
+
+## ✨ What's New in v1.7.0
+
+| Area | Highlights |
+|------|------------|
+| 📚 Learning Studio | All 12 generators get professional-grade prompts + new options (audience level, tone, examples toggle); quizzes carry sub-topics, flashcards carry hints & examples, slides carry speaker notes |
+| 🗂️ Artifact history | The vertical list becomes a searchable dropdown (sort, type groups, rename/export/duplicate/delete) — the interactive preview gets full panel height |
+| 🃏 Premium previews | 3D flashcard flip with shuffle + keyboard, quiz progress bar + jump chips + SVG score ring, slide viewer with speaker-notes panel |
+| ⚔️ Guild Boss Arena | Rebuilt arena stage: tier-glow boss plate, animated HP bar, event-driven damage floats, hit shake, battle log — and a Pokémon-duel style message box for attack results (no more popups); zero game logic changed |
+| 🛒 Shop | Item catalog grouped into category sub-tabs with counts (Weapon · Armor · Tool · Consumable · Legendary · Special) |
+| ☁️ Cloud & Sync | New Configure Cloud dialog (Account · Sync · Devices · Diagnostics); Supabase errors mapped to structured bilingual guidance — the bare "HTTP 400" is gone |
 
 ## ✨ What's New in v1.6.7
 
@@ -224,7 +235,7 @@ CraftLife/
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
 ├── translations.py       UI strings, Indonesian + English (4,447 keys)
-├── updater.py            Auto-update from GitHub Releases (v1.6.7, SHA-256)
+├── updater.py            Auto-update from GitHub Releases (v1.7.0, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
 ├── mathtools.py          Math text and LaTeX conversion
@@ -263,6 +274,8 @@ Design docs and phase reports kept in the repo:
 | [RELEASE_NOTES_v1.6.4.md](RELEASE_NOTES_v1.6.4.md) | v1.6.4 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.5.md](RELEASE_NOTES_v1.6.5.md) | v1.6.5 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.7.md](RELEASE_NOTES_v1.6.7.md) | v1.6.7 GitHub Release notes |
+| [RELEASE_NOTES_v1.7.0.md](RELEASE_NOTES_v1.7.0.md) | v1.7.0 GitHub Release notes |
+| [UPDATE_ROADMAP_H01_H07_v1.7.0.md](UPDATE_ROADMAP_H01_H07_v1.7.0.md) | v1.7.0 plan (H01–H07) |
 | [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |
 | [UPDATE_ROADMAP_P47_P63.md](UPDATE_ROADMAP_P47_P63.md) | v1.6.0 fix roadmap |
 | [2026-09-08-P47-P63-PHASE-SUMMARY.md](2026-09-08-P47-P63-PHASE-SUMMARY.md) | v1.6.0 consolidated phase report |
@@ -330,6 +343,14 @@ To ship an auto-update (full runbook:
 
 Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/releases).
 
+- **v1.7.0 "Arena & Clarity"** (28 Sep 2026) — Learning Studio quality
+  upgrade (stronger prompts + audience/tone/examples options; dropdown
+  artifact history; 3D flashcards, quiz score ring, slide speaker notes),
+  Guild Boss Arena reconstruction with a Pokémon-duel style in-arena
+  message box replacing the attack-result popup, shop category sub-tabs,
+  and a professional Cloud configuration dialog that ends the bare
+  "HTTP 400" errors. i18n 4,528 keys (+74). Zero features removed.
+
 - **v1.6.7 "Performance & Polish"** (25 Sep 2026) — Per-view code splitting
   (−72% initial JS), bilingual crash recovery, Economy Budgets tab, food
   favorites + recent, Esc for all 47 dialogs, count-up numbers, shortcut
@@ -396,6 +417,6 @@ the exact error. Never attach `.env`, `craftlife.db`, or API keys.
 
 **Complete real quests. Keep your data. Level up your life.**
 
-*CraftLife v1.6.7 — "Study & Stability"*
+*CraftLife v1.7.0 — "Arena & Clarity"*
 
 </div>

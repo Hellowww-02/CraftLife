@@ -2824,13 +2824,23 @@ def _parse_infographic(raw: str) -> dict:
 
 
 def _parse_slide_deck(raw: str) -> dict:
-    """C05: normalisasi JSON Slide Deck → {title, slides[{title, bullets}]}."""
+    """C05: normalisasi JSON Slide Deck → {title, slides[{title, bullets, notes?}]}.
+
+    H01 (v1.7.0): field `notes` (speaker notes) ikut dibawa bila ada — aditif,
+    deck lama tanpa notes tetap valid.
+    """
     data = json.loads(_strip_json_fence(raw))
     if not isinstance(data, dict) or not isinstance(data.get("slides"), list):
         raise ValueError("bad_shape")
-    slides = [{"title": str((s or {}).get("title") or "")[:200],
-               "bullets": [str(b)[:500] for b in ((s or {}).get("bullets") or [])][:8]}
-              for s in data["slides"][:25] if isinstance(s, dict)]
+    slides = []
+    for s in data["slides"][:25]:
+        if not isinstance(s, dict):
+            continue
+        item = {"title": str(s.get("title") or "")[:200],
+                "bullets": [str(b)[:500] for b in (s.get("bullets") or [])][:8]}
+        if s.get("notes"):
+            item["notes"] = str(s.get("notes"))[:1000]
+        slides.append(item)
     if not slides:
         raise ValueError("no_slides")
     return {"title": str(data.get("title") or ""), "slides": slides}
@@ -2860,6 +2870,9 @@ _STUDIO_CHOICES = {
     "granularity": ("day", "week", "month", "year"),
     "style": ("term", "qa", "formula", "casual", "formal", "debate",
               "brief", "detail", "bullets", "narrative"),
+    # H01 (v1.7.0): parameter kualitas baru — level peserta & nada penyampaian.
+    "audience": ("beginner", "intermediate", "advanced"),
+    "tone": ("academic", "friendly", "exam"),
 }
 _STUDIO_INTS = {"depth": (1, 3), "branches": (3, 8), "subs": (2, 6),
                 "exercises": (3, 10), "faq_count": (5, 15),
@@ -2880,6 +2893,8 @@ _STUDIO_ALIASES = {
     "slideCount": "slide_count", "slideBullets": "slide_bullets",
     "focusTopic": "focus", "customInstructions": "instructions",
     "extraInstructions": "instructions",
+    # H01: alias camelCase opsi kualitas baru.
+    "includeExamples": "include_examples",
 }
 
 
@@ -2928,6 +2943,15 @@ def _studio_opts(body: dict) -> dict:
             out["absolute_dates"] = bool(val)
         elif isinstance(val, str) and val.strip().lower() in ("true", "false", "1", "0", "yes", "no"):
             out["absolute_dates"] = val.strip().lower() in ("true", "1", "yes")
+    # H01: `include_examples` (toggle contoh/analogi) memakai pola boolean yang sama.
+    if "include_examples" in src:
+        val = src["include_examples"]
+        if isinstance(val, bool):
+            out["include_examples"] = val
+        elif isinstance(val, (int, float)):
+            out["include_examples"] = bool(val)
+        elif isinstance(val, str) and val.strip().lower() in ("true", "false", "1", "0", "yes", "no"):
+            out["include_examples"] = val.strip().lower() in ("true", "1", "yes")
     return out
 
 
@@ -3017,6 +3041,8 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
                     "type": q.get("type") or "mc",
                     # P56: jawaban contoh untuk soal essay (dulu dibuang).
                     "modelAnswer": q.get("model_answer") or q.get("modelAnswer") or "",
+                    # H01: sub-topik soal (opsional, hanya label pendek).
+                    "topic": str(q.get("topic") or "")[:80],
                 })
         except Exception as e:
             return {"result": {"ok": False, "msg": str(e), "quiz": []}, "skip_snap": True}
@@ -3027,10 +3053,16 @@ def _studio_generate(uid: int, body: dict, studio_type: str):
             data = json.loads(_strip_json_fence(text))
             arr = data if isinstance(data, list) else data.get("cards") or data.get("flashcards") or []
             for x in arr:
-                cards.append({
+                card = {
                     "question": x.get("front") or x.get("question") or "",
                     "answer": x.get("back") or x.get("answer") or "",
-                })
+                }
+                # H01: field pengayaan opsional dari prompt baru (aman bila absen).
+                if x.get("hint"):
+                    card["hint"] = str(x.get("hint"))[:300]
+                if x.get("example"):
+                    card["example"] = str(x.get("example"))[:500]
+                cards.append(card)
         except Exception:
             cards = []
         payload["flashcards"] = cards
