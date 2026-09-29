@@ -2452,6 +2452,16 @@ TRANSLATIONS = {
     "learning_slide_notes_short": ("Catatan", "Notes"),
     # H04 (v1.7.0): Boss Arena.
     "guild_battle_log": ("Log pertempuran", "Battle log"),
+    # H08 (v1.7.0): kotak pesan pertarungan (ala duel Pokémon).
+    "guild_battle_box_aria": ("Kotak pesan pertarungan", "Battle message box"),
+    # I01 (v1.7.2): dialog kunci Gemini (pengganti window.prompt).
+    "learning_key_saved": ("API key tersimpan", "API key saved"),
+    "learning_key_cleared": ("API key dihapus", "API key removed"),
+    "learning_key_missing": ("API key belum diisi", "API key not set"),
+    "learning_key_dialog_hint": ("Kunci disimpan di server untuk akun ini — tetap ada setelah pindah halaman atau keluar aplikasi.", "The key is stored on the server for this account — it survives page changes and app restarts."),
+    "learning_key_current": ("Kunci tersimpan", "Saved key"),
+    "learning_key_clear": ("Hapus key", "Remove key"),
+    "learning_key_saving": ("Menyimpan…", "Saving…"),
     # H05 (v1.7.0): sub-kategori toko.
     "shop_cat_all": ("Semua", "All"),
     "shop_category_aria": ("Kategori item", "Item categories"),

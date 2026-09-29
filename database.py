@@ -4346,7 +4346,7 @@ def gain_sport_points(user_id, points):
             "new_sport_xp": new_sport_xp}
 
 # ── Duplikasi ─────────────────────────────────────────
-def duplicate_habit(user_id, habit_id):
+def duplicate_habit(user_id, habit_id, folder_id=None):
     conn = get_conn()
     if is_account_locked(user_id):
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
@@ -4355,16 +4355,19 @@ def duplicate_habit(user_id, habit_id):
         conn.close()
         return {"ok": False}
     new_name = h['name']  # tanpa tambahan (copy)
+    # I01 (v1.7.2): duplikat masuk folder target eksplisit (folder aktif UI),
+    # bila tidak ada → salin folder asli (dulu folder_id terbuang → Ungrouped).
+    target_folder = folder_id if folder_id not in (None, "") else h['folder_id']
     conn.execute("""
-        INSERT INTO habits(user_id,name,icon,difficulty,xp_reward,gold_reward,positive,negative,notes)
-        VALUES(?,?,?,?,?,?,?,?,?)
+        INSERT INTO habits(user_id,name,icon,difficulty,xp_reward,gold_reward,positive,negative,notes,folder_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?)
     """, (user_id, new_name, h['icon'], h['difficulty'], h['xp_reward'], h['gold_reward'],
-          h['positive'], h['negative'], h['notes']))
+          h['positive'], h['negative'], h['notes'], target_folder))
     conn.commit()
     conn.close()
     return {"ok": True}
 
-def duplicate_daily(user_id, daily_id):
+def duplicate_daily(user_id, daily_id, folder_id=None):
     conn = get_conn()
     if is_account_locked(user_id):
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
@@ -4373,15 +4376,17 @@ def duplicate_daily(user_id, daily_id):
         conn.close()
         return {"ok": False}
     new_name = d['name']  # tanpa tambahan (copy)
+    # I01 (v1.7.2): folder target eksplisit / salin folder asli (lihat duplicate_habit).
+    target_folder = folder_id if folder_id not in (None, "") else d['folder_id']
     conn.execute("""
-        INSERT INTO dailies(user_id,name,icon,difficulty,xp_reward,gold_reward,notes)
-        VALUES(?,?,?,?,?,?,?)
-    """, (user_id, new_name, d['icon'], d['difficulty'], d['xp_reward'], d['gold_reward'], d['notes']))
+        INSERT INTO dailies(user_id,name,icon,difficulty,xp_reward,gold_reward,notes,folder_id)
+        VALUES(?,?,?,?,?,?,?,?)
+    """, (user_id, new_name, d['icon'], d['difficulty'], d['xp_reward'], d['gold_reward'], d['notes'], target_folder))
     conn.commit()
     conn.close()
     return {"ok": True}
 
-def duplicate_todo(user_id, todo_id):
+def duplicate_todo(user_id, todo_id, folder_id=None):
     conn = get_conn()
     if is_account_locked(user_id):
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
@@ -4390,15 +4395,17 @@ def duplicate_todo(user_id, todo_id):
         conn.close()
         return {"ok": False}
     new_name = t['name']  # tanpa tambahan (copy)
+    # I01 (v1.7.2): folder target eksplisit / salin folder asli (lihat duplicate_habit).
+    target_folder = folder_id if folder_id not in (None, "") else t['folder_id']
     conn.execute("""
-        INSERT INTO todos(user_id,name,icon,priority,xp_reward,gold_reward,due_date,notes)
-        VALUES(?,?,?,?,?,?,?,?)
-    """, (user_id, new_name, t['icon'], t['priority'], t['xp_reward'], t['gold_reward'], t['due_date'], t['notes']))
+        INSERT INTO todos(user_id,name,icon,priority,xp_reward,gold_reward,due_date,notes,folder_id)
+        VALUES(?,?,?,?,?,?,?,?,?)
+    """, (user_id, new_name, t['icon'], t['priority'], t['xp_reward'], t['gold_reward'], t['due_date'], t['notes'], target_folder))
     conn.commit()
     conn.close()
     return {"ok": True}
 
-def duplicate_sport_activity(user_id, activity_id):
+def duplicate_sport_activity(user_id, activity_id, folder_id=None):
     conn = get_conn()
     if is_account_locked(user_id):
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
@@ -4407,13 +4414,15 @@ def duplicate_sport_activity(user_id, activity_id):
         conn.close()
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_sport_activity_not_found")}
     new_name = a['name']  # tanpa tambahan (copy)
+    # I01 (v1.7.2): folder target eksplisit / salin folder asli (lihat duplicate_habit).
+    target_folder = folder_id if folder_id not in (None, "") else a['folder_id']
     conn.execute("""
         INSERT INTO sport_activities(
             user_id, name, sport_type, icon, difficulty,
-            xp_reward, gold_reward, sport_points_reward, notes
-        ) VALUES(?,?,?,?,?,?,?,?,?)
+            xp_reward, gold_reward, sport_points_reward, notes, folder_id
+        ) VALUES(?,?,?,?,?,?,?,?,?,?)
     """, (user_id, new_name, a['sport_type'], a['icon'], a['difficulty'],
-          a['xp_reward'], a['gold_reward'], a['sport_points_reward'], a['notes']))
+          a['xp_reward'], a['gold_reward'], a['sport_points_reward'], a['notes'], target_folder))
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -6310,62 +6319,109 @@ AVATAR_CLASSES = {
 }
 
 THEMES = {
+    # ═══════════════════════════════════════════════════════════════════════
+    # I02 (v1.7.2): 12 tema — 7 lama dipoles paletnya (kontras & kedalaman
+    # lebih profesional), 5 baru: Sakura, Desert, Sunflower, Royal, Graphite.
+    # Kontrak palet tidak berubah (13 kunci) → web applyTheme() & PyQt6
+    # SettingsPage otomatis kompatibel (satu sumber kebenaran, R6).
+    # ═══════════════════════════════════════════════════════════════════════
     # ── Modern Aurora (default, toggle target) ──
     "modern_dark": {
         "label": "🔮 Aurora Dark",
         "primary": "#8b5cf6", "light": "#a78bfa",
-        "bg": "#0b0b16", "bg2": "#14122c", "bg3": "#0c1a26",
-        "panel": "rgba(26,28,50,0.90)", "border": "rgba(150,140,255,0.22)",
-        "accent": "#22d3ee", "accent2": "#8b5cf6", "accent3": "#22d3ee", "glow": "#a78bfa",
-        "text": "#eef0ff", "muted": "#9b9fc4",
+        "bg": "#0a0a14", "bg2": "#131129", "bg3": "#0b1824",
+        "panel": "rgba(24,26,48,0.92)", "border": "rgba(150,140,255,0.24)",
+        "accent": "#22d3ee", "accent2": "#8b5cf6", "accent3": "#34d399", "glow": "#a78bfa",
+        "text": "#eef0ff", "muted": "#a0a4c8",
     },
     "modern_light": {
         "label": "🌤️ Aurora Light",
         "primary": "#7c3aed", "light": "#6d28d9",
-        "bg": "#eceffb", "bg2": "#e7e0f8", "bg3": "#e2eff7",
-        "panel": "rgba(255,255,255,0.92)", "border": "rgba(124,108,210,0.30)",
-        "accent": "#0891b2", "accent2": "#7c3aed", "accent3": "#0891b2", "glow": "#8b5cf6",
-        "text": "#1b1633", "muted": "#5c5570",
+        "bg": "#eef1fb", "bg2": "#e8e2f9", "bg3": "#e3eff8",
+        "panel": "rgba(255,255,255,0.94)", "border": "rgba(124,108,210,0.32)",
+        "accent": "#0891b2", "accent2": "#7c3aed", "accent3": "#059669", "glow": "#8b5cf6",
+        "text": "#191430", "muted": "#57516b",
     },
     "overworld": {
         "label": "🌿 Overworld",
-        "primary": "#34d399", "light": "#6ee7b7",
-        "bg": "#06120c", "bg2": "#0a2114", "bg3": "#0c1a14",
-        "panel": "rgba(20,42,28,0.90)", "border": "rgba(80,255,150,0.22)",
-        "accent": "#a3e635", "accent2": "#34d399", "accent3": "#a3e635", "glow": "#6ee7b7",
-        "text": "#e6f7ec", "muted": "#8aaa9a",
+        "primary": "#22c55e", "light": "#4ade80",
+        "bg": "#05130b", "bg2": "#0a2413", "bg3": "#0d1f12",
+        "panel": "rgba(16,44,26,0.92)", "border": "rgba(74,222,128,0.24)",
+        "accent": "#a3e635", "accent2": "#22c55e", "accent3": "#fbbf24", "glow": "#6ee7b7",
+        "text": "#e8f8ee", "muted": "#8fb3a0",
     },
     "nether": {
         "label": "🔥 Nether",
-        "primary": "#f43f5e", "light": "#fb7185",
-        "bg": "#13060a", "bg2": "#240a10", "bg3": "#1a0a06",
-        "panel": "rgba(44,18,22,0.90)", "border": "rgba(255,96,80,0.22)",
-        "accent": "#fb923c", "accent2": "#f43f5e", "accent3": "#fb923c", "glow": "#fb7185",
-        "text": "#ffe9ea", "muted": "#b08a8a",
+        "primary": "#ef4444", "light": "#f87171",
+        "bg": "#140508", "bg2": "#26090f", "bg3": "#1c0a04",
+        "panel": "rgba(46,16,20,0.92)", "border": "rgba(248,113,113,0.26)",
+        "accent": "#fb923c", "accent2": "#ef4444", "accent3": "#fbbf24", "glow": "#fb7185",
+        "text": "#ffecee", "muted": "#b89090",
     },
     "the_end": {
         "label": "🌌 The End",
-        "primary": "#c026d3", "light": "#e879f9",
-        "bg": "#0a0614", "bg2": "#170a28", "bg3": "#10081c",
-        "panel": "rgba(30,20,50,0.90)", "border": "rgba(205,125,255,0.22)",
-        "accent": "#818cf8", "accent2": "#c026d3", "accent3": "#818cf8", "glow": "#e879f9",
-        "text": "#f3eaff", "muted": "#a896b8",
+        "primary": "#a855f7", "light": "#c084fc",
+        "bg": "#0a0616", "bg2": "#180b2b", "bg3": "#120a20",
+        "panel": "rgba(32,20,54,0.92)", "border": "rgba(192,132,252,0.24)",
+        "accent": "#818cf8", "accent2": "#a855f7", "accent3": "#e879f9", "glow": "#d8b4fe",
+        "text": "#f4ebff", "muted": "#ab99bd",
     },
     "ocean": {
         "label": "🌊 Ocean",
         "primary": "#0ea5e9", "light": "#38bdf8",
-        "bg": "#04101a", "bg2": "#082033", "bg3": "#06141f",
-        "panel": "rgba(16,36,54,0.90)", "border": "rgba(80,200,255,0.22)",
-        "accent": "#22d3ee", "accent2": "#0ea5e9", "accent3": "#22d3ee", "glow": "#38bdf8",
-        "text": "#e3f4ff", "muted": "#8aa6b8",
+        "bg": "#03101c", "bg2": "#072238", "bg3": "#051622",
+        "panel": "rgba(14,38,58,0.92)", "border": "rgba(56,189,248,0.24)",
+        "accent": "#22d3ee", "accent2": "#0ea5e9", "accent3": "#2dd4bf", "glow": "#7dd3fc",
+        "text": "#e6f5ff", "muted": "#8fadbf",
     },
     "ancient_city": {
         "label": "🏚️ Ancient City",
-        "primary": "#14b8a6", "light": "#2dd4bf",
-        "bg": "#06141a", "bg2": "#0a2329", "bg3": "#06181c",
-        "panel": "rgba(18,40,44,0.90)", "border": "rgba(60,230,210,0.22)",
-        "accent": "#5eead4", "accent2": "#14b8a6", "accent3": "#5eead4", "glow": "#2dd4bf",
-        "text": "#e3f8f4", "muted": "#88a8a0",
+        "primary": "#0d9488", "light": "#14b8a6",
+        "bg": "#051214", "bg2": "#0a2226", "bg3": "#06181b",
+        "panel": "rgba(16,42,44,0.92)", "border": "rgba(45,212,191,0.24)",
+        "accent": "#5eead4", "accent2": "#0d9488", "accent3": "#93c5fd", "glow": "#2dd4bf",
+        "text": "#e5f7f3", "muted": "#8caca4",
+    },
+    # ── I02: 5 tema baru (v1.7.2) ──
+    "sakura": {
+        "label": "🌸 Sakura",
+        "primary": "#ec4899", "light": "#f472b6",
+        "bg": "#140712", "bg2": "#241021", "bg3": "#1a0a16",
+        "panel": "rgba(44,20,36,0.92)", "border": "rgba(244,114,182,0.26)",
+        "accent": "#fb7185", "accent2": "#ec4899", "accent3": "#c084fc", "glow": "#f9a8d4",
+        "text": "#fdeef5", "muted": "#bb93a6",
+    },
+    "desert": {
+        "label": "🏜️ Desert",
+        "primary": "#d97706", "light": "#f59e0b",
+        "bg": "#140d04", "bg2": "#251807", "bg3": "#1a1004",
+        "panel": "rgba(44,28,12,0.92)", "border": "rgba(245,158,11,0.26)",
+        "accent": "#fbbf24", "accent2": "#d97706", "accent3": "#fb923c", "glow": "#fcd34d",
+        "text": "#fdf3e3", "muted": "#bda37e",
+    },
+    "sunflower": {
+        "label": "🌻 Sunflower",
+        "primary": "#eab308", "light": "#facc15",
+        "bg": "#100f04", "bg2": "#1f1d07", "bg3": "#14130a",
+        "panel": "rgba(38,36,12,0.92)", "border": "rgba(250,204,21,0.24)",
+        "accent": "#a3e635", "accent2": "#eab308", "accent3": "#fb923c", "glow": "#fde047",
+        "text": "#fbf8e7", "muted": "#b3ae7f",
+    },
+    "royal": {
+        "label": "👑 Royal",
+        "primary": "#eab308", "light": "#facc15",
+        "bg": "#060a1c", "bg2": "#0b1230", "bg3": "#081026",
+        "panel": "rgba(16,24,56,0.92)", "border": "rgba(250,204,21,0.28)",
+        "accent": "#facc15", "accent2": "#3b82f6", "accent3": "#f8fafc", "glow": "#fde68a",
+        "text": "#f1f4ff", "muted": "#98a2c8",
+    },
+    "graphite": {
+        "label": "🖤 Graphite",
+        "primary": "#e2e8f0", "light": "#f8fafc",
+        "bg": "#0a0a0b", "bg2": "#141416", "bg3": "#0e0e10",
+        "panel": "rgba(24,24,27,0.92)", "border": "rgba(226,232,240,0.18)",
+        "accent": "#94a3b8", "accent2": "#e2e8f0", "accent3": "#64748b", "glow": "#cbd5e1",
+        "text": "#f4f4f5", "muted": "#9d9da5",
     },
 }
 

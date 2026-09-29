@@ -1556,6 +1556,12 @@ def handle_get(path: str, uid: int, qs=None):
     qs = qs or {}
     if path == "/api/learning/notebooks":
         return {"ok": True, "notebooks": snapshot(uid)["notebooks"]}
+    if path == "/api/learning/gemini-key":
+        # I01 (v1.7.2): status kunci untuk memulihkan indikator UI saat mount.
+        # Kunci penuh TIDAK pernah dikembalikan (keamanan) — hanya hasKey + mask.
+        key = db.get_gemini_api_key(uid) or ""
+        masked = (key[:4] + "…" + key[-4:]) if len(key) > 10 else ""
+        return {"ok": True, "hasKey": bool(key), "masked": masked}
     if path == "/api/learning/generations/export":
         # A06: ekspor satu artefak Studio sebagai berkas .md / .txt.
         # Berkas "dititipkan" (staged) ke server lalu diunduh lewat jalur unduhan

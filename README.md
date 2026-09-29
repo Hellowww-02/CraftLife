@@ -9,7 +9,7 @@
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.7.0-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.7.2-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -37,6 +37,18 @@ sync and online social features, but the app never requires it.
 - **Two languages** — every screen ships in Indonesian and English (4,447 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
+
+## ✨ What's New in v1.7.2
+
+| Area | Highlights |
+|------|------------|
+| 🖋️ Page signatures | All pages reconstructed with their own visual identity — SignatureKit emblems, display titles & unique pattern strips (peaks/grid/circuit/orbit/dots/wave); pure presentation, zero logic touched |
+| 🎨 12 themes | 5 new identities (🌸 Sakura · 🏜️ Desert · 🌻 Sunflower · 👑 Royal · 🖤 Graphite), 7 reworked palettes, preview-card picker, smooth cross-fade on switch |
+| 🐛 Gemini key fixed | Proper API-key dialog (PyQt6 WebEngine can't run window.prompt) + server status restore — chatbot & Studio keys survive page changes and restarts |
+| 🗂️ Duplicate → folder | Duplicating a task card inside a folder keeps the copy in that folder (Habits · Dailies · Quests · Sport Track) — no more Ungrouped |
+| 📝 Markdown rendered | Auto-updater release notes and Learning saved notes now render full markdown |
+| 📈 Interactive charts | Every chart primitive (line · dual-line · bar · donut · heatmap · stacked bar) answers the cursor: tooltips with value+label, guide lines, focus dots, highlighted segments — live on Dashboard, Economy, Sport, Health & Food, Pomodoro & Love |
+| ✋ Interactive everywhere | Buttons gain a hover sheen, dialogs fade-to-pop, task cards reveal & show reorder affordances, HP/MP/XP bars animate on change, Health & Food completes the signature set |
 
 ## ✨ What's New in v1.7.0
 
@@ -235,7 +247,7 @@ CraftLife/
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
 ├── translations.py       UI strings, Indonesian + English (4,447 keys)
-├── updater.py            Auto-update from GitHub Releases (v1.7.0, SHA-256)
+├── updater.py            Auto-update from GitHub Releases (v1.7.2, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
 ├── mathtools.py          Math text and LaTeX conversion
@@ -274,6 +286,8 @@ Design docs and phase reports kept in the repo:
 | [RELEASE_NOTES_v1.6.4.md](RELEASE_NOTES_v1.6.4.md) | v1.6.4 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.5.md](RELEASE_NOTES_v1.6.5.md) | v1.6.5 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.7.md](RELEASE_NOTES_v1.6.7.md) | v1.6.7 GitHub Release notes |
+| [RELEASE_NOTES_v1.7.2.md](RELEASE_NOTES_v1.7.2.md) | v1.7.2 GitHub Release notes |
+| [UPDATE_ROADMAP_I01_I07_v1.7.2.md](UPDATE_ROADMAP_I01_I07_v1.7.2.md) | v1.7.2 plan (I01–I07) |
 | [RELEASE_NOTES_v1.7.0.md](RELEASE_NOTES_v1.7.0.md) | v1.7.0 GitHub Release notes |
 | [UPDATE_ROADMAP_H01_H07_v1.7.0.md](UPDATE_ROADMAP_H01_H07_v1.7.0.md) | v1.7.0 plan (H01–H07) |
 | [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |
@@ -343,6 +357,13 @@ To ship an auto-update (full runbook:
 
 Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/releases).
 
+- **v1.7.2 "Signature & Spectrum"** (29 Sep 2026) — UI/UX
+  reconstruction: every page gets its own visual signature (SignatureKit +
+  `.ct-sig-*` toolkit), theme catalog grows 7 → 12 (five new identities,
+  seven reworked palettes, preview-card picker with smooth cross-fade),
+  Gemini API key finally persists via a proper dialog + server restore,
+  task duplicates land in the active folder, and release notes / saved
+  notes render full markdown. i18n 4,535 keys (+7). Zero features removed.
 - **v1.7.0 "Arena & Clarity"** (28 Sep 2026) — Learning Studio quality
   upgrade (stronger prompts + audience/tone/examples options; dropdown
   artifact history; 3D flashcards, quiz score ring, slide speaker notes),
@@ -417,6 +438,6 @@ the exact error. Never attach `.env`, `craftlife.db`, or API keys.
 
 **Complete real quests. Keep your data. Level up your life.**
 
-*CraftLife v1.7.0 — "Arena & Clarity"*
+*CraftLife v1.7.2 — "Signature & Spectrum"*
 
 </div>

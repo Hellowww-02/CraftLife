@@ -144,7 +144,7 @@ from pathlib import Path
 # lonceng notifikasi, E03 timer tidur musik, E04 focus trap 13 dialog, F01 50
 # makanan + F02 50 minuman baru (katalog 774->874, seed otomatis idempoten),
 # F03 sortir grid nutrisi + preset porsi. i18n: +5 key -> total 4.447.
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.2"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 

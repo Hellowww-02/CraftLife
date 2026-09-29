@@ -1103,7 +1103,8 @@ def handle_post(path: str, uid: int, body: dict, parts: list):
             db.delete_sport_activity(uid, sid)
             return {"result": {"ok": True}}
         if parts[3] == "duplicate":
-            return {"result": db.duplicate_sport_activity(uid, sid)}
+            # I01: folder target dari UI (folder aktif); None = salin folder asli.
+            return {"result": db.duplicate_sport_activity(uid, sid, body.get("folderId") or None)}
         if parts[3] == "update":
             kw = {}
             if body.get("name"):

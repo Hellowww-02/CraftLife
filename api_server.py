@@ -3945,7 +3945,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True, "trash_id": None}))
                     return
                 if action == "duplicate":
-                    result = db.duplicate_habit(uid, hid)
+                    # I01: folder target dari UI (folder aktif); None = salin folder asli.
+                    result = db.duplicate_habit(uid, hid, body.get("folderId") or None)
                     self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {}))
                     return
                 if action == "update":
@@ -4017,7 +4018,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True, "trash_id": None}))
                     return
                 if action == "duplicate":
-                    result = db.duplicate_daily(uid, did)
+                    # I01: folder target dari UI (folder aktif); None = salin folder asli.
+                    result = db.duplicate_daily(uid, did, body.get("folderId") or None)
                     self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {}))
                     return
                 if action == "update":
@@ -4076,7 +4078,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {"ok": True, "trash_id": None}))
                     return
                 if action == "duplicate":
-                    result = db.duplicate_todo(uid, tid)
+                    # I01: folder target dari UI (folder aktif); None = salin folder asli.
+                    result = db.duplicate_todo(uid, tid, body.get("folderId") or None)
                     self._send(200, _ok_payload(uid, result if isinstance(result, dict) else {}))
                     return
                 if action == "update":
