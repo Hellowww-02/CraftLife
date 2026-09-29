@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import { studio } from '../api/studio';
 
+// I01 (v1.7.2): lazy agar react-markdown tidak membesar-besarkan chunk utama —
+// catatan rilis hanya dirender saat dialog update terbuka.
+const ReactMarkdown = React.lazy(() => import('react-markdown'));
+
 export interface UpdateInfo {
   version: string;
   notes?: string;
@@ -165,7 +169,13 @@ export const UpdateDialog: React.FC<{ info: UpdateInfo; onDismiss: () => void }>
             <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
               {t('update_notes_label', 'Catatan rilis')}
             </span>
-            <p className="text-xs text-slate-300 whitespace-pre-wrap max-h-40 overflow-y-auto">{info.notes}</p>
+            {/* I01 (v1.7.2): catatan rilis dirender sebagai markdown penuh —
+                sebelumnya tampil sebagai teks mentah yang sulit dibaca. */}
+            <div className="prose prose-invert prose-sm max-w-none text-xs text-slate-300 max-h-40 overflow-y-auto [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-sm [&_h2]:text-xs [&_h3]:text-xs">
+              <React.Suspense fallback={<p className="whitespace-pre-wrap">{info.notes}</p>}>
+                <ReactMarkdown>{info.notes}</ReactMarkdown>
+              </React.Suspense>
+            </div>
           </div>
         )}
 

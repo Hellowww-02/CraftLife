@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
@@ -276,19 +277,23 @@ export const HealthFoodView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* ── Date selector (◀ [tanggal] ▶ [Hari ini]) ── */}
-      <div className="ct-panel p-4 flex items-center gap-2 flex-wrap">
-        <Salad className="w-6 h-6 text-teal-400" />
-        <h2 className="text-xl font-black text-slate-100 mr-2">
-          {t('page_health_title', 'Health & Food')}
-        </h2>
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" onClick={() => setDay((d) => shiftISO(d, -1))} className="p-2 rounded-lg bg-slate-800 text-slate-200"><ChevronLeft className="w-4 h-4" /></button>
-          <span className="text-xs font-bold text-slate-200 min-w-[210px] text-center">{dateLabel}</span>
-          <button type="button" disabled={day >= today} onClick={() => setDay((d) => shiftISO(d, +1))} className="p-2 rounded-lg bg-slate-800 text-slate-200 disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
-          <button type="button" onClick={() => setDay(today)} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">{t('food_today', 'Hari Ini')}</button>
-        </div>
-      </div>
+      {/* J01 (v1.7.2 rev): Signature Health & Food — 'dots' teal (taburan nutrisi);
+          navigasi tanggal pindah ke slot kanan tanpa berubah fungsi. */}
+      <PageSignature
+        icon={<Salad className="w-6 h-6" />}
+        title={t('page_health_title', 'Health & Food')}
+        tagline={t('page_health_subtitle', 'Kelola nutrisi, hidrasi, BMI, dan kesehatan harian')}
+        accent="#2dd4bf"
+        pattern="dots"
+        right={
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setDay((d) => shiftISO(d, -1))} className="p-2 rounded-lg bg-slate-800 text-slate-200"><ChevronLeft className="w-4 h-4" /></button>
+            <span className="text-xs font-bold text-slate-200 min-w-[210px] text-center">{dateLabel}</span>
+            <button type="button" disabled={day >= today} onClick={() => setDay((d) => shiftISO(d, +1))} className="p-2 rounded-lg bg-slate-800 text-slate-200 disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
+            <button type="button" onClick={() => setDay(today)} className="px-3 py-2 rounded-lg bg-amber-500 text-slate-950 text-xs font-black">{t('food_today', 'Hari Ini')}</button>
+          </div>
+        }
+      />
 
       {/* ── Nutrition summary (4 kartu + progress + target) ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
@@ -89,7 +90,7 @@ export const GuildView: React.FC = () => {
   const [inviteFriendDlg, setInviteFriendDlg] = useState(false);
 
   // ── Hasil serangan boss (parity _perform_action → _show) ──
-  // H08 (v1.7.1): hasil serangan tidak lagi tampil sebagai popup modal, tetapi
+  // H08 (v1.7.0): hasil serangan tidak lagi tampil sebagai popup modal, tetapi
   // sebagai KOTAK PESAN di dalam arena (konsep duel Pokémon) — state lama
   // `attackModal` digantikan `arenaMsg` dengan isi informasi yang identik.
   const [arenaMsg, setArenaMsg] = useState<{ title: string; body: string; variant: 'info' | 'success' } | null>(null);
@@ -322,10 +323,14 @@ export const GuildView: React.FC = () => {
   if (!guild.id) {
     return (
       <div className="px-4 md:px-8 pb-24 pt-4 max-w-3xl mx-auto space-y-4 animate-fade-in-up">
-        <header>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">{tr('page_guild_subtitle')}</p>
-          <h2 className="text-2xl font-black text-slate-100">{tr('page_guild_title')}</h2>
-        </header>
+        {/* I06 (v1.7.2): Signature Guild — 'peaks' violet (benteng klan) */}
+        <PageSignature
+          icon={<span className="text-xl">🛡️</span>}
+          title={tr('page_guild_title')}
+          tagline={tr('page_guild_subtitle')}
+          accent="#a78bfa"
+          pattern="peaks"
+        />
         <p className="text-sm text-slate-500">{tr('guild_no_guild')}</p>
 
         <div className="ct-panel p-4 space-y-2">
@@ -490,7 +495,7 @@ export const GuildView: React.FC = () => {
             </span>
           )}
         </div>
-        {/* H08 (v1.7.1): kotak pesan pertarungan ala duel Pokémon — hasil serangan
+        {/* H08 (v1.7.0): kotak pesan pertarungan ala duel Pokémon — hasil serangan
             tampil DI SINI (bukan popup), tetap ada saat boss tumbang (kemenangan),
             dan dibersihkan otomatis ketika boss baru dipanggil. */}
         {arenaMsg && (
@@ -726,7 +731,7 @@ export const GuildView: React.FC = () => {
         </div>
       )}
 
-      {/* H08 (v1.7.1): dialog hasil serangan dihapus — digantikan kotak pesan
+      {/* H08 (v1.7.0): dialog hasil serangan dihapus — digantikan kotak pesan
           di dalam seksi arena (lihat ct-arena-msg di atas judul LIVE). */}
 
       {/* ── Dialog reward (parity _show_unclaimed_rewards) ── */}

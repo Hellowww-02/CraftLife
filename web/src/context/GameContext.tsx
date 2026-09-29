@@ -109,7 +109,7 @@ interface GameContextType {
   habits: Habit[];
   addHabit: (title: string, difficulty: TaskDifficulty, isPositive: boolean, isNegative: boolean, folderId?: string | null, notes?: string) => void;
   editHabit: (id: string, updates: Partial<Habit>) => void;
-  duplicateHabit: (id: string) => void;
+  duplicateHabit: (id: string, folderId?: string | null) => void;
   deleteHabit: (id: string) => void;
   triggerHabit: (id: string, isPos: boolean) => void;
   reorderHabits: (ordered: Habit[]) => void;
@@ -122,7 +122,7 @@ interface GameContextType {
   dailies: Daily[];
   addDaily: (title: string, difficulty: TaskDifficulty, repeatDays: number[], folderId?: string | null, notes?: string) => void;
   editDaily: (id: string, updates: Partial<Daily>) => void;
-  duplicateDaily: (id: string) => void;
+  duplicateDaily: (id: string, folderId?: string | null) => void;
   deleteDaily: (id: string) => void;
   toggleDaily: (id: string) => void;
   failDaily: (id: string) => void;
@@ -133,7 +133,7 @@ interface GameContextType {
   quests: Quest[];
   addQuest: (title: string, difficulty: TaskDifficulty, dueDate?: string | null, folderId?: string | null, notes?: string) => void;
   editQuest: (id: string, updates: Partial<Quest>) => void;
-  duplicateQuest: (id: string) => void;
+  duplicateQuest: (id: string, folderId?: string | null) => void;
   deleteQuest: (id: string) => void;
   toggleQuest: (id: string) => void;
   reorderQuests: (ordered: Quest[]) => void;
@@ -144,7 +144,7 @@ interface GameContextType {
   updateSportLog: (id: string, body: Record<string, unknown>) => void;
   completeSportLog: (id: string) => void;
   deleteSportLog: (id: string) => void;
-  duplicateSportLog: (id: string) => void;
+  duplicateSportLog: (id: string, folderId?: string | null) => void;
   reorderSportLogs: (ordered: SportLog[]) => void;
 
   // Nutrition & Water
@@ -984,8 +984,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [applyLive]);
 
-  const duplicateHabit = useCallback((id: string) => {
-    rpg.duplicateHabit(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  const duplicateHabit = useCallback((id: string, folderId?: string | null) => {
+    rpg.duplicateHabit(id, folderId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const deleteHabit = useCallback((id: string) => {
@@ -1027,8 +1027,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [applyLive]);
 
-  const duplicateDaily = useCallback((id: string) => {
-    rpg.duplicateDaily(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  const duplicateDaily = useCallback((id: string, folderId?: string | null) => {
+    rpg.duplicateDaily(id, folderId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const deleteDaily = useCallback((id: string) => {
@@ -1072,8 +1072,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [applyLive]);
 
-  const duplicateQuest = useCallback((id: string) => {
-    rpg.duplicateQuest(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  const duplicateQuest = useCallback((id: string, folderId?: string | null) => {
+    rpg.duplicateQuest(id, folderId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive]);
 
   const deleteQuest = useCallback((id: string) => {
@@ -1147,8 +1147,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     life.deleteSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
-  const duplicateSportLog = useCallback((id: string) => {
-    life.duplicateSport(id).then((res) => applyLive(res)).catch(notifyApiErr);
+  const duplicateSportLog = useCallback((id: string, folderId?: string | null) => {
+    life.duplicateSport(id, folderId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
 
   const reorderSportLogs = useCallback((ordered: SportLog[]) => {

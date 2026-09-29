@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { SigStrip } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { useMusicPlayer, type LibraryEntry } from '../../music/MusicPlayerContext';
@@ -631,12 +632,16 @@ export const MusicView: React.FC = () => {
     <div className="h-full flex flex-col bg-[#121212] text-slate-100">
       {/* P57: elemen <audio> kini milik MusicPlayerProvider di App root. */}
 
-      {/* Header (parity _page_header("music") + actions) */}
-      <div className="px-6 py-4 flex flex-wrap items-center gap-3 border-b border-slate-800/70">
-        <div className="mr-auto flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center text-xl">🎵</div>
+      {/* Header (parity _page_header("music") + actions) — I06 (v1.7.2):
+          Signature Music: strip 'wave' emerald (gelombang suara) */}
+      <div className="relative px-6 py-4 flex flex-wrap items-center gap-3 border-b border-slate-800/70 overflow-hidden" style={{ ['--ct-sig-accent' as any]: '#34d399' }}>
+        <SigStrip variant="wave" />
+        <div className="relative mr-auto flex items-center gap-3">
+          <span className="ct-sig-emblem" style={{ width: 40, height: 40 }} aria-hidden="true">
+            <span className="ct-sig-emblem-core" style={{ width: 36, height: 36, fontSize: 17 }}>🎵</span>
+          </span>
           <div>
-            <h1 className="text-lg font-black">{tr('music')}</h1>
+            <h1 className="text-lg font-black" style={{ fontFamily: 'var(--ct-font-display)' }}>{tr('music')}</h1>
             <p className="text-[11px] text-slate-400">{tr('music_subtitle')}</p>
           </div>
         </div>

@@ -10,7 +10,7 @@ export const life = {
   deleteSport: (id: string) => apiPost<any>(`/api/sport/${id}/delete`, {}),
   updateSport: (id: string, body: Record<string, unknown>) =>
     apiPost<any>(`/api/sport/${id}/update`, body),
-  duplicateSport: (id: string) => apiPost<any>(`/api/sport/${id}/duplicate`, {}),
+  duplicateSport: (id: string, folderId?: string | null) => apiPost<any>(`/api/sport/${id}/duplicate`, folderId ? { folderId } : {}),
   dashboardSummary: () => apiGet<any>('/api/dashboard/summary'),
   profileTitles: () => apiGet<any>('/api/profile/titles'),
   selectTitle: (key: string) => apiPost<any>('/api/profile/title', { key }),

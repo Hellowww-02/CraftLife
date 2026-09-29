@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { SigStrip } from '../ui/SignatureKit';
 import { nextSpecialFromProfile } from '../love/overviewUtils';
 import { useGame } from '../../context/GameContext';
 import { rpg } from '../../api/rpg';
@@ -105,8 +106,10 @@ export const DashboardView: React.FC<{ onNavigate?: (tab: ActiveView) => void; s
 
   return (
     <div className="space-y-6 ct-stagger">
-      {/* Top Hero Banner */}
-      <div className="ct-hero relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 sm:p-6">
+      {/* Top Hero Banner — I04 (v1.7.2): Signature Dashboard, pola 'orbit'
+          (pusat kendali petualang) mengikuti warna class karakter */}
+      <div className="ct-hero relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-5 sm:p-6" style={{ ['--ct-sig-accent' as any]: currentClass.color }}>
+        <SigStrip variant="orbit" />
         <div aria-hidden="true" className="absolute -top-20 -right-20 w-64 h-64 rounded-full opacity-20 blur-3xl pointer-events-none" style={{ background: currentClass.color }} />
         <div className="relative z-10 flex flex-col gap-5">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">

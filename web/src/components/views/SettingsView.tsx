@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
@@ -42,7 +43,10 @@ const AdminDebugPanel: React.FC = () => {
   );
 };
 
-interface ThemeRow { key: string; label: string; primary: string; glow: string; }
+interface ThemeRow {
+  key: string; label: string; primary: string; glow: string;
+  bg?: string; bg2?: string; panel?: string; accent?: string; accent2?: string; text?: string;
+}
 
 const fmtBytes = (n: number): string => {
   if (!n || n <= 0) return '0 B';
@@ -476,12 +480,14 @@ export const SettingsView: React.FC = () => {
 
   return (
     <div className="space-y-6 w-full mx-auto max-w-4xl">
-      <div>
-        <div className="flex items-center gap-2">
-          <Settings className="w-6 h-6 text-slate-400" />
-          <h2 className="text-xl font-black text-slate-100">{t('settings_title', 'Pengaturan')}</h2>
-        </div>
-      </div>
+      {/* I06 (v1.7.2): Signature Settings — 'grid' slate (panel kendali) */}
+      <PageSignature
+        icon={<Settings className="w-6 h-6" />}
+        title={t('settings_title', 'Pengaturan')}
+        tagline={lang === 'id' ? 'Panel kendali akun, tema, dan preferensi' : 'Control panel for account, themes, and preferences'}
+        accent="#94a3b8"
+        pattern="grid"
+      />
 
       {/* ===== Akun lokal (custom web) ===== */}
       <div className="ct-panel rounded-3xl p-6 space-y-3">
@@ -571,18 +577,20 @@ export const SettingsView: React.FC = () => {
       {/* ===== P62: Pemeliharaan Data (cleanup history tracker) ===== */}
       <MaintenanceSection />
 
-      {/* ===== Parity SettingsPage: THEME group — radio semua db.THEMES + glow preview dot ===== */}
+      {/* ===== Parity SettingsPage: THEME group — kartu preview semua db.THEMES (I02: 12 tema) ===== */}
       <div className="ct-panel p-5 space-y-3">
         <span className="text-xs font-bold text-slate-300 flex items-center gap-2">
           <Palette className="w-4 h-4 text-fuchsia-400" /> {t('settings_theme', 'Tema')}
+          <span className="ml-auto text-[10px] font-semibold text-slate-500">{themes.length} {lang === 'id' ? 'pilihan' : 'options'}</span>
         </span>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
           {themes.map((th) => {
             const active = activeTheme === th.key;
             return (
               <button
                 type="button"
                 key={th.key}
+                aria-pressed={active}
                 onClick={() => {
                   if (active) return;
                   // Parity SettingsPage theme radios: terapkan + persist via GameContext
@@ -590,20 +598,28 @@ export const SettingsView: React.FC = () => {
                   setActiveTheme(th.key);
                   showToast('success', t('settings_theme_changed', 'Tema diganti: {name}').replace('{name}', th.label), '');
                 }}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                className={`group relative rounded-xl border overflow-hidden text-left transition-all focus-visible:ring-2 focus-visible:ring-fuchsia-400 ${
                   active
-                    ? 'ct-glow bg-fuchsia-500/15 border-fuchsia-400/60 text-fuchsia-200'
-                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                    ? 'ct-glow border-fuchsia-400/70 ring-1 ring-fuchsia-400/40'
+                    : 'border-slate-700 hover:border-slate-500 hover:-translate-y-0.5'
                 }`}
               >
-                <span
-                  className="w-4 h-4 rounded-full shrink-0"
-                  style={{
-                    background: th.glow || th.primary || '#a78bfa',
-                    boxShadow: `0 0 8px 2px ${th.glow || th.primary || '#a78bfa'}`,
-                  }}
-                />
-                <span className="truncate">{th.label}</span>
+                {/* Kanvas mini: bg gradasi + strip panel + titik warna primer/aksen */}
+                <span className="block h-14 relative" style={{ background: `linear-gradient(135deg, ${th.bg || '#0b0b16'} 0%, ${th.bg2 || '#14122c'} 100%)` }} aria-hidden="true">
+                  <span className="absolute left-2 top-2 right-5 h-4 rounded-md border" style={{ background: th.panel || 'rgba(30,30,50,.9)', borderColor: `${th.primary || '#8b5cf6'}55` }} />
+                  <span className="absolute left-2 bottom-2 flex gap-1">
+                    <span className="w-3 h-3 rounded-full" style={{ background: th.primary || '#8b5cf6', boxShadow: `0 0 6px ${th.glow || th.primary || '#8b5cf6'}` }} />
+                    <span className="w-3 h-3 rounded-full" style={{ background: th.accent || '#22d3ee' }} />
+                    <span className="w-3 h-3 rounded-full" style={{ background: th.accent2 || th.primary || '#8b5cf6' }} />
+                  </span>
+                  <span className="absolute right-2 bottom-2 w-8 h-1.5 rounded-full" style={{ background: `${th.text || '#ffffff'}33` }} />
+                  {active && (
+                    <span className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-fuchsia-500 text-white flex items-center justify-center text-[11px] font-bold" aria-hidden="true">✓</span>
+                  )}
+                </span>
+                <span className={`block px-2.5 py-2 text-[11px] font-bold truncate ${active ? 'bg-fuchsia-500/15 text-fuchsia-200' : 'bg-slate-800/60 text-slate-300 group-hover:text-slate-100'}`}>
+                  {th.label}
+                </span>
               </button>
             );
           })}

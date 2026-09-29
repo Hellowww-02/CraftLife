@@ -1,4 +1,5 @@
 import React from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
@@ -40,10 +41,14 @@ export const PomodoroView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-black text-slate-100">{t('pomodoro', '🍅 Pomodoro')}</h2>
-        <p className="text-xs text-slate-400 mt-1">{t('nav_pomodoro', 'Pomodoro')}</p>
-      </div>
+      {/* I05 (v1.7.2): Signature Pomodoro — 'orbit' (putaran timer) + aksen violet */}
+      <PageSignature
+        icon={<span className="text-xl">🍅</span>}
+        title={t('pomodoro', '🍅 Pomodoro')}
+        tagline={t('nav_pomodoro', 'Pomodoro')}
+        accent="#a78bfa"
+        pattern="orbit"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* ── Kartu Timer (Parity: timer_card stretch 3) ─────────────── */}

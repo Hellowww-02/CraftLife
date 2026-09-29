@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost } from '../../api/client';
 import { t } from '../../i18n';
@@ -88,10 +89,14 @@ export const AchievementsView: React.FC = () => {
 
   return (
     <div className="space-y-5 w-full mx-auto max-w-6xl">
-      <div>
-        <h2 className="text-xl font-black text-slate-100 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> {t('nav_achievements', 'Achievement')}</h2>
-        <p className="text-xs text-slate-400 mt-1">{t('achievement_subtitle', 'A collection of milestones across every activity. Claim the reward for each success.')}</p>
-      </div>
+      {/* I06 (v1.7.2): Signature Achievements — 'orbit' gold (lingkaran juara) */}
+      <PageSignature
+        icon={<Trophy className="w-6 h-6" />}
+        title={t('nav_achievements', 'Achievement')}
+        tagline={t('achievement_subtitle', 'A collection of milestones across every activity. Claim the reward for each success.')}
+        accent="#fbbf24"
+        pattern="orbit"
+      />
 
       {/* Parity AchievementPage: search input + combo kategori */}
       <div className="flex flex-col sm:flex-row gap-2">

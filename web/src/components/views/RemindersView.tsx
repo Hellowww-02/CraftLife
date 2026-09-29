@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import {
   Bell, BellOff, Plus, RefreshCw, Pencil, Trash2, Play, FolderOpen, X, Volume2,
@@ -218,13 +219,14 @@ export const RemindersView: React.FC = () => {
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-4xl mx-auto space-y-4 animate-fade-in-up">
-      {/* Header halaman (parity PageHeader('reminders'): subtitle atas, judul bawah) */}
-      <header>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
-          {tr('page_reminders_subtitle')}
-        </p>
-        <h2 className="text-2xl font-black text-slate-100">{tr('page_reminders_title')}</h2>
-      </header>
+      {/* I06 (v1.7.2): Signature Reminders — 'dots' amber (titik pengingat) */}
+      <PageSignature
+        icon={<span className="text-xl">⏰</span>}
+        title={tr('page_reminders_title')}
+        tagline={tr('page_reminders_subtitle')}
+        accent="#f59e0b"
+        pattern="dots"
+      />
 
       {/* Toolbar (parity toolbar) */}
       <div className="flex items-center gap-2">

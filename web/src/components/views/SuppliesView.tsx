@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { t } from '../../i18n';
@@ -173,23 +174,24 @@ export const SuppliesView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ on
         ))}
       </div>
 
-      <div className="ct-panel flex items-center justify-between gap-3 p-5">
-        <div className="flex items-center gap-3">
-          <Package className="w-8 h-8 text-amber-400" />
-          <div>
-            <h1 className="text-xl font-bold text-slate-100">{t('web_supplies_title', 'Household supplies')}</h1>
-            <p className="text-xs text-slate-400">{t('web_supplies_sub', 'Daily stock, stored in local SQLite.')}</p>
+      {/* I05 (v1.7.2): Signature Supplies — 'grid' (rak stok) + aksen amber */}
+      <PageSignature
+        icon={<Package className="w-6 h-6" />}
+        title={t('web_supplies_title', 'Household supplies')}
+        tagline={t('web_supplies_sub', 'Daily stock, stored in local SQLite.')}
+        accent="#f59e0b"
+        pattern="grid"
+        right={
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => onNavigate?.('economy')} className="ct-btn ct-btn-primary">
+              💰 {t('supplies_open_economy', 'Open Economy')}
+            </button>
+            <button onClick={openAdd} className="ct-btn ct-btn-success flex items-center gap-1">
+              <Plus className="w-4 h-4" /> {t('supplies_add', 'Add')}
+            </button>
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => onNavigate?.('economy')} className="ct-btn ct-btn-primary">
-            💰 {t('supplies_open_economy', 'Open Economy')}
-          </button>
-          <button onClick={openAdd} className="ct-btn ct-btn-success flex items-center gap-1">
-            <Plus className="w-4 h-4" /> {t('supplies_add', 'Add')}
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* ── Search + kategori (parity search_input & category_combo) ── */}
       <div className="flex items-center gap-2">

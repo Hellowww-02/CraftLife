@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { SigStrip } from '../ui/SignatureKit';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
@@ -177,11 +178,15 @@ export const NutritionView: React.FC = () => {
       {/* Top Banner: Macros Summary & Water Hydration */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Daily Macros Summary */}
-        <div className="lg:col-span-2 rounded-2xl bg-gradient-to-r from-teal-950/40 via-slate-900 to-slate-900 border border-teal-500/30 p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Salad className="w-6 h-6 text-teal-400" />
-              <h2 className="text-xl font-black text-slate-100">{lang === 'id' ? 'Nutrisi & Kalori Harian' : 'Daily Nutrition & Macros'}</h2>
+        <div className="relative lg:col-span-2 rounded-2xl bg-gradient-to-r from-teal-950/40 via-slate-900 to-slate-900 border border-teal-500/30 p-5 flex flex-col justify-between overflow-hidden" style={{ ['--ct-sig-accent' as any]: '#2dd4bf' }}>
+          {/* I04 (v1.7.2): Signature Nutrition — pola 'dots' (taburan makronutrisi) */}
+          <SigStrip variant="dots" />
+          <div className="relative">
+            <div className="flex items-center gap-2.5 mb-1">
+              <span className="ct-sig-emblem" style={{ width: 40, height: 40 }} aria-hidden="true">
+                <span className="ct-sig-emblem-core" style={{ width: 36, height: 36, fontSize: 16 }}><Salad className="w-4 h-4" /></span>
+              </span>
+              <h2 className="text-xl font-black text-slate-100" style={{ fontFamily: 'var(--ct-font-display)' }}>{lang === 'id' ? 'Nutrisi & Kalori Harian' : 'Daily Nutrition & Macros'}</h2>
             </div>
             <p className="text-xs text-slate-400">
               {lang === 'id'

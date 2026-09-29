@@ -1,4 +1,5 @@
 import React from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { liveShopItems, liveRecipes } from '../../data/liveCatalog';
 import { t } from '../../i18n';
@@ -26,13 +27,14 @@ export const CraftView: React.FC = () => {
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
-      {/* Header halaman (parity PageHeader('crafting')) */}
-      <header>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
-          {tr('page_crafting_subtitle')}
-        </p>
-        <h2 className="text-2xl font-black text-slate-100">{tr('page_crafting_title')}</h2>
-      </header>
+      {/* I05 (v1.7.2): Signature Craft — 'circuit' (diagram tempa) + aksen oranye */}
+      <PageSignature
+        icon={<span className="text-xl">🔨</span>}
+        title={tr('page_crafting_title')}
+        tagline={tr('page_crafting_subtitle')}
+        accent="#fb923c"
+        pattern="circuit"
+      />
 
       <div className="space-y-3">
         {CRAFT_RECIPES.map((r: any) => {

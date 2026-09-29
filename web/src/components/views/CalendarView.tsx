@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
@@ -133,30 +134,31 @@ export const CalendarView: React.FC = () => {
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
-      {/* Header halaman (parity PageHeader('calendar') + aksi tahun) */}
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
-            {tr('page_calendar_subtitle')}
-          </p>
-          <h2 className="text-2xl font-black text-slate-100">{tr('page_calendar_title')}</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={prevYear} aria-label="prev-year"
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm font-black text-slate-100 w-14 text-center">{year}</span>
-          <button type="button" onClick={nextYear} aria-label="next-year"
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <button type="button" onClick={gotoToday}
-            className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
-            {tr('food_today')}
-          </button>
-        </div>
-      </header>
+      {/* I06 (v1.7.2): Signature Calendar — 'grid' sky (kisi tanggal) */}
+      <PageSignature
+        icon={<span className="text-xl">📅</span>}
+        title={tr('page_calendar_title')}
+        tagline={tr('page_calendar_subtitle')}
+        accent="#38bdf8"
+        pattern="grid"
+        right={
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={prevYear} aria-label="prev-year"
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-black text-slate-100 w-14 text-center">{year}</span>
+            <button type="button" onClick={nextYear} aria-label="next-year"
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button type="button" onClick={gotoToday}
+              className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black">
+              {tr('food_today')}
+            </button>
+          </div>
+        }
+      />
 
       {/* Grid 12 bulan (parity months_grid 3 kolom; responsif 1/2/3) */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { livePets } from '../../data/liveCatalog';
 import { t } from '../../i18n';
@@ -39,13 +40,14 @@ export const PetsView: React.FC = () => {
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
-      {/* Header halaman (parity PageHeader('pets')) */}
-      <header>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
-          {tr('page_pets_subtitle')}
-        </p>
-        <h2 className="text-2xl font-black text-slate-100">{tr('page_pets_title')}</h2>
-      </header>
+      {/* I05 (v1.7.2): Signature Pets — 'dots' (jejak kaki) + aksen violet */}
+      <PageSignature
+        icon={<span className="text-xl">🐾</span>}
+        title={tr('page_pets_title')}
+        tagline={tr('page_pets_subtitle')}
+        accent="#a78bfa"
+        pattern="dots"
+      />
 
       {userPets.length === 0 ? (
         <p className="text-center text-sm text-slate-500 py-12">{tr('pets_empty')}</p>

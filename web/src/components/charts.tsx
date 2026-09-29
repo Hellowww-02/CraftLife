@@ -53,6 +53,13 @@ function useMeasuredWidth(): [React.RefObject<HTMLDivElement>, number] {
   return [ref, w];
 }
 
+/* J03 (v1.7.2 rev): format angka tooltip — ribuan lokal, 2 desimal aman. */
+const fmtChartVal = (v: number) => {
+  const n = Number.isFinite(v) ? v : 0;
+  const rounded = Math.round(n * 100) / 100;
+  return rounded.toLocaleString();
+};
+
 /* ---------------------------------------------------------- ProgressRing */
 
 interface ProgressRingProps {
@@ -164,11 +171,15 @@ interface LineChartProps {
   showGrid?: boolean;
   labels?: boolean;
   className?: string;
+  /** J03: formatter nilai tooltip (default: angka lokal). */
+  formatValue?: (v: number) => string;
 }
 
 /** Simple multi-purpose line/area chart. Data should be ordered by x (index). */
-export function LineChart({ data, width = 320, height = 160, color = '#34d399', showGrid = true, labels = true, className }: LineChartProps) {
+export function LineChart({ data, width = 320, height = 160, color = '#34d399', showGrid = true, labels = true, className, formatValue }: LineChartProps) {
   const [ref, measured] = useMeasuredWidth();
+  // J03 (v1.7.2 rev): titik terdekat dari kursor → guide line + tooltip.
+  const [hov, setHov] = useState<number | null>(null);
   const resolved = measured > 0 ? measured : width;
   const pad = 8;
   const innerW = Math.max(1, resolved - pad * 2);
@@ -188,9 +199,21 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
   const line = pts.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
   const area = `${pad},${pad + innerH} ${line} ${pad + innerW},${pad + innerH}`;
   const gridLines = showGrid ? [0.25, 0.5, 0.75].map((t) => pad + t * innerH) : [];
+  const fv = formatValue || fmtChartVal;
+  const hp = hov !== null ? pts[hov] : null;
   return (
-    <div ref={ref} className={`w-full ${className ?? ''}`}>
-      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+    <div ref={ref} className={`relative w-full ${className ?? ''}`}>
+      <svg
+        width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}
+        onPointerMove={(e) => {
+          if (!pts.length) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const idx = Math.max(0, Math.min(pts.length - 1, Math.round((x - pad) / Math.max(1, stepX))));
+          setHov(idx);
+        }}
+        onPointerLeave={() => setHov(null)}
+      >
         {data && data.length > 0 && (
           <>
             {gridLines.map((y, i) => (
@@ -198,8 +221,16 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
             ))}
             <polygon points={area} fill={color} opacity="0.1" />
             <polyline points={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            {/* J03: guide line vertikal + titik fokus saat hover */}
+            {hp && (
+              <>
+                <line x1={hp.x} y1={pad} x2={hp.x} y2={pad + innerH} stroke={color} strokeWidth="1" strokeDasharray="3 3" opacity="0.4" />
+                <circle cx={hp.x} cy={hp.y} r="8" fill={color} opacity="0.18" />
+                <circle cx={hp.x} cy={hp.y} r="4.5" fill={color} stroke="rgba(0,0,0,0.35)" strokeWidth="1" />
+              </>
+            )}
             {pts.map((p, i) => (
-              <circle key={`pt-${i}`} cx={p.x} cy={p.y} r="2.5" fill={color} />
+              <circle key={`pt-${i}`} cx={p.x} cy={p.y} r={hov === i ? 0 : 2.5} fill={color} />
             ))}
             {labels &&
               pts.map((p, i) => (
@@ -210,6 +241,12 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
           </>
         )}
       </svg>
+      {hp && (
+        <div className="ct-chart-tip" style={{ left: hp.x, top: hp.y }}>
+          <span className="ct-chart-tip-label">{hp.point.label}</span>
+          {fv(hp.point.value)}
+        </div>
+      )}
     </div>
   );
 }
@@ -275,9 +312,23 @@ export function DualLineChart({
   const gridLines = [0.25, 0.5, 0.75].map((t) => pad + t * innerH);
   const lbl = (i: number) => labels[i] ?? '';
   const labelCount = Math.max(a.length, b.length, labels.length);
+  // J03: hover indeks terdekat → guide line + tooltip dua seri.
+  const [hov, setHov] = useState<number | null>(null);
+  const hA = hov !== null ? ptsA[hov] : undefined;
+  const hB = hov !== null ? ptsB[hov] : undefined;
   return (
-    <div ref={ref} className={`w-full ${className ?? ''}`}>
-      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+    <div ref={ref} className={`relative w-full ${className ?? ''}`}>
+      <svg
+        width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}
+        onPointerMove={(e) => {
+          if (n === 0) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const idx = Math.max(0, Math.min(n - 1, Math.round((x - pad) / Math.max(1, innerW / Math.max(1, n - 1)))));
+          setHov(idx);
+        }}
+        onPointerLeave={() => setHov(null)}
+      >
         {n > 0 && (
           <>
             {gridLines.map((y, i) => (
@@ -291,11 +342,15 @@ export function DualLineChart({
             )}
             {lineA && <polyline points={lineA} fill="none" stroke={colorA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {lineB && <polyline points={lineB} fill="none" stroke={colorB} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+            {/* J03: guide line + titik fokus hover */}
+            {hov !== null && (hA || hB) && (
+              <line x1={pad + (hov * innerW) / Math.max(1, n - 1)} y1={pad} x2={pad + (hov * innerW) / Math.max(1, n - 1)} y2={pad + innerH} stroke="rgba(148,163,184,0.45)" strokeWidth="1" strokeDasharray="3 3" />
+            )}
             {ptsA.map((p, i) => (
-              <circle key={`pa-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorA} />
+              <circle key={`pa-${i}`} cx={p.x} cy={p.y} r={hov === i ? 4.5 : 2.5} fill={colorA} opacity={hov === null || hov === i ? 1 : 0.45} />
             ))}
             {ptsB.map((p, i) => (
-              <circle key={`pb-${i}`} cx={p.x} cy={p.y} r="2.5" fill={colorB} />
+              <circle key={`pb-${i}`} cx={p.x} cy={p.y} r={hov === i ? 4.5 : 2.5} fill={colorB} opacity={hov === null || hov === i ? 1 : 0.45} />
             ))}
             {Array.from({ length: labelCount }).map((_, i) => (
               <text key={`lb-${i}`} x={pad + (i * innerW) / Math.max(1, n - 1)} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
@@ -305,6 +360,19 @@ export function DualLineChart({
           </>
         )}
       </svg>
+      {hov !== null && (hA || hB) && (
+        <div className="ct-chart-tip" style={{ left: pad + (hov * innerW) / Math.max(1, n - 1), top: Math.min(hA?.y ?? 999, hB?.y ?? 999) }}>
+          <span className="ct-chart-tip-label">{lbl(hov)}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: colorA, display: 'inline-block' }} />
+            {hA ? fmtChartVal(hA.point.value) : '—'}
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: colorB, display: 'inline-block' }} />
+            {hB ? fmtChartVal(hB.point.value) : '—'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -323,6 +391,8 @@ interface BarChartProps {
 /** Vertical bar chart for categories (e.g. calories per day, spending split). */
 export function BarChart({ data, width = 320, height = 160, color = '#34d399', labels = true, className }: BarChartProps) {
   const [ref, measured] = useMeasuredWidth();
+  // J03: batang yang disorot → terang + tooltip di puncaknya.
+  const [hov, setHov] = useState<number | null>(null);
   const resolved = measured > 0 ? measured : width;
   const pad = 8;
   const innerH = height - (labels ? 24 : pad * 2);
@@ -330,16 +400,32 @@ export function BarChart({ data, width = 320, height = 160, color = '#34d399', l
   const max = Math.max(...values, 1);
   const barGap = 6;
   const barW = data && data.length ? Math.max(2, (resolved - pad * 2 - barGap * (data.length - 1)) / data.length) : 0;
+  const hoverFor = (x: number) => {
+    const idx = Math.floor((x - pad) / Math.max(1, barW + barGap));
+    return idx >= 0 && idx < (data?.length || 0) ? idx : null;
+  };
+  const hd = hov !== null && data ? data[hov] : null;
+  const hY = hd ? height - (labels ? 24 : pad) - (hd.value / max) * (innerH - pad) : 0;
   return (
-    <div ref={ref} className={`w-full ${className ?? ''}`}>
-      <svg width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}>
+    <div ref={ref} className={`relative w-full ${className ?? ''}`}>
+      <svg
+        width={resolved} height={height} aria-hidden="true" viewBox={`0 0 ${resolved} ${height}`}
+        onPointerMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setHov(hoverFor(e.clientX - rect.left));
+        }}
+        onPointerLeave={() => setHov(null)}
+      >
         {(data || []).map((d, i) => {
           const h = (d.value / max) * (innerH - pad);
           const x = pad + i * (barW + barGap);
           const y = height - (labels ? 24 : pad) - h;
           return (
             <g key={`bar-${i}`}>
-              <rect x={x} y={y} width={barW} height={h} rx="3" fill={color} opacity="0.85" />
+              <rect x={x} y={y} width={barW} height={h} rx="3" fill={color}
+                opacity={hov === null ? 0.85 : hov === i ? 1 : 0.38}
+                style={{ transition: 'opacity 0.15s ease' }} />
+              {hov === i && <rect x={x} y={y - 2} width={barW} height={2} rx="1" fill={color} />}
               {labels && (
                 <text x={x + barW / 2} y={height - 6} textAnchor="middle" fontSize="9" fill="rgba(148,163,184,0.85)">
                   {d.label}
@@ -349,6 +435,12 @@ export function BarChart({ data, width = 320, height = 160, color = '#34d399', l
           );
         })}
       </svg>
+      {hd && hov !== null && (
+        <div className="ct-chart-tip" style={{ left: pad + hov * (barW + barGap) + barW / 2, top: hY }}>
+          <span className="ct-chart-tip-label">{hd.label}</span>
+          {fmtChartVal(hd.value)}
+        </div>
+      )}
     </div>
   );
 }
@@ -373,11 +465,14 @@ interface DonutChartProps {
 /** Segmented donut (macros split, spending categories, goal completion). */
 export function DonutChart({ data, size = 140, strokeWidth = 18, centerLabel, centerSub, className }: DonutChartProps) {
   const gid = useId();
+  // J03: hover segmen → segmen menebal, pusat menampilkan label+nilai+persen.
+  const [hov, setHov] = useState<number | null>(null);
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
   const center = size / 2;
   let acc = 0;
+  const hs = hov !== null ? data[hov] : null;
   return (
     <div className={className} style={{ position: 'relative', width: size, height: size }}>
       <svg width={size} height={size} aria-hidden="true">
@@ -400,21 +495,36 @@ export function DonutChart({ data, size = 140, strokeWidth = 18, centerLabel, ce
               r={r}
               fill="none"
               stroke={`url(#${gid}-g${i})`}
-              strokeWidth={strokeWidth}
+              strokeWidth={hov === i ? strokeWidth + 5 : strokeWidth}
               strokeDasharray={`${dash} ${c - dash}`}
               strokeDashoffset={-acc * c}
               strokeLinecap="butt"
               transform={`rotate(-90 ${center} ${center})`}
+              opacity={hov === null || hov === i ? 1 : 0.4}
+              style={{ transition: 'stroke-width 0.15s ease, opacity 0.15s ease', cursor: 'pointer' }}
+              onPointerEnter={() => setHov(i)}
+              onPointerLeave={() => setHov(null)}
             />
           );
           acc += frac;
           return el;
         })}
       </svg>
-      {(centerLabel || centerSub) && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-          {centerLabel && <div className="font-bold text-slate-100 text-sm leading-tight">{centerLabel}</div>}
-          {centerSub && <div className="text-slate-400 text-[10px]">{centerSub}</div>}
+      {/* J03: saat hover, pusat menampilkan segmen aktif; selain itu label bawaan. */}
+      {(hs || centerLabel || centerSub) && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', pointerEvents: 'none' }}>
+          {hs ? (
+            <>
+              <div className="font-bold text-slate-100 text-sm leading-tight" style={{ color: hs.color }}>{fmtChartVal(hs.value)}</div>
+              <div className="text-slate-400 text-[10px] px-3 truncate w-full">{hs.label}</div>
+              <div className="text-slate-500 text-[9px]">{Math.round((hs.value / total) * 100)}%</div>
+            </>
+          ) : (
+            <>
+              {centerLabel && <div className="font-bold text-slate-100 text-sm leading-tight">{centerLabel}</div>}
+              {centerSub && <div className="text-slate-400 text-[10px]">{centerSub}</div>}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -449,7 +559,13 @@ export function Heatmap({ values, columns = 7, max, colors = ['#0f172a', '#34d39
         const y = row * (cell + gap);
         const t = Math.min(1, v / peak);
         const color = t > 0 ? colors[1] : colors[0];
-        return <rect key={`hc-${i}`} x={x} y={y} width={cell} height={cell} rx="3" fill={color} opacity={t > 0 ? Math.max(0.25, t) : 0.2} />;
+        return (
+          <rect key={`hc-${i}`} x={x} y={y} width={cell} height={cell} rx="3" fill={color} opacity={t > 0 ? Math.max(0.25, t) : 0.2}
+            style={{ transition: 'opacity 0.15s ease' }} className="hover:stroke-slate-300" stroke="transparent" strokeWidth="1">
+            {/* J03: keterangan bawaan per sel (native tooltip aksesibel). */}
+            <title>{`${v}`}</title>
+          </rect>
+        );
       })}
     </svg>
   );
@@ -458,20 +574,41 @@ export function Heatmap({ values, columns = 7, max, colors = ['#0f172a', '#34d39
 /* ------------------------------------------------------------- GroupBar */
 
 interface GroupBarProps {
-  /** Absolute values — rendered proportional to the sum. */
-  data: (BaseSeries & { value: number })[];
+  /** Absolute values — rendered proportional to the sum. J03: `label`
+   *  opsional dipakai tooltip hover. */
+  data: (BaseSeries & { value: number; label?: string })[];
   height?: number;
   className?: string;
 }
 
-/** Horizontal stacked bar (macros, budget split). Values proportional to sum. */
+/** Horizontal stacked bar (macros, budget split). Values proportional to sum.
+ *  J03: hover segmen → tooltip label+nilai di atas segmen. */
 export function GroupBar({ data, height = 14, className }: GroupBarProps) {
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const [hov, setHov] = useState<number | null>(null);
+  // Posisi kiri (persen kumulatif) pusat tiap segmen utk tooltip.
+  let accPct = 0;
+  const centers = data.map((d) => {
+    const w = (d.value / total) * 100;
+    const ctr = accPct + w / 2;
+    accPct += w;
+    return ctr;
+  });
   return (
-    <div className={`flex w-full overflow-hidden rounded-full ${className ?? ''}`} style={{ height }}>
-      {data.map((d, i) => (
-        <div key={`gb-${i}`} style={{ width: `${(d.value / total) * 100}%`, background: d.color, transition: 'width 0.4s ease' }} />
-      ))}
+    <div className={`relative w-full ${className ?? ''}`}>
+      <div className="flex w-full overflow-hidden rounded-full" style={{ height }}>
+        {data.map((d, i) => (
+          <div key={`gb-${i}`}
+            onPointerEnter={() => setHov(i)} onPointerLeave={() => setHov(null)}
+            style={{ width: `${(d.value / total) * 100}%`, background: d.color, transition: 'width 0.4s ease, filter 0.15s ease', filter: hov === i ? 'brightness(1.25)' : hov === null ? 'none' : 'brightness(0.7)', cursor: 'pointer' }} />
+        ))}
+      </div>
+      {hov !== null && data[hov] && (
+        <div className="ct-chart-tip" style={{ left: `${centers[hov]}%`, top: 0 }}>
+          <span className="ct-chart-tip-label">{data[hov].label ?? ''}</span>
+          {fmtChartVal(data[hov].value)}
+        </div>
+      )}
     </div>
   );
 }

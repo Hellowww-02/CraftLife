@@ -223,6 +223,8 @@ export const studio = {
   loveCycleReminder: (body: Record<string, unknown>) => apiPost<any>('/api/love/cycles/create-reminder', body),
   lovePrompt: (body: Record<string, unknown>) => apiPost<any>('/api/love/prompt', body),
   setGeminiKey: (apiKey: string) => apiPost<any>('/api/learning/gemini-key', { apiKey }),
+  // I01: pulihkan status kunci saat mount (kunci penuh tidak pernah kembali).
+  geminiKeyInfo: () => apiGet<{ ok: boolean; hasKey: boolean; masked?: string }>('/api/learning/gemini-key'),
   friends: () => apiGet<any>('/api/friends'),
   friendProfile: (id: string) => apiGet<any>(`/api/friends/${id}/profile`),
   notifications: () => apiGet<any>('/api/notifications'),

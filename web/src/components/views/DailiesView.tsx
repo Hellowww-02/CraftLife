@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
@@ -104,40 +105,36 @@ export const DailiesView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <CalendarCheck className="w-6 h-6 text-emerald-400" />
-            <h2 className="text-xl font-black text-slate-100">{t('daily_daily_routine_dailies', 'Daily Routine (Dailies)')}</h2>
+      {/* I04 (v1.7.2): Signature Dailies — pola 'grid' (papan rutinitas) + aksen emerald */}
+      <PageSignature
+        icon={<CalendarCheck className="w-6 h-6" />}
+        title={t('daily_daily_routine_dailies', 'Daily Routine (Dailies)')}
+        tagline={t('daily_subtitle', 'Recurring daily objectives. Maintain streaks to earn extra rewards and unleash powerful attacks on Bosses!')}
+        accent="#10b981"
+        pattern="grid"
+        right={
+          <div className="flex items-center gap-3">
+            <div className="ct-chip ct-num flex items-center gap-1 px-3 py-2 text-cyan-300 text-xs font-bold border-cyan-500/40 bg-cyan-500/10">
+              <Snowflake className="w-4 h-4 text-cyan-400" />
+              <span>{t('daily_freeze_shields', 'Freeze Shields: {n}').replace('{n}', String(user.freezeSlots))}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTemplateOpen(true)}
+              className="ct-btn ct-btn-secondary ct-btn-sm"
+            >
+              {t('habit_templates', '📋 Templates')}
+            </button>
+            <button
+              id="btn-create-daily"
+              onClick={openCreateModal}
+              className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
+            >
+              <Plus className="w-4 h-4" /> {t('daily_new_daily', 'New Daily')}
+            </button>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {t('daily_subtitle', 'Recurring daily objectives. Maintain streaks to earn extra rewards and unleash powerful attacks on Bosses!')}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="ct-chip ct-num flex items-center gap-1 px-3 py-2 text-cyan-300 text-xs font-bold border-cyan-500/40 bg-cyan-500/10">
-            <Snowflake className="w-4 h-4 text-cyan-400" />
-            <span>{t('daily_freeze_shields', 'Freeze Shields: {n}').replace('{n}', String(user.freezeSlots))}</span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsTemplateOpen(true)}
-            className="ct-btn ct-btn-secondary ct-btn-sm"
-          >
-            {t('habit_templates', '📋 Templates')}
-          </button>
-          <button
-            id="btn-create-daily"
-            onClick={openCreateModal}
-            className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
-          >
-            <Plus className="w-4 h-4" /> {t('daily_new_daily', 'New Daily')}
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -223,7 +220,8 @@ export const DailiesView: React.FC = () => {
                       </button>
                     )}
                     <button
-                      onClick={() => duplicateDaily(daily.id)}
+                      // I01: duplikat masuk folder yang sedang dipilih (kecuali tampilan All).
+                      onClick={() => duplicateDaily(daily.id, selectedFolderFilter !== 'all' ? selectedFolderFilter : null)}
                       className="ct-act text-slate-400"
                       title={t('habit_duplicate', 'Duplicate')}
                     >

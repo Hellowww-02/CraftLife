@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { apiGet, apiPost, apiUploadFile, apiBase } from '../../api/client';
@@ -380,6 +381,15 @@ export const ProfileView: React.FC<{ onOpenSettings?: () => void }> = ({ onOpenS
 
   return (
     <div className="space-y-6 w-full mx-auto max-w-2xl">
+      {/* I04 (v1.7.2): Signature Profile — pola 'wave' (garis hidup/identitas) */}
+      <PageSignature
+        icon={<User className="w-6 h-6" />}
+        title={t('page_profile_title', 'Profile')}
+        tagline={t('page_profile_subtitle', 'Identitas, keamanan, dan progres karakter')}
+        accent="#facc15"
+        pattern="wave"
+      />
+
       {/* ===== P51: badge ADMIN (parity ProfilePage.admin_badge / admin_mode_active) ===== */}
       {Boolean((user as any).isAdmin) && (
         <div className="rounded-xl bg-[#2a0808] border border-[#e05050]/40 text-[#e05050] text-[11px] font-black text-center px-3 py-2.5 whitespace-pre-line">

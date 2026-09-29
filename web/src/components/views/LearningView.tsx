@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { saveFileToComputer, downloadTargetInfo, downloadApiFile, apiPost, apiBase } from '../../api/client';
@@ -232,7 +233,34 @@ export const LearningView: React.FC = () => {
   // C04: modal catatan tersimpan + kartu yang dibuka.
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
-  const [geminiKey, setGeminiKey] = useState('');
+  // I01 (v1.7.2): kunci Gemini disimpan di SERVER per akun. UI hanya memegang
+  // status + draft dialog. window.prompt() dihapus — tidak didukung PyQt6
+  // WebEngine (akar bug "key tidak tersimpan" di v1.7.0).
+  const [geminiKey, setGeminiKey] = useState(''); // draft input dialog
+  const [geminiHasKey, setGeminiHasKey] = useState(false);
+  const [geminiMasked, setGeminiMasked] = useState('');
+  const [showKeyDlg, setShowKeyDlg] = useState(false);
+  const [keySaving, setKeySaving] = useState(false);
+
+  // Pulihkan status kunci dari server saat mount — indikator tetap benar walau
+  // user pindah halaman / restart (kunci hidup di DB, bukan di state React).
+  const refreshGeminiStatus = () => {
+    studio.geminiKeyInfo()
+      .then((d) => { setGeminiHasKey(!!d?.hasKey); setGeminiMasked(d?.masked || ''); })
+      .catch(() => undefined);
+  };
+  useEffect(() => { refreshGeminiStatus(); /* mount */ }, []);
+  const saveGeminiKey = (value: string) => {
+    setKeySaving(true);
+    studio.setGeminiKey(value)
+      .then(() => {
+        refreshGeminiStatus();
+        setShowKeyDlg(false);
+        showToast('success', 'Gemini', value ? tr('learning_key_saved', 'API key tersimpan') : tr('learning_key_cleared', 'API key dihapus'));
+      })
+      .catch((e) => showToast('damage', String(e?.message || e), ''))
+      .finally(() => setKeySaving(false));
+  };
 
   // ── Parity LearningPage: font chat/studio, rename, upload source, history ──
   const [chatFontSize, setChatFontSize] = useState(13);
@@ -1354,30 +1382,34 @@ export const LearningView: React.FC = () => {
 
   return (
     <div id="learning-workspace-view" className="space-y-4">
-      {/* Header halaman (parity _page_header) — ringkas; kontrol notebook kini tinggal di
-          topbar LearningShell (A07) supaya tata letak menyerupai NotebookLM. */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xl">📚</div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-100">{tr('ai_learning_workspace', 'AI Learning Workspace')}</h1>
-            <p className="text-[11px] text-slate-400">{tr('sources_chat_studio_in_one_grounded_learning_wor', 'Sources + Chat + Studio in one grounded learning workspace.')}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="ct-nlm-chip ct-nlm-num">{tr('ai', 'AI')}</span>
+      {/* Header halaman — I06 (v1.7.2): Signature Learning 'circuit' violet
+          (jaringan pengetahuan); kontrol kanan (AI chip, API key, New Notebook)
+          pindah ke slot kanan tanpa berubah fungsi. */}
+      <PageSignature
+        icon={<span className="text-xl">📚</span>}
+        title={tr('ai_learning_workspace', 'AI Learning Workspace')}
+        tagline={tr('sources_chat_studio_in_one_grounded_learning_wor', 'Sources + Chat + Studio in one grounded learning workspace.')}
+        accent="#a78bfa"
+        pattern="circuit"
+        right={
+          <div className="flex items-center gap-2">
+            <span className="ct-nlm-chip ct-nlm-num">{tr('ai', 'AI')}</span>
           {/* Parity _manage_api_key */}
           <button
-            onClick={() => { const k = window.prompt(tr('learning_api_key_label', 'Gemini API key'), geminiKey); if (k !== null && k !== geminiKey) { setGeminiKey(k); studio.setGeminiKey(k).then(() => showToast('success', 'Gemini', 'saved')).catch((e) => showToast('damage', String(e), '')); } }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-bold rounded-xl border border-slate-700"
+            onClick={() => { setGeminiKey(''); setShowKeyDlg(true); }}
+            title={geminiHasKey ? `${tr('learning_key_saved', 'API key tersimpan')} (${geminiMasked})` : tr('learning_key_missing', 'API key belum diisi')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-white text-[11px] font-bold rounded-xl border transition-colors ${
+              geminiHasKey ? 'bg-emerald-900/40 hover:bg-emerald-900/60 border-emerald-600/50' : 'bg-slate-800 hover:bg-slate-700 border-slate-700'
+            }`}
           >
             <KeyRound className="w-3.5 h-3.5" /><span>{tr('learning_api_btn', 'API Key')}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${geminiHasKey ? 'bg-emerald-400' : 'bg-rose-400'}`} aria-hidden="true" />
           </button>
           <button onClick={() => setShowNewNbModal(true)} className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold rounded-xl">
             <Plus className="w-3.5 h-3.5" /><span>{tr('learning_new_notebook_title', 'New Notebook')}</span>
           </button>
-        </div>
-      </div>
+        </div>}
+      />
 
       {activeNotebook ? (
         <LearningShell
@@ -1729,7 +1761,8 @@ export const LearningView: React.FC = () => {
                       <p className="text-[10px] text-slate-500 mt-0.5">{n.createdAt || ''}</p>
                       {!open && <p className="ct-guide-clamp text-[11px] text-slate-400 mt-1">{body}</p>}
                     </button>
-                    {open && <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300 font-mono mt-2 max-h-64 overflow-y-auto">{body}</pre>}
+                    {/* I01 (v1.7.2): catatan dirender markdown penuh, bukan teks mentah. */}
+                    {open && <div className="prose prose-invert prose-sm max-w-none text-[11px] leading-relaxed text-slate-300 mt-2 max-h-64 overflow-y-auto [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1"><ReactMarkdown>{body}</ReactMarkdown></div>}
                     <div className="flex gap-2 mt-2">
                       <button onClick={() => handleCopyNote(body)} className="ct-btn ct-btn-secondary ct-btn-sm text-[10px]">{tr('learning_note_copy', 'Salin')}</button>
                       <button onClick={() => handleDeleteNote(String(n.id))} className="ct-btn ct-btn-secondary ct-btn-sm text-[10px] text-rose-300">{tr('learning_delete', 'Hapus')}</button>
@@ -1739,6 +1772,46 @@ export const LearningView: React.FC = () => {
               })}
             </div>
             <div className="flex justify-end mt-4 shrink-0"><button onClick={() => setShowNotesModal(false)} className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white">{tr('btn_close', 'Tutup')}</button></div>
+          </div>
+        </div>
+      )}
+      {/* I01 (v1.7.2): dialog kunci Gemini — pengganti window.prompt() yang tidak
+          didukung PyQt6 WebEngine (akar bug "key tidak tersimpan"). */}
+      {showKeyDlg && (
+        <div className="ct-backdrop fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-3 shadow-2xl" role="dialog" aria-modal="true" aria-label={tr('learning_api_key_label', 'Gemini API key')}>
+            <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2"><KeyRound className="w-4 h-4 text-violet-300" aria-hidden="true" />{tr('learning_api_key_label', 'Gemini API key')}</h3>
+            <p className="text-[11px] text-slate-400">{tr('learning_key_dialog_hint', 'Kunci disimpan di server untuk akun ini — tetap ada setelah pindah halaman atau keluar aplikasi.')}</p>
+            {geminiHasKey && (
+              <p className="text-[11px] text-emerald-300">{tr('learning_key_current', 'Kunci tersimpan')}: <span className="font-mono">{geminiMasked}</span></p>
+            )}
+            <input
+              autoFocus
+              type="password"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && geminiKey.trim()) saveGeminiKey(geminiKey.trim()); if (e.key === 'Escape') setShowKeyDlg(false); }}
+              placeholder="AIza…"
+              autoComplete="off"
+              aria-label={tr('learning_api_key_label', 'Gemini API key')}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-violet-500"
+            />
+            <div className="flex justify-end gap-2">
+              {geminiHasKey && (
+                <button type="button" disabled={keySaving} onClick={() => saveGeminiKey('')}
+                  className="px-3 py-2 rounded-xl bg-rose-900/40 hover:bg-rose-900/60 text-rose-200 text-[11px] font-bold disabled:opacity-50">
+                  {tr('learning_key_clear', 'Hapus key')}
+                </button>
+              )}
+              <button type="button" onClick={() => setShowKeyDlg(false)}
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-bold">
+                {tr('btn_cancel', 'Batal')}
+              </button>
+              <button type="button" disabled={keySaving || !geminiKey.trim()} onClick={() => saveGeminiKey(geminiKey.trim())}
+                className="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-[11px] font-bold">
+                {keySaving ? tr('learning_key_saving', 'Menyimpan…') : tr('dialog_save', 'Simpan')}
+              </button>
+            </div>
           </div>
         </div>
       )}

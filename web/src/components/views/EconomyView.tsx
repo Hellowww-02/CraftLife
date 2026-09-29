@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart, Package, Search, FolderOpen, Pencil } from 'lucide-react';
@@ -219,6 +220,15 @@ export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onN
 
   return (
     <div className="space-y-6">
+      {/* I05 (v1.7.2): Signature Economy — 'peaks' (grafik finansial) + aksen emerald */}
+      <PageSignature
+        icon={<span className="text-xl">💰</span>}
+        title={t('page_economy_title', 'Economy')}
+        tagline={t('page_economy_subtitle', 'Pantau pemasukan, pengeluaran, dan tujuan finansial')}
+        accent="#34d399"
+        pattern="peaks"
+      />
+
       {/* Top Banner: Financial Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="ct-fin-tile ct-fin-em p-4.5 rounded-2xl">

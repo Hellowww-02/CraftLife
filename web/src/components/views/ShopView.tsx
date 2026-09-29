@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { liveShopItems, livePets } from '../../data/liveCatalog';
@@ -76,13 +77,14 @@ export const ShopView: React.FC = () => {
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-7xl mx-auto space-y-4 animate-fade-in-up">
-      {/* Header (parity _page_header('shop')) */}
-      <header>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">
-          {tr('page_shop_subtitle')}
-        </p>
-        <h2 className="text-2xl font-black text-slate-100">{tr('page_shop_title')}</h2>
-      </header>
+      {/* I05 (v1.7.2): Signature Shop — 'grid' (deretan lapak) + aksen gold */}
+      <PageSignature
+        icon={<span className="text-xl">🛒</span>}
+        title={tr('page_shop_title')}
+        tagline={tr('page_shop_subtitle')}
+        accent="#fbbf24"
+        pattern="grid"
+      />
 
       {/* Buff bar */}
       <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3.5 py-2.5 text-xs text-amber-300">

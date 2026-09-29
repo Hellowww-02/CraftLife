@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
@@ -242,10 +243,14 @@ export const FriendsView: React.FC = () => {
 
   return (
     <div className="px-4 md:px-8 pb-24 pt-4 max-w-4xl mx-auto space-y-4 animate-fade-in-up">
-      <header>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/80 font-bold">{tr('page_friends_subtitle')}</p>
-        <h2 className="text-2xl font-black text-slate-100">{tr('page_friends_title')}</h2>
-      </header>
+      {/* I06 (v1.7.2): Signature Friends — 'wave' rose (alur relasi) */}
+      <PageSignature
+        icon={<span className="text-xl">🤝</span>}
+        title={tr('page_friends_title')}
+        tagline={tr('page_friends_subtitle')}
+        accent="#f472b6"
+        pattern="wave"
+      />
 
       {/* Form tambah teman (parity add_form) */}
       <div className="flex gap-2">

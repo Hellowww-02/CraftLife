@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
@@ -357,30 +358,33 @@ export const NotesView: React.FC<NotesViewProps> = () => {
 
   return (
     <div className="space-y-5" onClick={closeDropdowns}>
-      {/* ── Header (parity _page_header + actions) ── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-2xl font-black text-slate-100 flex items-center gap-2"><FileText className="w-6 h-6 text-slate-300" /> {t('notes_title', 'Catatan')}</h2>
-          <p className="text-xs text-slate-400 mt-1">{t('nav_notes', 'Notes')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleArchiveToggle}
-            disabled={!activeNote}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-40"
-          >
-            <Archive className="w-3.5 h-3.5" />
-            {activeNote?.isArchived ? t('notes_unarchive', 'Kembalikan') : t('notes_archive', 'Arsipkan')}
-          </button>
-          <button
-            onClick={() => setShowArchived((s) => !s)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${showArchived ? 'bg-cyan-950/60 border-cyan-500/50 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'}`}
-          >
-            <ArchiveRestore className="w-3.5 h-3.5" />
-            {showArchived ? t('notes_hide_archived', 'Sembunyikan arsip') : t('notes_show_archived', 'Tampilkan Arsip')}
-          </button>
-        </div>
-      </div>
+      {/* I05 (v1.7.2): Signature Notes — 'wave' (garis tulisan) + aksen slate */}
+      <PageSignature
+        icon={<FileText className="w-6 h-6" />}
+        title={t('notes_title', 'Catatan')}
+        tagline={t('nav_notes', 'Notes')}
+        accent="#94a3b8"
+        pattern="wave"
+        right={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleArchiveToggle}
+              disabled={!activeNote}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-40"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              {activeNote?.isArchived ? t('notes_unarchive', 'Kembalikan') : t('notes_archive', 'Arsipkan')}
+            </button>
+            <button
+              onClick={() => setShowArchived((s) => !s)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${showArchived ? 'bg-cyan-950/60 border-cyan-500/50 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'}`}
+            >
+              <ArchiveRestore className="w-3.5 h-3.5" />
+              {showArchived ? t('notes_hide_archived', 'Sembunyikan arsip') : t('notes_show_archived', 'Tampilkan Arsip')}
+            </button>
+          </div>
+        }
+      />
 
       {/* ── Search (parity search bar textChanged) ── */}
       <div className="relative">

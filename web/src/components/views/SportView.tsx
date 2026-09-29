@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
+import { SigStrip } from '../ui/SignatureKit';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
@@ -195,11 +196,15 @@ export const SportView: React.FC = () => {
     <div className="space-y-6">
       {/* Header & Sport Level Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-2xl bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 border border-rose-500/30 p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Activity className="w-6 h-6 text-rose-400" />
-              <h2 className="text-xl font-black text-slate-100">{t('page_sport_title', 'Sport & Workout Tracker')}</h2>
+        <div className="relative lg:col-span-2 rounded-2xl bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 border border-rose-500/30 p-5 flex flex-col justify-between overflow-hidden" style={{ ['--ct-sig-accent' as any]: '#fb7185' }}>
+          {/* I04 (v1.7.2): Signature Sport — pola 'peaks' (detak/grafik latihan) */}
+          <SigStrip variant="peaks" />
+          <div className="relative">
+            <div className="flex items-center gap-2.5 mb-1">
+              <span className="ct-sig-emblem" style={{ width: 40, height: 40 }} aria-hidden="true">
+                <span className="ct-sig-emblem-core" style={{ width: 36, height: 36, fontSize: 16 }}><Activity className="w-4 h-4" /></span>
+              </span>
+              <h2 className="text-xl font-black text-slate-100" style={{ fontFamily: 'var(--ct-font-display)' }}>{t('page_sport_title', 'Sport & Workout Tracker')}</h2>
             </div>
             <p className="text-xs text-slate-400">
               {t('page_sport_subtitle', 'Catat sesi latihan harianmu, bakar kalori, naikkan Sport Level, dan perkuat karakter RPG-mu!')}
@@ -391,7 +396,8 @@ export const SportView: React.FC = () => {
                   )}
                   <button
                     type="button"
-                    onClick={() => duplicateSportLog(log.id)}
+                    // I01: duplikat masuk folder yang sedang dipilih (kecuali tampilan All).
+                    onClick={() => duplicateSportLog(log.id, selectedFolderFilter !== 'all' ? selectedFolderFilter : null)}
                     className="ct-act text-sky-300 text-[10px] font-bold"
                     title={t('task_duplicate_title', 'Duplicate')}
                   >

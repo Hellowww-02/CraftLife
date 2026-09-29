@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { SigStrip } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
@@ -685,8 +686,10 @@ export const LoveSpaceView: React.FC<{ onNavigate?: (view: string) => void }> = 
 
   return (
     <div id="love-space-view" className="space-y-6">
-      {/* Header Hero Banner (parity header LovePage: title + edit profile + end couple) */}
-      <div className="p-6 bg-gradient-to-r from-rose-950/60 via-slate-900 to-pink-950/40 border border-rose-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+      {/* Header Hero Banner (parity header LovePage) — I06 (v1.7.2):
+          Signature Love Space: strip 'dots' rose (taburan hati) */}
+      <div className="relative overflow-hidden p-6 bg-gradient-to-r from-rose-950/60 via-slate-900 to-pink-950/40 border border-rose-500/20 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl" style={{ ['--ct-sig-accent' as any]: '#fb7185' }}>
+        <SigStrip variant="dots" />
         <div className="flex items-center gap-4 text-center md:text-left">
           <div className="ct-socket w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center text-3xl shrink-0">
             {loveSpace.partnerAvatar || '🌸'}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { Trophy } from 'lucide-react';
 import { apiGet } from '../../api/client';
@@ -97,10 +98,14 @@ export const LeaderboardView: React.FC = () => {
 
   return (
     <div className="space-y-4 w-full mx-auto max-w-5xl">
-      <div className="flex items-center gap-2">
-        <Trophy className="w-6 h-6 text-amber-400" />
-        <h2 className="text-xl font-black text-slate-100 flex items-center gap-2"><Trophy className="w-5 h-5 text-amber-400" /> {t('leaderboard_title', 'Leaderboard')}</h2>
-      </div>
+      {/* I06 (v1.7.2): Signature Leaderboard — 'peaks' gold (podium) */}
+      <PageSignature
+        icon={<Trophy className="w-6 h-6" />}
+        title={t('leaderboard_title', 'Leaderboard')}
+        tagline={t('page_leaderboard_subtitle', 'Bandingkan progres dan posisi para petualang')}
+        accent="#fbbf24"
+        pattern="peaks"
+      />
 
       {/* Parity: combo mode (urutan sama seperti PyQt) */}
       <div className="flex items-center gap-3 flex-wrap">

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
@@ -93,36 +94,32 @@ export const QuestsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
+      {/* I04 (v1.7.2): Signature Quests — pola 'circuit' (peta petualangan) + aksen sky */}
+      <PageSignature
+        icon={<CheckSquare className="w-6 h-6" />}
+        title={t('quest_quest_to_do_list', 'Quest & To-Do List')}
+        tagline={t('quest_subtitle', 'Complete one-time quests and tasks to earn big rewards.')}
+        accent="#38bdf8"
+        pattern="circuit"
+        right={
           <div className="flex items-center gap-2">
-            <CheckSquare className="w-6 h-6 text-blue-400" />
-            <h2 className="text-xl font-black text-slate-100">{t('quest_quest_to_do_list', 'Quest & To-Do List')}</h2>
+            <button
+              type="button"
+              onClick={() => setIsTemplateOpen(true)}
+              className="ct-btn ct-btn-secondary ct-btn-sm"
+            >
+              {t('habit_templates', '📋 Templates')}
+            </button>
+            <button
+              id="btn-create-quest"
+              onClick={openCreateModal}
+              className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
+            >
+              <Plus className="w-4 h-4" /> {t('quest_new_quest', 'New Quest')}
+            </button>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {t('quest_subtitle', 'Complete one-time quests and tasks to earn big rewards.')}
-          </p>
-        </div>
-
-        {/* Kelompok aksi kanan: Templates + New Quest berdampingan (parity TaskPage header). */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsTemplateOpen(true)}
-            className="ct-btn ct-btn-secondary ct-btn-sm"
-          >
-            {t('habit_templates', '📋 Templates')}
-          </button>
-          <button
-            id="btn-create-quest"
-            onClick={openCreateModal}
-            className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
-          >
-            <Plus className="w-4 h-4" /> {t('quest_new_quest', 'New Quest')}
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -259,7 +256,8 @@ export const QuestsView: React.FC = () => {
               {/* Action Buttons */}
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  onClick={() => duplicateQuest(quest.id)}
+                  // I01: duplikat masuk folder yang sedang dipilih (kecuali tampilan All).
+                  onClick={() => duplicateQuest(quest.id, selectedFolderFilter !== 'all' ? selectedFolderFilter : null)}
                   className="ct-act text-slate-400"
                   title={t('habit_duplicate', 'Duplicate')}
                 >

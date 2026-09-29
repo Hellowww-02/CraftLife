@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { TaskDifficulty } from '../../types';
@@ -94,37 +95,32 @@ export const HabitsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
+      {/* I04 (v1.7.2): Signature Habits — pola 'peaks' (grafik streak) + aksen amber */}
+      <PageSignature
+        icon={<Zap className="w-6 h-6" />}
+        title={t('habit_habit_tracker', 'Habit Tracker')}
+        tagline={t('habit_subtitle', 'Execute positive habits (+) to gain XP/Gold and damage Bosses, and eliminate negative habits (-) to safeguard your HP.')}
+        accent="#f59e0b"
+        pattern="peaks"
+        right={
           <div className="flex items-center gap-2">
-            <Zap className="w-6 h-6 text-amber-400" />
-            <h2 className="text-xl font-black text-slate-100">{t('habit_habit_tracker', 'Habit Tracker')}</h2>
+            <button
+              type="button"
+              onClick={() => setIsTemplateOpen(true)}
+              className="ct-btn ct-btn-secondary ct-btn-sm"
+            >
+              {t('habit_templates', '📋 Templates')}
+            </button>
+            <button
+              id="btn-create-habit"
+              onClick={openCreateModal}
+              className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
+            >
+              <Plus className="w-4 h-4" /> {t('habit_new_habit', 'New Habit')}
+            </button>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {t('habit_subtitle', 'Execute positive habits (+) to gain XP/Gold and damage Bosses, and eliminate negative habits (-) to safeguard your HP.')}
-          </p>
-        </div>
-
-        {/* Group aksi kanan: Template + New Habit berdampingan (parity TaskPage header).
-            Sebelumnya justify-between menyebar keduanya jauh terpisah. */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsTemplateOpen(true)}
-            className="ct-btn ct-btn-secondary ct-btn-sm"
-          >
-            {t('habit_templates', '📋 Templates')}
-          </button>
-          <button
-            id="btn-create-habit"
-            onClick={openCreateModal}
-            className="ct-btn ct-btn-primary ct-btn-sm shrink-0"
-          >
-            <Plus className="w-4 h-4" /> {t('habit_new_habit', 'New Habit')}
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -192,7 +188,8 @@ export const HabitsView: React.FC = () => {
 
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => duplicateHabit(habit.id)}
+                      // I01: duplikat masuk folder yang sedang dipilih (kecuali tampilan All).
+                      onClick={() => duplicateHabit(habit.id, selectedFolderFilter !== 'all' ? selectedFolderFilter : null)}
                       className="ct-act text-slate-400"
                       title={t('habit_duplicate', 'Duplicate')}
                     >
