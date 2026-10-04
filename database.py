@@ -1149,6 +1149,16 @@ def init_db():
         )
     """)   
 
+    # L05 (v1.7.4): state spin & pity per user (idempotent).
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pet_spin_state (
+            user_id INTEGER PRIMARY KEY,
+            spins_total INTEGER DEFAULT 0,
+            since_epic INTEGER DEFAULT 0,
+            since_legendary INTEGER DEFAULT 0
+        )
+    """)
+
     c.execute("""
         CREATE TABLE IF NOT EXISTS achievements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1943,7 +1953,9 @@ def init_db():
     for col, defn in [("level", "INTEGER DEFAULT 1"),
                       ("exp", "INTEGER DEFAULT 0"),
                       ("hunger", "INTEGER DEFAULT 100"),
-                      ("last_fed", "TEXT")]:
+                      ("last_fed", "TEXT"),
+                      # L05 (v1.7.4): epoch detik pemakaian skill aktif (cooldown).
+                      ("skill_used_at", "INTEGER DEFAULT 0")]:
         try: c.execute(f"ALTER TABLE user_pets ADD COLUMN {col} {defn}")
         except: pass
 
@@ -2169,6 +2181,10 @@ NEW_REDEEM_CODES = [
     ("VOID800", "item", 0, "void_core", 1),
     ("SCHOLAR500", "item", 0, "scholar_crown", 1),
     ("EMBER400", "item", 0, "ember_charm", 1),
+    # ── 🆕 v1.7.4 (L03) — 3 kode baru: pet SECRET via kode, gold besar, item langka ──
+    ("VOIDHATCH", "pet", 0, "void_dragon", 1),
+    ("ROYALVAULT", "gold", 25000, None, 1),
+    ("BLAZECODE", "item", 0, "inferno_blade", 1),
 ]
 
 def migrate_redeem_codes():
@@ -4430,358 +4446,274 @@ def duplicate_sport_activity(user_id, activity_id, folder_id=None):
 # ── Shop data ─────────────────────────────────────────────────────────────────
 
 SHOP_ITEMS = {
-    # ── Weapons ──
-    "wooden_sword":    {"name": "Wooden Sword",    "icon": "🗡️", "cost": 50,
-                        "type": "weapon",    "desc": "Starter blade",
-                        "buff": {"boss_dmg": 2},
-                        "buff_desc": "+2 Boss Damage"},
-    "enchanted_bow":   {"name": "Enchanted Bow",   "icon": "🏹", "cost": 180,
-                        "type": "weapon",    "desc": "Ranged power",
-                        "buff": {"boss_dmg": 6},
-                        "buff_desc": "+6 Boss Damage"},
-    "trident":         {"name": "Trident",         "icon": "🔱", "cost": 350,
-                        "type": "weapon",    "desc": "Legendary weapon",
-                        "buff": {"boss_dmg": 10},
-                        "buff_desc": "+10 Boss Damage"},
-    "iron_sword":      {"name": "Iron Sword",      "icon": "🗡️", "cost": 100,
-                        "type": "weapon",    "desc": "Sharp blade",
-                        "buff": {"crit_chance": 8},
-                        "buff_desc": "+8% Critical Chance"},
-    "diamond_sword":   {"name": "Diamond Sword",   "icon": "💎", "cost": 320,
-                        "type": "weapon",    "desc": "Powerful strike",
-                        "buff": {"crit_chance": 15},
-                        "buff_desc": "+15% Critical Chance"},
-    "netherite_sword": {"name": "Netherite Sword", "icon": "⚔️", "cost": 650,
-                        "type": "weapon",    "desc": "Legendary blade",
-                        "buff": {"crit_chance": 20, "boss_dmg": 5},
-                        "buff_desc": "+20% Critical Chance, +5 Boss DMG"},
-
-    # ── Armor ──
-    "shield":          {"name": "Shield",          "icon": "🛡️", "cost": 120,
-                        "type": "armor",     "desc": "Reduces HP damage",
-                        "buff": {"hp_reduc": 8},
-                        "buff_desc": "-8 per HP hit taken"},
-    "golden_boots":    {"name": "Golden Boots",    "icon": "👢", "cost": 140,
-                        "type": "armor",     "desc": "Swift & rich",
-                        "buff": {"gold_pct": 10},
-                        "buff_desc": "+10% Gold earned"},
-    "diamond_armor":   {"name": "Diamond Armor",   "icon": "💎", "cost": 300,
-                        "type": "armor",     "desc": "Max protection",
-                        "buff": {"hp_reduc": 15},
-                        "buff_desc": "-15 per HP hit taken"},
-    "elytra":          {"name": "Elytra Wings",    "icon": "🪽", "cost": 500,
-                        "type": "armor",     "desc": "Glide & grow",
-                        "buff": {"xp_pct": 10},
-                        "buff_desc": "+10% XP all sources"},
-    "tower_shield":    {"name": "Tower Shield",    "icon": "🛡️", "cost": 200,
-                        "type": "armor",    "desc": "Great defense",
-                        "buff": {"block_strength": 15},
-                        "buff_desc": "+15 Block Strength"},
-    "guardian_chestplate": {"name": "Guardian Chestplate", "icon": "🛡️", "cost": 400,
-                        "type": "armor",    "desc": "Guardian armor",
-                        "buff": {"block_chance": 10, "block_strength": 15},
-                        "buff_desc": "+10% Block Chance, +15 Block Strength"},
-    "diamond_chestplate": {"name": "Diamond Chestplate", "icon": "💎", "cost": 600,
-                        "type": "armor",    "desc": "Diamond protection",
-                        "buff": {"block_chance": 15, "block_strength": 20},
-                        "buff_desc": "+15% Block Chance, +20 Block Strength"},
-
-    # ── Tools ──
-    "iron_pickaxe":    {"name": "Iron Pickaxe",    "icon": "⛏️", "cost": 100,
-                        "type": "tool",      "desc": "Mine habits faster",
-                        "buff": {"xp_pct": 8},
-                        "buff_desc": "+8% XP from habits"},
-    "compass":         {"name": "Compass",         "icon": "🧭", "cost": 80,
-                        "type": "tool",      "desc": "Navigate to gold",
-                        "buff": {"gold_pct": 6},
-                        "buff_desc": "+6% Gold earned"},
-    "spyglass":        {"name": "Spyglass",        "icon": "🔭", "cost": 90,
-                        "type": "tool",      "desc": "Scout ahead",
-                        "buff": {},
-                        "buff_desc": "Reveal boss stats"},
-
-    # ── Special ──
-    "ice_block":       {"name": "Ice Block",       "icon": "🧊", "cost": 25,
-                        "type": "consumable", "desc": "Freeze Daily streak (1 slot)",
-                        "buff": {},
-                        "buff_desc": "Use: +1 Freeze Slot for a Daily"},
-    "blaze_rod":       {"name": "Blaze Rod",       "icon": "🔥", "cost": 160,
-                        "type": "special",   "desc": "Nether fire",
-                        "buff": {"boss_dmg": 4},
-                        "buff_desc": "+4 Boss Damage"},
-    "totem":           {"name": "Totem of Life",   "icon": "🗿", "cost": 400,
-                        "type": "legendary", "desc": "Auto-revive from death",
-                        "buff": {"revive": True},
-                        "buff_desc": "Auto-revive once at 30% HP"},
-
-    # ── Consumables (HP & MP) ──
-    "golden_apple":    {"name": "Golden Apple",     "icon": "🍎", "cost": 50,
-                        "type": "consumable", "desc": "Restore 25 HP",
-                        "buff": {},
-                        "buff_desc": "Use: +25 HP"},
-    "enchanted_apple": {"name": "Enchanted Apple",  "icon": "🍏", "cost": 200,
-                        "type": "consumable", "desc": "Restore 100 HP",
-                        "buff": {},
-                        "buff_desc": "Use: +100 HP"},
-    "health_potion":   {"name": "Health Potion",    "icon": "❤️‍🩹", "cost": 100,
-                        "type": "consumable", "desc": "Restore 50 HP",
-                        "buff": {},
-                        "buff_desc": "Use: +50 HP"},
-    "greater_health_potion": {"name": "Greater Health Potion", "icon": "❤️", "cost": 150,
-                        "type": "consumable", "desc": "Restore 75 HP",
-                        "buff": {},
-                        "buff_desc": "Use: +75 HP"},
-    "mana_potion":     {"name": "Mana Potion",      "icon": "💙", "cost": 80,
-                        "type": "consumable", "desc": "Restore 15 MP",
-                        "buff": {},
-                        "buff_desc": "Use: +15 MP"},
-    "greater_mana_potion": {"name": "Greater Mana Potion", "icon": "💎", "cost": 200,
-                        "type": "consumable", "desc": "Restore 35 MP",
-                        "buff": {},
-                        "buff_desc": "Use: +35 MP"},
-    "super_mana_potion": {"name": "Super Mana Potion", "icon": "🔮", "cost": 500,
-                        "type": "consumable", "desc": "Restore 80 MP",
-                        "buff": {},
-                        "buff_desc": "Use: +80 MP"},
-    "elixir":          {"name": "Elixir of Life",   "icon": "🧪", "cost": 1000,
-                        "type": "consumable", "desc": "Restore 80 HP & 40 MP",
-                        "buff": {},
-                        "buff_desc": "Use: +80 HP & +40 MP"},
-    "ender_pearl":     {"name": "Ender Pearl",      "icon": "🔮", "cost": 300,
-                        "type": "consumable", "desc": "Permanently increase Max MP",
-                        "buff": {},
-                        "buff_desc": "Use: +30 Max MP (permanent)"},
-
-    # ── Legendary ──
-    "nether_star":     {"name": "Nether Star",     "icon": "⭐", "cost": 700,
-                        "type": "legendary",
-                        "desc": "Power of the Nether",
-                        "buff": {"xp_pct": 10, "gold_pct": 10, "boss_dmg": 5},
-                        "buff_desc": "+10% XP, +10% Gold, +5 Boss DMG"},
-    "beacon":          {"name": "Beacon",          "icon": "🏮", "cost": 1200,
-                        "type": "legendary", "desc": "Strongest relic",
-                        "buff": {"xp_pct": 12, "gold_pct": 12,
-                                 "boss_dmg": 8, "hp_reduc": 5},
-                        "buff_desc": "+12% XP, +12% Gold, +8 DMG, -5 HP taken"},
-
-    # ── Craft-only (hanya bisa didapat lewat Crafting, tidak dijual di Shop) ──
-    "bedrock_sword":   {"name": "Bedrock Sword",   "icon": "🪨", "cost": 2500,
-                        "type": "weapon",    "desc": "Crafted from two legends",
-                        "buff": {"crit_chance": 25, "boss_dmg": 18},
-                        "buff_desc": "+25% Critical Chance, +18 Boss DMG",
-                        "craft_only": True},
-    "phantom_wings":   {"name": "Phantom Wings",   "icon": "🕊️", "cost": 1800,
-                        "type": "armor",     "desc": "Crafted wind & riches",
-                        "buff": {"xp_pct": 18, "gold_pct": 10},
-                        "buff_desc": "+18% XP, +10% Gold earned",
-                        "craft_only": True},
-    "aegis_of_void":   {"name": "Aegis of the Void", "icon": "🛡️", "cost": 2400,
-                        "type": "armor",     "desc": "Crafted ultimate defense",
-                        "buff": {"hp_reduc": 25, "block_chance": 20, "block_strength": 30},
-                        "buff_desc": "-25 HP taken, +20% Block, +30 Block STR",
-                        "craft_only": True},
-
-    # ── Seasonal items (hanya muncul saat event berlangsung) ──
-    "ketupat_feast":   {"name": "Ketupat Feast",   "icon": "🍙", "cost": 75,
-                        "type": "consumable", "desc": "Lebaran special meal",
-                        "buff": {},
-                        "buff_desc": "Use: +75 HP", "seasonal": "ramadan"},
-    "candy_bag":       {"name": "Candy Bag",       "icon": "🍬", "cost": 40,
-                        "type": "consumable", "desc": "Trick or treat!",
-                        "buff": {},
-                        "buff_desc": "Use: +30 HP", "seasonal": "halloween"},
-    "snowball_fight":  {"name": "Snowball Fight",  "icon": "❄️", "cost": 50,
-                        "type": "consumable", "desc": "Christmas fun",
-                        "buff": {},
-                        "buff_desc": "Use: +50 HP", "seasonal": "christmas"},
-
-    # ── 🆕 v1.3.0 — Katalog baru (10 item toko + 3 item craft-only) ──
-    # Weapons
-    "storm_blade":     {"name": "Storm Blade",     "icon": "🌩️", "cost": 950,
-                        "type": "weapon",    "desc": "Slash with thunder speed",
-                        "buff": {"boss_dmg": 10, "crit_chance": 8},
-                        "buff_desc": "+10 Boss DMG, +8% Crit Chance"},
-    "obsidian_dagger": {"name": "Obsidian Dagger", "icon": "🔪", "cost": 420,
-                        "type": "weapon",    "desc": "Silent but deadly",
-                        "buff": {"crit_chance": 18},
-                        "buff_desc": "+18% Critical Chance"},
-    # Armor
-    "turtle_shell":    {"name": "Turtle Shell Helm","icon": "🐢", "cost": 460,
-                        "type": "armor",     "desc": "Slow but unbreakable",
-                        "buff": {"hp_reduc": 10, "block_chance": 6},
-                        "buff_desc": "-10 HP taken, +6% Block Chance"},
-    "wind_cloak":      {"name": "Wind Cloak",      "icon": "🌬️", "cost": 380,
-                        "type": "armor",     "desc": "Light as air, rich as wind",
-                        "buff": {"xp_pct": 6, "gold_pct": 6},
-                        "buff_desc": "+6% XP, +6% Gold"},
-    # Tools
-    "lucky_charm":     {"name": "Lucky Charm",     "icon": "🍀", "cost": 260,
-                        "type": "tool",      "desc": "Fortune favors the grind",
-                        "buff": {"xp_pct": 4, "gold_pct": 6},
-                        "buff_desc": "+4% XP, +6% Gold"},
-    "scholar_tome":    {"name": "Scholar's Tome",  "icon": "📖", "cost": 320,
-                        "type": "tool",      "desc": "Knowledge is XP",
-                        "buff": {"xp_pct": 9},
-                        "buff_desc": "+9% XP earned"},
-    # Consumables (terhubung ke hp_map/mp_map di use_consumable)
-    "honey_bottle":    {"name": "Honey Bottle",    "icon": "🍯", "cost": 60,
-                        "type": "consumable", "desc": "Sweet recovery",
-                        "buff": {},
-                        "buff_desc": "Use: +35 HP"},
-    "sturdy_stew":     {"name": "Sturdy Stew",     "icon": "🍲", "cost": 90,
-                        "type": "consumable", "desc": "Warm meal for body & mind",
-                        "buff": {},
-                        "buff_desc": "Use: +20 HP & +10 MP"},
-    "dragon_breath":   {"name": "Dragon's Breath", "icon": "🐉", "cost": 240,
-                        "type": "consumable", "desc": "Bottled arcane fire",
-                        "buff": {},
-                        "buff_desc": "Use: +60 MP"},
-    # Legendary
-    "dragon_egg":      {"name": "Dragon Egg",      "icon": "🐲", "cost": 1600,
-                        "type": "legendary", "desc": "Slumbering ancient power",
-                        "buff": {"xp_pct": 12, "gold_pct": 12, "boss_dmg": 10},
-                        "buff_desc": "+12% XP, +12% Gold, +10 Boss DMG"},
-    # Craft-only (hanya via Crafting)
-    "inferno_blade":   {"name": "Inferno Blade",   "icon": "🔥", "cost": 2800,
-                        "type": "weapon",    "desc": "Forged in nether fire",
-                        "buff": {"boss_dmg": 22, "crit_chance": 12},
-                        "buff_desc": "+22 Boss DMG, +12% Crit Chance",
-                        "craft_only": True},
-    "healers_blessing": {"name": "Healer's Blessing", "icon": "💚", "cost": 2200,
-                        "type": "armor",     "desc": "Blessed restorative ward",
-                        "buff": {"hp_reduc": 8, "mp_bonus": 25},
-                        "buff_desc": "-8 HP taken, +25 Max MP",
-                        "craft_only": True},
-    "gilded_compass":  {"name": "Gilded Compass",  "icon": "🧭", "cost": 2000,
-                        "type": "tool",      "desc": "Points straight to treasure",
-                        "buff": {"gold_pct": 15, "xp_pct": 10},
-                        "buff_desc": "+15% Gold, +10% XP",
-                        "craft_only": True},
-    # ── 🆕 v1.4.0 — New Shop Items (balanced grindy, tidak OP) ──
-    "bronze_sword":     {"name": "Bronze Sword",    "icon": "🗡️", "cost": 70,
-                        "type": "weapon",    "desc": "Balanced starter blade",
-                        "buff": {"boss_dmg": 3},
-                        "buff_desc": "+3 Boss Damage"},
-    "steel_helm":       {"name": "Steel Helm",      "icon": "⛑️", "cost": 250,
-                        "type": "armor",     "desc": "Sturdy head protection",
-                        "buff": {"hp_reduc": 7, "block_chance": 4},
-                        "buff_desc": "-7 HP taken, +4% Block Chance"},
-    "travelers_boots": {"name": "Traveler's Boots","icon": "🥾", "cost": 190,
-                        "type": "armor",     "desc": "For long journeys",
-                        "buff": {"gold_pct": 7, "xp_pct": 3},
-                        "buff_desc": "+7% Gold, +3% XP"},
-    "arcane_ring":      {"name": "Arcane Ring",     "icon": "💍", "cost": 450,
-                        "type": "tool",      "desc": "Whispers of mana",
-                        "buff": {"xp_pct": 7, "gold_pct": 4},
-                        "buff_desc": "+7% XP, +4% Gold"},
-    "berry_pie":        {"name": "Berry Pie",       "icon": "🥧", "cost": 45,
-                        "type": "consumable", "desc": "Sweet healing",
-                        "buff": {},
-                        "buff_desc": "Use: +30 HP"},
-    "mana_cookie":      {"name": "Mana Cookie",     "icon": "🍪", "cost": 110,
-                        "type": "consumable", "desc": "Crumbly mana boost",
-                        "buff": {},
-                        "buff_desc": "Use: +20 MP"},
-    "frost_guard":      {"name": "Frost Guard",     "icon": "❄️", "cost": 2600,
-                        "type": "armor",     "desc": "Crafted ice shield",
-                        "buff": {"hp_reduc": 12, "block_chance": 8, "block_strength": 10},
-                        "buff_desc": "-12 HP taken, +8% Block, +10 Block STR",
-                        "craft_only": True},
-    "scholar_crown":    {"name": "Scholar Crown",   "icon": "👑", "cost": 2400,
-                        "type": "tool",      "desc": "Crown of wisdom",
-                        "buff": {"xp_pct": 14, "gold_pct": 6},
-                        "buff_desc": "+14% XP, +6% Gold",
-                        "craft_only": True},
-    "void_core":        {"name": "Void Core",       "icon": "🌑", "cost": 3000,
-                        "type": "legendary", "desc": "Heart of the void",
-                        "buff": {"xp_pct": 10, "gold_pct": 10, "boss_dmg": 7, "hp_reduc": 5},
-                        "buff_desc": "+10% XP, +10% Gold, +7 DMG, -5 HP",
-                        "craft_only": True},
-    "ember_charm":      {"name": "Ember Charm",     "icon": "🧿", "cost": 2200,
-                        "type": "tool",      "desc": "Warm lucky ember",
-                        "buff": {"gold_pct": 9, "xp_pct": 6, "boss_dmg": 2},
-                        "buff_desc": "+9% Gold, +6% XP, +2 Boss DMG",
-                        "craft_only": True},
+    "wooden_sword": {"name": "Wooden Sword", "icon": "🗡️", "cost": 50, "type": "weapon", "desc": "Starter blade", "buff": {"boss_dmg": 2}, "buff_desc": "+2 Boss Damage"},
+    "enchanted_bow": {"name": "Enchanted Bow", "icon": "🏹", "cost": 180, "type": "weapon", "desc": "Ranged power", "buff": {"boss_dmg": 7}, "buff_desc": "+6 Boss Damage"},
+    "trident": {"name": "Trident", "icon": "🔱", "cost": 350, "type": "weapon", "desc": "Legendary weapon", "buff": {"boss_dmg": 11}, "buff_desc": "+10 Boss Damage"},
+    "iron_sword": {"name": "Iron Sword", "icon": "🗡️", "cost": 100, "type": "weapon", "desc": "Sharp blade", "buff": {"crit_chance": 8}, "buff_desc": "+8% Critical Chance"},
+    "diamond_sword": {"name": "Diamond Sword", "icon": "💎", "cost": 320, "type": "weapon", "desc": "Powerful strike", "buff": {"crit_chance": 15}, "buff_desc": "+15% Critical Chance"},
+    "netherite_sword": {"name": "Netherite Sword", "icon": "⚔️", "cost": 650, "type": "weapon", "desc": "Legendary blade", "buff": {"crit_chance": 20, "boss_dmg": 5}, "buff_desc": "+20% Critical Chance, +5 Boss DMG"},
+    "shield": {"name": "Shield", "icon": "🛡️", "cost": 120, "type": "armor", "desc": "Reduces HP damage", "buff": {"hp_reduc": 9}, "buff_desc": "-8 per HP hit taken"},
+    "golden_boots": {"name": "Golden Boots", "icon": "👢", "cost": 140, "type": "armor", "desc": "Swift & rich", "buff": {"gold_pct": 11}, "buff_desc": "+10% Gold earned"},
+    "diamond_armor": {"name": "Diamond Armor", "icon": "💎", "cost": 300, "type": "armor", "desc": "Max protection", "buff": {"hp_reduc": 15}, "buff_desc": "-15 per HP hit taken"},
+    "elytra": {"name": "Elytra Wings", "icon": "🪽", "cost": 500, "type": "armor", "desc": "Glide & grow", "buff": {"xp_pct": 12}, "buff_desc": "+10% XP all sources"},
+    "tower_shield": {"name": "Tower Shield", "icon": "🛡️", "cost": 200, "type": "armor", "desc": "Great defense", "buff": {"block_strength": 18}, "buff_desc": "+15 Block Strength"},
+    "guardian_chestplate": {"name": "Guardian Chestplate", "icon": "🛡️", "cost": 380, "type": "armor", "desc": "Guardian armor", "buff": {"block_chance": 10, "block_strength": 15}, "buff_desc": "+10% Block Chance, +15 Block Strength"},
+    "diamond_chestplate": {"name": "Diamond Chestplate", "icon": "💎", "cost": 600, "type": "armor", "desc": "Diamond protection", "buff": {"block_chance": 16, "block_strength": 20}, "buff_desc": "+15% Block Chance, +20 Block Strength"},
+    "iron_pickaxe": {"name": "Iron Pickaxe", "icon": "⛏️", "cost": 100, "type": "tool", "desc": "Mine habits faster", "buff": {"xp_pct": 9}, "buff_desc": "+8% XP from habits"},
+    "compass": {"name": "Compass", "icon": "🧭", "cost": 80, "type": "tool", "desc": "Navigate to gold", "buff": {"gold_pct": 7}, "buff_desc": "+6% Gold earned"},
+    "spyglass": {"name": "Spyglass", "icon": "🔭", "cost": 90, "type": "tool", "desc": "Scout ahead", "buff": {}, "buff_desc": "Reveal boss stats"},
+    "ice_block": {"name": "Ice Block", "icon": "🧊", "cost": 25, "type": "consumable", "desc": "Freeze Daily streak (1 slot)", "buff": {}, "buff_desc": "Use: +1 Freeze Slot for a Daily"},
+    "blaze_rod": {"name": "Blaze Rod", "icon": "🔥", "cost": 160, "type": "special", "desc": "Nether fire", "buff": {"boss_dmg": 4}, "buff_desc": "+4 Boss Damage"},
+    "totem": {"name": "Totem of Life", "icon": "🗿", "cost": 400, "type": "legendary", "desc": "Auto-revive from death", "buff": {"revive": True}, "buff_desc": "Auto-revive once at 30% HP"},
+    "golden_apple": {"name": "Golden Apple", "icon": "🍎", "cost": 50, "type": "consumable", "desc": "Restore 25 HP", "buff": {}, "buff_desc": "Use: +25 HP"},
+    "enchanted_apple": {"name": "Enchanted Apple", "icon": "🍏", "cost": 200, "type": "consumable", "desc": "Restore 100 HP", "buff": {}, "buff_desc": "Use: +100 HP"},
+    "health_potion": {"name": "Health Potion", "icon": "❤️‍🩹", "cost": 100, "type": "consumable", "desc": "Restore 50 HP", "buff": {}, "buff_desc": "Use: +50 HP"},
+    "greater_health_potion": {"name": "Greater Health Potion", "icon": "❤️", "cost": 150, "type": "consumable", "desc": "Restore 75 HP", "buff": {}, "buff_desc": "Use: +75 HP"},
+    "mana_potion": {"name": "Mana Potion", "icon": "💙", "cost": 80, "type": "consumable", "desc": "Restore 15 MP", "buff": {}, "buff_desc": "Use: +15 MP"},
+    "greater_mana_potion": {"name": "Greater Mana Potion", "icon": "💎", "cost": 200, "type": "consumable", "desc": "Restore 35 MP", "buff": {}, "buff_desc": "Use: +35 MP"},
+    "super_mana_potion": {"name": "Super Mana Potion", "icon": "🔮", "cost": 500, "type": "consumable", "desc": "Restore 80 MP", "buff": {}, "buff_desc": "Use: +80 MP"},
+    "elixir": {"name": "Elixir of Life", "icon": "🧪", "cost": 1000, "type": "consumable", "desc": "Restore 80 HP & 40 MP", "buff": {}, "buff_desc": "Use: +80 HP & +40 MP"},
+    "ender_pearl": {"name": "Ender Pearl", "icon": "🔮", "cost": 300, "type": "consumable", "desc": "Permanently increase Max MP", "buff": {}, "buff_desc": "Use: +30 Max MP (permanent)"},
+    "nether_star": {"name": "Nether Star", "icon": "⭐", "cost": 700, "type": "legendary", "desc": "Power of the Nether", "buff": {"xp_pct": 10, "gold_pct": 10, "boss_dmg": 5}, "buff_desc": "+10% XP, +10% Gold, +5 Boss DMG"},
+    "beacon": {"name": "Beacon", "icon": "🏮", "cost": 1200, "type": "legendary", "desc": "Strongest relic", "buff": {"xp_pct": 12, "gold_pct": 12, "boss_dmg": 9, "hp_reduc": 5}, "buff_desc": "+12% XP, +12% Gold, +8 DMG, -5 HP taken"},
+    "bedrock_sword": {"name": "Bedrock Sword", "icon": "🪨", "cost": 2500, "type": "weapon", "desc": "Crafted from two legends", "buff": {"crit_chance": 25, "boss_dmg": 18}, "buff_desc": "+25% Critical Chance, +18 Boss DMG", "craft_only": True},
+    "phantom_wings": {"name": "Phantom Wings", "icon": "🕊️", "cost": 1800, "type": "armor", "desc": "Crafted wind & riches", "buff": {"xp_pct": 18, "gold_pct": 10}, "buff_desc": "+18% XP, +10% Gold earned", "craft_only": True},
+    "aegis_of_void": {"name": "Aegis of the Void", "icon": "🛡️", "cost": 2400, "type": "armor", "desc": "Crafted ultimate defense", "buff": {"hp_reduc": 25, "block_chance": 20, "block_strength": 30}, "buff_desc": "-25 HP taken, +20% Block, +30 Block STR", "craft_only": True},
+    "ketupat_feast": {"name": "Ketupat Feast", "icon": "🍙", "cost": 75, "type": "consumable", "desc": "Lebaran special meal", "buff": {}, "buff_desc": "Use: +75 HP", "seasonal": "ramadan"},
+    "candy_bag": {"name": "Candy Bag", "icon": "🍬", "cost": 40, "type": "consumable", "desc": "Trick or treat!", "buff": {}, "buff_desc": "Use: +30 HP", "seasonal": "halloween"},
+    "snowball_fight": {"name": "Snowball Fight", "icon": "❄️", "cost": 50, "type": "consumable", "desc": "Christmas fun", "buff": {}, "buff_desc": "Use: +50 HP", "seasonal": "christmas"},
+    "storm_blade": {"name": "Storm Blade", "icon": "🌩️", "cost": 950, "type": "weapon", "desc": "Slash with thunder speed", "buff": {"boss_dmg": 13, "crit_chance": 8}, "buff_desc": "+10 Boss DMG, +8% Crit Chance"},
+    "obsidian_dagger": {"name": "Obsidian Dagger", "icon": "🔪", "cost": 420, "type": "weapon", "desc": "Silent but deadly", "buff": {"crit_chance": 19}, "buff_desc": "+18% Critical Chance"},
+    "turtle_shell": {"name": "Turtle Shell Helm", "icon": "🐢", "cost": 380, "type": "armor", "desc": "Slow but unbreakable", "buff": {"hp_reduc": 10, "block_chance": 6}, "buff_desc": "-10 HP taken, +6% Block Chance"},
+    "wind_cloak": {"name": "Wind Cloak", "icon": "🌬️", "cost": 380, "type": "armor", "desc": "Light as air, rich as wind", "buff": {"xp_pct": 7, "gold_pct": 7}, "buff_desc": "+6% XP, +6% Gold"},
+    "lucky_charm": {"name": "Lucky Charm", "icon": "🍀", "cost": 260, "type": "tool", "desc": "Fortune favors the grind", "buff": {"xp_pct": 5, "gold_pct": 6}, "buff_desc": "+4% XP, +6% Gold"},
+    "scholar_tome": {"name": "Scholar's Tome", "icon": "📖", "cost": 320, "type": "tool", "desc": "Knowledge is XP", "buff": {"xp_pct": 10}, "buff_desc": "+9% XP earned"},
+    "honey_bottle": {"name": "Honey Bottle", "icon": "🍯", "cost": 60, "type": "consumable", "desc": "Sweet recovery", "buff": {}, "buff_desc": "Use: +35 HP"},
+    "sturdy_stew": {"name": "Sturdy Stew", "icon": "🍲", "cost": 90, "type": "consumable", "desc": "Warm meal for body & mind", "buff": {}, "buff_desc": "Use: +20 HP & +10 MP"},
+    "dragon_breath": {"name": "Dragon's Breath", "icon": "🐉", "cost": 240, "type": "consumable", "desc": "Bottled arcane fire", "buff": {}, "buff_desc": "Use: +60 MP"},
+    "dragon_egg": {"name": "Dragon Egg", "icon": "🐲", "cost": 1600, "type": "legendary", "desc": "Slumbering ancient power", "buff": {"xp_pct": 13, "gold_pct": 12, "boss_dmg": 11}, "buff_desc": "+12% XP, +12% Gold, +10 Boss DMG"},
+    "inferno_blade": {"name": "Inferno Blade", "icon": "🔥", "cost": 2800, "type": "weapon", "desc": "Forged in nether fire", "buff": {"boss_dmg": 24, "crit_chance": 12}, "buff_desc": "+22 Boss DMG, +12% Crit Chance", "craft_only": True},
+    "healers_blessing": {"name": "Healer's Blessing", "icon": "💚", "cost": 2200, "type": "armor", "desc": "Blessed restorative ward", "buff": {"hp_reduc": 12, "mp_bonus": 30}, "buff_desc": "-8 HP taken, +25 Max MP", "craft_only": True},
+    "gilded_compass": {"name": "Gilded Compass", "icon": "🧭", "cost": 2000, "type": "tool", "desc": "Points straight to treasure", "buff": {"gold_pct": 15, "xp_pct": 12}, "buff_desc": "+15% Gold, +10% XP", "craft_only": True},
+    "bronze_sword": {"name": "Bronze Sword", "icon": "🗡️", "cost": 70, "type": "weapon", "desc": "Balanced starter blade", "buff": {"boss_dmg": 3}, "buff_desc": "+3 Boss Damage"},
+    "steel_helm": {"name": "Steel Helm", "icon": "⛑️", "cost": 220, "type": "armor", "desc": "Sturdy head protection", "buff": {"hp_reduc": 9, "block_chance": 4}, "buff_desc": "-7 HP taken, +4% Block Chance"},
+    "travelers_boots": {"name": "Traveler's Boots", "icon": "🥾", "cost": 190, "type": "armor", "desc": "For long journeys", "buff": {"gold_pct": 8, "xp_pct": 3}, "buff_desc": "+7% Gold, +3% XP"},
+    "arcane_ring": {"name": "Arcane Ring", "icon": "💍", "cost": 450, "type": "tool", "desc": "Whispers of mana", "buff": {"xp_pct": 8, "gold_pct": 4}, "buff_desc": "+7% XP, +4% Gold"},
+    "berry_pie": {"name": "Berry Pie", "icon": "🥧", "cost": 45, "type": "consumable", "desc": "Sweet healing", "buff": {}, "buff_desc": "Use: +30 HP"},
+    "mana_cookie": {"name": "Mana Cookie", "icon": "🍪", "cost": 110, "type": "consumable", "desc": "Crumbly mana boost", "buff": {}, "buff_desc": "Use: +20 MP"},
+    "frost_guard": {"name": "Frost Guard", "icon": "❄️", "cost": 2600, "type": "armor", "desc": "Crafted ice shield", "buff": {"hp_reduc": 18, "block_chance": 12, "block_strength": 10}, "buff_desc": "-12 HP taken, +8% Block, +10 Block STR", "craft_only": True},
+    "scholar_crown": {"name": "Scholar Crown", "icon": "👑", "cost": 2400, "type": "tool", "desc": "Crown of wisdom", "buff": {"xp_pct": 15, "gold_pct": 6}, "buff_desc": "+14% XP, +6% Gold", "craft_only": True},
+    "void_core": {"name": "Void Core", "icon": "🌑", "cost": 3000, "type": "legendary", "desc": "Heart of the void", "buff": {"xp_pct": 12, "gold_pct": 10, "boss_dmg": 7, "hp_reduc": 5}, "buff_desc": "+10% XP, +10% Gold, +7 DMG, -5 HP", "craft_only": True},
+    "ember_charm": {"name": "Ember Charm", "icon": "🧿", "cost": 2200, "type": "tool", "desc": "Warm lucky ember", "buff": {"gold_pct": 9, "xp_pct": 6, "boss_dmg": 3}, "buff_desc": "+9% Gold, +6% XP, +2 Boss DMG", "craft_only": True},
 }
 
+# L05 (v1.7.4): PETS_DATA v2 — 39 pet dengan rank (common→secret), buff
+# direbalance per tier, nama bilingual, skill aktif untuk Legendary+.
+# Kunci lama (name/icon/cost/bonus/base_buff) tetap ada → backward compatible.
 PETS_DATA = {
-    "wolf":     {"name": "Wolf", "icon": "🐺", "cost": 150,
-                 "bonus": "+6% XP",                     
-                 "base_buff": {"xp_pct": 6}},
-    "cat":      {"name": "Cat", "icon": "🐱", "cost": 120,
-                 "bonus": "-6 HP loss",                 
-                 "base_buff": {"hp_reduc": 6}},
-    "parrot":   {"name": "Parrot", "icon": "🦜", "cost": 140,
-                 "bonus": "+4% Gold",                   
-                 "base_buff": {"gold_pct": 4}},
-    "panda":    {"name": "Panda", "icon": "🐼", "cost": 240,
-                 "bonus": "+10% XP",                     
-                 "base_buff": {"xp_pct": 10}},
-    "fox":      {"name": "Fox", "icon": "🦊", "cost": 180,
-                 "bonus": "+8% Gold",                   
-                 "base_buff": {"gold_pct": 8}},
-    "bee":      {"name": "Bee", "icon": "🐝", "cost": 110,
-                 "bonus": "-4 HP loss",                 
-                 "base_buff": {"hp_reduc": 4}},
-    "dragon":   {"name": "Dragon", "icon": "🐉", "cost": 600,
-                 "bonus": "+15% XP, +4 boss dmg",        
-                 "base_buff": {"xp_pct": 15, "boss_dmg": 4}},
-    "turtle":   {"name": "Turtle", "icon": "🐢", "cost": 130,
-                 "bonus": "-8 HP loss",                 
-                 "base_buff": {"hp_reduc": 8}},
-    "axolotl":  {"name": "Axolotl", "icon": "🦎", "cost": 200,
-                 "bonus": "-2 HP loss",                 
-                 "base_buff": {"hp_reduc": 2}},
-    "enderman": {"name": "Enderman", "icon": "👾", "cost": 400,
-                 "bonus": "+12% XP, +4% Gold, +2 boss dmg", 
-                 "base_buff": {"xp_pct": 12, "gold_pct": 4, "boss_dmg": 2}},
-    "phoenix":     {"name": "Phoenix",   "icon": "🐦‍🔥", "cost": 800,
-                    "bonus": "+10% XP, +5% Gold, +2 boss dmg",
-                    "base_buff": {"xp_pct": 10, "gold_pct": 5, "boss_dmg": 2}},
-    "unicorn":     {"name": "Unicorn",   "icon": "🦄", "cost": 650,
-                    "bonus": "+8% XP, +8% Gold",
-                    "base_buff": {"xp_pct": 8, "gold_pct": 8}},
-    "griffin":     {"name": "Griffin",   "icon": "🦅", "cost": 700,
-                    "bonus": "+10% XP, -5 HP loss",
-                    "base_buff": {"xp_pct": 10, "hp_reduc": 5}},
-    "mermaid":     {"name": "Mermaid",   "icon": "🧜‍♀️", "cost": 500,
-                    "bonus": "+6% Gold, -8 HP loss",
-                    "base_buff": {"gold_pct": 6, "hp_reduc": 8}},
-    "slime":       {"name": "Slime",     "icon": "🟢", "cost": 80,
-                    "bonus": "+2% Gold, -2 HP loss",
-                    "base_buff": {"gold_pct": 2, "hp_reduc": 2}},
-    "ghast":       {"name": "Ghost",     "icon": "👻", "cost": 150,
-                    "bonus": "+4% XP, -4 HP loss",
-                    "base_buff": {"xp_pct": 4, "hp_reduc": 4}},
-    "skeleton":    {"name": "Skeleton",  "icon": "💀", "cost": 120,
-                    "bonus": "+3% Gold, +1 boss dmg",
-                    "base_buff": {"gold_pct": 3, "boss_dmg": 1}},
-    "zombie":      {"name": "Zombie",    "icon": "🧟", "cost": 100,
-                    "bonus": "+2% XP, +1 boss dmg",
-                    "base_buff": {"xp_pct": 2, "boss_dmg": 1}},
-    "creeper":     {"name": "Creeper",   "icon": "💥", "cost": 90,
-                 "bonus": "+2% Gold, -2 HP loss",
-                 "base_buff": {"gold_pct": 2, "hp_reduc": 2}},
-    # ── 🆕 v1.4.0 — Pets baru (balanced, grindy) ──
-    "owl":       {"name": "Owl",       "icon": "🦉", "cost": 220,
-                 "bonus": "+5% XP, +2% Gold",
-                 "base_buff": {"xp_pct": 5, "gold_pct": 2}},
-    "hamster":   {"name": "Hamster",   "icon": "🐹", "cost": 95,
-                 "bonus": "+3% Gold, -2 HP loss",
-                 "base_buff": {"gold_pct": 3, "hp_reduc": 2}},
-    "dolphin":   {"name": "Dolphin",   "icon": "🐬", "cost": 300,
-                 "bonus": "+7% Gold, -4 HP loss",
-                 "base_buff": {"gold_pct": 7, "hp_reduc": 4}},
-    "bat":       {"name": "Bat",       "icon": "🦇", "cost": 160,
-                 "bonus": "-5 HP loss, +2% XP",
-                 "base_buff": {"hp_reduc": 5, "xp_pct": 2}},
-    "lion":      {"name": "Lion",      "icon": "🦁", "cost": 550,
-                 "bonus": "+8% XP, +3 boss dmg",
-                 "base_buff": {"xp_pct": 8, "boss_dmg": 3}},
-    "capybara":  {"name": "Capybara",  "icon": "🦫", "cost": 180,
-                 "bonus": "+4% XP, -4 HP loss",
-                 "base_buff": {"xp_pct": 4, "hp_reduc": 4}},
+    "wolf": {"name": "Wolf", "name_id": "Serigala", "icon": "🐺", "cost": 150,
+                 "rank": "common", "bonus": "+5% XP",
+                 "base_buff": {"xp_pct": 5},
+                 },
+    "cat": {"name": "Cat", "name_id": "Kucing", "icon": "🐱", "cost": 120,
+                 "rank": "common", "bonus": "-5 HP loss",
+                 "base_buff": {"hp_reduc": 5},
+                 },
+    "parrot": {"name": "Parrot", "name_id": "Burung Beo", "icon": "🦜", "cost": 140,
+                 "rank": "common", "bonus": "+4% Gold",
+                 "base_buff": {"gold_pct": 4},
+                 },
+    "bee": {"name": "Bee", "name_id": "Lebah", "icon": "🐝", "cost": 110,
+                 "rank": "common", "bonus": "-4 HP loss",
+                 "base_buff": {"hp_reduc": 4},
+                 },
+    "turtle": {"name": "Turtle", "name_id": "Kura-kura", "icon": "🐢", "cost": 130,
+                 "rank": "common", "bonus": "-6 HP loss",
+                 "base_buff": {"hp_reduc": 6},
+                 },
+    "skeleton": {"name": "Skeleton", "name_id": "Tengkorak", "icon": "💀", "cost": 120,
+                 "rank": "common", "bonus": "+3% Gold, +1 boss dmg",
+                 "base_buff": {"gold_pct": 3, "boss_dmg": 1},
+                 },
+    "zombie": {"name": "Zombie", "name_id": "Zombi", "icon": "🧟", "cost": 100,
+                 "rank": "common", "bonus": "+3% XP",
+                 "base_buff": {"xp_pct": 3},
+                 },
+    "creeper": {"name": "Creeper", "name_id": "Creeper", "icon": "💥", "cost": 90,
+                 "rank": "common", "bonus": "+3% Gold",
+                 "base_buff": {"gold_pct": 3},
+                 },
+    "hamster": {"name": "Hamster", "name_id": "Hamster", "icon": "🐹", "cost": 95,
+                 "rank": "common", "bonus": "-3 HP loss",
+                 "base_buff": {"hp_reduc": 3},
+                 },
+    "ghast": {"name": "Ghast", "name_id": "Ghast", "icon": "👻", "cost": 150,
+                 "rank": "common", "bonus": "+4% XP",
+                 "base_buff": {"xp_pct": 4},
+                 },
+    "slime": {"name": "Slime", "name_id": "Slime", "icon": "🟢", "cost": 80,
+                 "rank": "common", "bonus": "+3% Gold",
+                 "base_buff": {"gold_pct": 3},
+                 },
+    "rabbit": {"name": "Rabbit", "name_id": "Kelinci", "icon": "🐇", "cost": 100,
+                 "rank": "common", "bonus": "-4 HP loss",
+                 "base_buff": {"hp_reduc": 4},
+                 },
+    "chick": {"name": "Chick", "name_id": "Anak Ayam", "icon": "🐤", "cost": 90,
+                 "rank": "common", "bonus": "+3% XP",
+                 "base_buff": {"xp_pct": 3},
+                 },
+    "snail": {"name": "Snail", "name_id": "Siput", "icon": "🐌", "cost": 85,
+                 "rank": "common", "bonus": "+3% Gold",
+                 "base_buff": {"gold_pct": 3},
+                 },
+    "bat": {"name": "Bat", "name_id": "Kelelawar", "icon": "🦇", "cost": 160,
+                 "rank": "rare", "bonus": "-5 HP loss",
+                 "base_buff": {"hp_reduc": 5},
+                 },
+    "capybara": {"name": "Capybara", "name_id": "Kapibara", "icon": "🦫", "cost": 180,
+                 "rank": "rare", "bonus": "+4% XP",
+                 "base_buff": {"xp_pct": 4},
+                 },
+    "fox": {"name": "Fox", "name_id": "Rubah", "icon": "🦊", "cost": 180,
+                 "rank": "rare", "bonus": "+6% Gold",
+                 "base_buff": {"gold_pct": 6},
+                 },
+    "axolotl": {"name": "Axolotl", "name_id": "Axolotl", "icon": "🦎", "cost": 200,
+                 "rank": "rare", "bonus": "-5 HP loss",
+                 "base_buff": {"hp_reduc": 5},
+                 },
+    "owl": {"name": "Owl", "name_id": "Burung Hantu", "icon": "🦉", "cost": 220,
+                 "rank": "rare", "bonus": "+5% XP",
+                 "base_buff": {"xp_pct": 5},
+                 },
+    "panda": {"name": "Panda", "name_id": "Panda", "icon": "🐼", "cost": 240,
+                 "rank": "rare", "bonus": "+7% XP",
+                 "base_buff": {"xp_pct": 7},
+                 },
+    "hedgehog": {"name": "Hedgehog", "name_id": "Landak", "icon": "🦔", "cost": 190,
+                 "rank": "rare", "bonus": "-5 HP loss",
+                 "base_buff": {"hp_reduc": 5},
+                 },
+    "raccoon": {"name": "Raccoon", "name_id": "Rakun", "icon": "🦝", "cost": 210,
+                 "rank": "rare", "bonus": "+5% Gold",
+                 "base_buff": {"gold_pct": 5},
+                 },
+    "dolphin": {"name": "Dolphin", "name_id": "Lumba-lumba", "icon": "🐬", "cost": 300,
+                 "rank": "epic", "bonus": "+6% Gold, -3 HP loss",
+                 "base_buff": {"gold_pct": 6, "hp_reduc": 3},
+                 },
+    "enderman": {"name": "Enderman", "name_id": "Enderman", "icon": "👾", "cost": 400,
+                 "rank": "epic", "bonus": "+9% XP, +2 boss dmg",
+                 "base_buff": {"xp_pct": 9, "boss_dmg": 2},
+                 },
+    "mermaid": {"name": "Mermaid", "name_id": "Putri Duyung", "icon": "🧜‍♀️", "cost": 500,
+                 "rank": "epic", "bonus": "+5% Gold, -6 HP loss",
+                 "base_buff": {"gold_pct": 5, "hp_reduc": 6},
+                 },
+    "lion": {"name": "Lion", "name_id": "Singa", "icon": "🦁", "cost": 550,
+                 "rank": "epic", "bonus": "+7% XP, +3 boss dmg",
+                 "base_buff": {"xp_pct": 7, "boss_dmg": 3},
+                 },
+    "peacock": {"name": "Peacock", "name_id": "Merak", "icon": "🦚", "cost": 420,
+                 "rank": "epic", "bonus": "+7% Gold",
+                 "base_buff": {"gold_pct": 7},
+                 },
+    "otter": {"name": "Otter", "name_id": "Berang-berang", "icon": "🦦", "cost": 380,
+                 "rank": "epic", "bonus": "+5% XP, -4 HP loss",
+                 "base_buff": {"xp_pct": 5, "hp_reduc": 4},
+                 },
+    "kangaroo": {"name": "Kangaroo", "name_id": "Kanguru", "icon": "🦘", "cost": 460,
+                 "rank": "epic", "bonus": "-8 HP loss",
+                 "base_buff": {"hp_reduc": 8},
+                 },
+    "dragon": {"name": "Dragon", "name_id": "Naga", "icon": "🐉", "cost": 600,
+                 "rank": "legendary", "bonus": "+12% XP, +4 boss dmg",
+                 "base_buff": {"xp_pct": 12, "boss_dmg": 4},
+                 "skill": {"key": "dragon_breath", "name": "Dragon Breath", "name_id": "Napas Naga", "effect": "xp_boost", "base": 15, "per_level": 1.5}},
+    "unicorn": {"name": "Unicorn", "name_id": "Unicorn", "icon": "🦄", "cost": 650,
+                 "rank": "legendary", "bonus": "+8% XP, +8% Gold",
+                 "base_buff": {"xp_pct": 8, "gold_pct": 8},
+                 "skill": {"key": "rainbow_blessing", "name": "Rainbow Blessing", "name_id": "Berkat Pelangi", "effect": "gold_boost", "base": 15, "per_level": 1.5}},
+    "griffin": {"name": "Griffin", "name_id": "Griffin", "icon": "🦅", "cost": 700,
+                 "rank": "legendary", "bonus": "+10% XP, -5 HP loss",
+                 "base_buff": {"xp_pct": 10, "hp_reduc": 5},
+                 "skill": {"key": "storm_wing", "name": "Storm Wing", "name_id": "Sayap Badai", "effect": "xp_boost", "base": 12, "per_level": 1.2}},
+    "tiger": {"name": "Tiger", "name_id": "Harimau", "icon": "🐅", "cost": 720,
+                 "rank": "legendary", "bonus": "+8% XP, +5 boss dmg",
+                 "base_buff": {"xp_pct": 8, "boss_dmg": 5},
+                 "skill": {"key": "feral_roar", "name": "Feral Roar", "name_id": "Auman Liar", "effect": "xp_boost", "base": 14, "per_level": 1.4}},
+    "orca": {"name": "Orca", "name_id": "Paus Orca", "icon": "🐋", "cost": 680,
+                 "rank": "legendary", "bonus": "+9% Gold, -6 HP loss",
+                 "base_buff": {"gold_pct": 9, "hp_reduc": 6},
+                 "skill": {"key": "tidal_surge", "name": "Tidal Surge", "name_id": "Gelombang Pasang", "effect": "gold_boost", "base": 14, "per_level": 1.4}},
+    "phoenix": {"name": "Phoenix", "name_id": "Phoenix", "icon": "🐦‍🔥", "cost": 800,
+                 "rank": "mythic", "bonus": "+12% XP, +8% Gold, +3 boss dmg",
+                 "base_buff": {"xp_pct": 12, "gold_pct": 8, "boss_dmg": 3},
+                 "skill": {"key": "rebirth_flame", "name": "Rebirth Flame", "name_id": "Api Kelahiran Kembali", "effect": "xp_boost", "base": 18, "per_level": 1.8}},
+    "basilisk": {"name": "Basilisk", "name_id": "Basilisk", "icon": "🐍", "cost": 850,
+                 "rank": "mythic", "bonus": "+9% XP, +7 boss dmg",
+                 "base_buff": {"xp_pct": 9, "boss_dmg": 7},
+                 "skill": {"key": "petrifying_gaze", "name": "Petrifying Gaze", "name_id": "Tatapan Batu", "effect": "xp_boost", "base": 20, "per_level": 2.0}},
+    "kirin": {"name": "Kirin", "name_id": "Kirin", "icon": "🦌", "cost": 900,
+                 "rank": "mythic", "bonus": "+10% XP, +8% Gold, -5 HP loss",
+                 "base_buff": {"xp_pct": 10, "gold_pct": 8, "hp_reduc": 5},
+                 "skill": {"key": "celestial_step", "name": "Celestial Step", "name_id": "Langit Surgawi", "effect": "gold_boost", "base": 20, "per_level": 2.0}},
+    "void_dragon": {"name": "Void Dragon", "name_id": "Naga Hampa", "icon": "🐲", "cost": 1500,
+                 "rank": "secret", "bonus": "+15% XP, +8 boss dmg, +8% Gold",
+                 "base_buff": {"xp_pct": 15, "boss_dmg": 8, "gold_pct": 8},
+                 "skill": {"key": "void_devour", "name": "Void Devour", "name_id": "Santapan Hampa", "effect": "xp_boost", "base": 25, "per_level": 2.5}},
+    "luminara": {"name": "Luminara", "name_id": "Luminara", "icon": "🦢", "cost": 1500,
+                 "rank": "secret", "bonus": "+12% XP, +12% Gold, -8 HP loss",
+                 "base_buff": {"xp_pct": 12, "gold_pct": 12, "hp_reduc": 8},
+                 "skill": {"key": "radiant_halo", "name": "Radiant Halo", "name_id": "Halo Bercahaya", "effect": "gold_boost", "base": 25, "per_level": 2.5}},
 }
+
+# ══════════════════════════════════════════════════════════════════════
+# L05 (v1.7.4) — PET GACHA: spin menggantikan pembelian shop (K2–K6).
+# Semua formula gacha & training HANYA di sini (P3 single source of truth).
+# ══════════════════════════════════════════════════════════════════════
+PET_RANKS = ["common", "rare", "epic", "legendary", "mythic", "secret"]
+# Peluang per rank (%, total 100) — ditampilkan apa adanya di UI spin (K4).
+SPIN_ODDS = {"common": 34, "rare": 26, "epic": 18, "legendary": 12, "mythic": 8, "secret": 2}
+SPIN_COST = 120            # gold per spin
+PITY_EPIC = 10             # tanpa epic+ dalam 10 spin → spin ke-10 dijamin epic+
+PITY_LEGENDARY = 30        # tanpa legendary+ dalam 30 spin → spin ke-30 dijamin legendary+
+# (K2) Duplikat spin → dikonversi jadi EXP latihan senilai 50% biaya spin.
+SPIN_DUPE_EXP_RATIO = 0.5
+# (K6) Training per rank: (biaya dasar, tambahan biaya per level, EXP min, EXP max).
+PET_TRAINING = {
+    "common":    (20, 4, 20, 45),
+    "rare":      (35, 6, 30, 65),
+    "epic":      (55, 9, 45, 95),
+    "legendary": (80, 12, 65, 135),
+    "mythic":    (110, 16, 90, 185),
+    "secret":    (150, 20, 120, 240),
+}
+# (K5) Skill aktif per rank: cooldown (detik), biaya MP user, level unlock,
+# jumlah aksi buff bertahan. Efek memakai vocab buff yang SUDAH ada
+# (xp/gold multiplier aksi-based di skill_buff_data + restore MP).
+PET_SKILL_RANK = {
+    "legendary": {"cooldown": 1800, "mp_cost": 10, "unlock_level": 5, "actions": 12},
+    "mythic":    {"cooldown": 1200, "mp_cost": 14, "unlock_level": 5, "actions": 15},
+    "secret":    {"cooldown": 900,  "mp_cost": 18, "unlock_level": 5, "actions": 18},
+}
+
+def pet_rank(pet_id: str) -> str:
+    """Rank sebuah pet (fallback common untuk data lama tak ber-rank)."""
+    return (PETS_DATA.get(pet_id) or {}).get("rank", "common")
+
+def pet_training_cost(rank: str, level: int) -> int:
+    """(K6) Harga latihan = dasar rank + (level-1) x step rank."""
+    base, step, _, _ = PET_TRAINING.get(rank, PET_TRAINING["common"])
+    return base + max(0, int(level) - 1) * step
+
+def pet_training_exp(rank: str, level: int) -> int:
+    """(K6) EXP latihan acak dalam rentang rank + bonus kecil per level."""
+    import random as _rnd
+    _, _, lo, hi = PET_TRAINING.get(rank, PET_TRAINING["common"])
+    return _rnd.randint(lo, hi) + int(level) * 2
+
 
 BOSSES = {
     # Beginner
@@ -5126,6 +5058,200 @@ def adopt_pet(user_id, pet_id):
     check_achievements(user_id, "pet_adopt", 1)
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_pet_adopted", icon=pet['icon'], name=pet['name'])}
 
+def get_spin_state(user_id):
+    """State spin + pity user (untuk UI: counter pity & total spin)."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM pet_spin_state WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if not row:
+        return {"spins_total": 0, "since_epic": 0, "since_legendary": 0}
+    return {"spins_total": int(row["spins_total"] or 0),
+            "since_epic": int(row["since_epic"] or 0),
+            "since_legendary": int(row["since_legendary"] or 0)}
+
+def _spin_pick_rank(since_epic: int, since_legendary: int) -> str:
+    """(K4) Pilih rank: peluang normal, dengan pity epic+ / legendary+.
+    Pity hanya MENAIKKAN lantai rank — hasil tetap acak di antara rank >= lantai."""
+    import random as _rnd
+    floor = None
+    # since_x = jumlah spin sejak terakhir dapat rank tsb; spin BERIKUTNYA
+    # adalah spin ke (since_x + 1).
+    if since_legendary + 1 >= PITY_LEGENDARY:
+        floor = "legendary"
+    elif since_epic + 1 >= PITY_EPIC:
+        floor = "epic"
+    order = PET_RANKS
+    roll = _rnd.uniform(0, 100)
+    acc = 0.0
+    picked = order[0]
+    for r in order:
+        acc += SPIN_ODDS[r]
+        if roll <= acc:
+            picked = r
+            break
+    if floor:
+        if order.index(picked) < order.index(floor):
+            # paksa acak di antara rank >= lantai dengan bobot relatifnya
+            candidates = order[order.index(floor):]
+            weights = [SPIN_ODDS[r] for r in candidates]
+            picked = _rnd.choices(candidates, weights=weights, k=1)[0]
+    return picked
+
+def spin_pet(user_id):
+    """(K2/K4) Spin gacha pet — biaya gold, hasil per rank + pity.
+    Duplikat (sudah dimiliki) dikonversi menjadi EXP latihan (K2)."""
+    import random as _rnd
+    if is_account_locked(user_id):
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
+    u = get_user(user_id)
+    if not u:
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_user_not_found")}
+    if u["gold"] < SPIN_COST:
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_gold_insufficient", cost=SPIN_COST)}
+
+    state = get_spin_state(user_id)
+    rank = _spin_pick_rank(state["since_epic"], state["since_legendary"])
+    pool = [pid for pid, p in PETS_DATA.items() if p.get("rank") == rank]
+    if not pool:  # pengaman bila pool rank kosong
+        rank = "common"
+        pool = [pid for pid, p in PETS_DATA.items() if p.get("rank") == rank]
+    pet_id = _rnd.choice(pool)
+    pet = PETS_DATA[pet_id]
+
+    conn = get_conn()
+    try:
+        owned = conn.execute(
+            "SELECT id, level FROM user_pets WHERE user_id=? AND pet_id=?", (user_id, pet_id)
+        ).fetchone()
+        conn.execute("UPDATE users SET gold=gold-? WHERE id=?", (SPIN_COST, user_id))
+        is_new = not owned
+        dupe_exp = 0
+        if owned:
+            # K2: duplikat → EXP latihan (50% biaya spin), pet lama aman.
+            dupe_exp = int(SPIN_COST * SPIN_DUPE_EXP_RATIO)
+            add_pet_exp(conn, owned["id"], dupe_exp)
+        else:
+            conn.execute(
+                "INSERT INTO user_pets(user_id, pet_id, hunger, happiness) VALUES(?,?,100,50)",
+                (user_id, pet_id)
+            )
+        # Update state spin & pity
+        hi = PET_RANKS.index(rank)
+        conn.execute("""
+            INSERT INTO pet_spin_state(user_id, spins_total, since_epic, since_legendary)
+            VALUES(?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                spins_total=spins_total+1,
+                since_epic=CASE WHEN ? THEN 0 ELSE since_epic+1 END,
+                since_legendary=CASE WHEN ? THEN 0 ELSE since_legendary+1 END
+        """, (user_id, 1,
+              1 if hi >= PET_RANKS.index("epic") else state["since_epic"] + 1,
+              1 if hi >= PET_RANKS.index("legendary") else state["since_legendary"] + 1,
+              hi >= PET_RANKS.index("epic"), hi >= PET_RANKS.index("legendary")))
+        conn.commit()
+    finally:
+        conn.close()
+    if is_new:
+        check_achievements(user_id, "pet_adopt", 1)
+        recalculate_all_buffs(user_id)
+        msg_key = "db_spin_new"
+    else:
+        msg_key = "db_spin_dupe"
+    return {
+        "ok": True,
+        "msg": tr_db(user_id=user_id, key=msg_key, icon=pet["icon"], name=pet["name"]),
+        "pet_id": pet_id, "icon": pet["icon"], "name": pet["name"],
+        "name_id": pet.get("name_id") or pet["name"],
+        "rank": rank, "is_new": is_new, "dupe_exp": dupe_exp,
+        "cost": SPIN_COST, "odds": SPIN_ODDS,
+    }
+
+def activate_pet_skill(user_id, pet_id):
+    """(K5) Skill aktif pet Legendary/Mythic/Secret: biaya MP user, cooldown
+    per rank, kekuatan skala level pet, efek via vocab buff yang sudah ada."""
+    import time as _time
+    if is_account_locked(user_id):
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_account_locked_msg")}
+    pet_data = PETS_DATA.get(pet_id)
+    if not pet_data:
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_pet_not_found")}
+    rank = pet_data.get("rank", "common")
+    skill = pet_data.get("skill")
+    rank_cfg = PET_SKILL_RANK.get(rank)
+    if not skill or not rank_cfg:
+        return {"ok": False, "code": "no_skill", "msg": tr_db(user_id=user_id, key="db_pet_skill_none")}
+    upet = get_user_pet_by_id(user_id, pet_id)
+    if not upet:
+        return {"ok": False, "msg": tr_db(user_id=user_id, key="db_pet_not_found")}
+    upet = dict(upet)  # Row sqlite → dict agar .get() aman
+    if not upet.get("is_active"):
+        return {"ok": False, "code": "not_equipped", "msg": tr_db(user_id=user_id, key="db_pet_skill_not_equipped")}
+    level = int(upet["level"] or 1)
+    if level < rank_cfg["unlock_level"]:
+        return {"ok": False, "code": "locked",
+                "msg": tr_db(user_id=user_id, key="db_pet_skill_locked", level=rank_cfg["unlock_level"])}
+    now = int(_time.time())
+    last = int(upet.get("skill_used_at") or 0)
+    wait = rank_cfg["cooldown"] - (now - last)
+    if wait > 0:
+        return {"ok": False, "code": "cooldown",
+                "msg": tr_db(user_id=user_id, key="db_pet_skill_cooldown", mins=(wait + 59) // 60),
+                "cooldown_left": wait}
+    u = get_user(user_id)
+    mp_cost = rank_cfg["mp_cost"]
+    if (u.get("mp") or 0) < mp_cost:
+        return {"ok": False, "code": "no_mp", "msg": tr_db(user_id=user_id, key="db_pet_skill_no_mp", cost=mp_cost)}
+
+    power = round(skill["base"] + skill["per_level"] * level, 1)
+    effect = skill["effect"]
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE users SET mp=mp-? WHERE id=?", (mp_cost, user_id))
+        conn.execute("UPDATE user_pets SET skill_used_at=? WHERE id=?", (now, upet["id"]))
+        conn.commit()
+    finally:
+        conn.close()
+
+    if effect == "mp_restore":
+        conn = get_conn()
+        conn.execute("UPDATE users SET mp=MIN(max_mp, mp+?) WHERE id=?", (int(power), user_id))
+        conn.commit(); conn.close()
+    else:
+        buffs = get_skill_buffs(user_id) or {}
+        if effect == "xp_boost":
+            buffs["xp_multiplier"] = 1 + power / 100.0
+            buffs["xp_remaining"] = rank_cfg["actions"]
+        elif effect == "gold_boost":
+            buffs["gold_multiplier"] = 1 + power / 100.0
+            buffs["gold_remaining"] = rank_cfg["actions"]
+        set_skill_buffs(user_id, buffs)
+
+    return {
+        "ok": True, "code": "cast",
+        "msg": tr_db(user_id=user_id, key="db_pet_skill_cast", icon=pet_data["icon"], name=skill.get("name"), power=power),
+        "effect": effect, "power": power, "mp_cost": mp_cost,
+        "cooldown": rank_cfg["cooldown"], "actions": rank_cfg["actions"],
+    }
+
+def get_pet_pokedex(user_id):
+    """(K-L06) Ensiklopedia pet: semua pet + status kepemilikan user."""
+    conn = get_conn()
+    owned_rows = conn.execute(
+        "SELECT pet_id, level FROM user_pets WHERE user_id=?", (user_id,)
+    ).fetchall()
+    conn.close()
+    owned = {r["pet_id"]: int(r["level"] or 1) for r in owned_rows}
+    out = []
+    for pid, p in PETS_DATA.items():
+        out.append({
+            "id": pid, "name": p["name"], "name_id": p.get("name_id") or p["name"],
+            "icon": p["icon"], "rank": p.get("rank", "common"),
+            "bonus": p.get("bonus", ""), "baseBuff": p.get("base_buff", {}),
+            "owned": pid in owned, "level": owned.get(pid),
+            "hasSkill": bool(p.get("skill")),
+        })
+    return out
+
 def max_active_pets(user_level: int) -> int:
     """Slot pet aktif bertingkat (P43): 1 pet di bawah level 25; di level 25
     naik ke 2, lalu +1 tiap kelipatan 5 level di atasnya (25→2, 30→3, 35→4, ...)."""
@@ -5260,23 +5386,17 @@ def train_pet(user_id, pet_id):
     pet_data = PETS_DATA.get(pet_id, {})
     pet_name = pet_data.get('name', f"Pet-{pet_id}")
     
-    cost = 25 + (level - 1) * 5
+    # L05 (v1.7.4, K6): harga & EXP latihan berbasis rank (formula di
+    # pet_training_cost/pet_training_exp — single source of truth).
+    rank = pet_rank(pet_id)
+    cost = pet_training_cost(rank, level)
     if u["gold"] < cost:
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_gold_insufficient", cost=cost)}
     
     needed = level * 100
-    # FIX 8: Random EXP - 30% chance 25% missing XP, 70% chance <25% missing XP
     current_exp = pet["exp"] or 0
     missing = max(1, needed - current_exp)
-    import random as _rnd
-    if _rnd.random() < 0.30:
-        exp_gain = int(missing * 0.25)
-    else:
-        low = int(missing * 0.05)
-        high = int(missing * 0.24)
-        low = max(1, low)
-        high = max(low, high)
-        exp_gain = _rnd.randint(low, high)
+    exp_gain = pet_training_exp(rank, level)
     exp_gain = max(5, exp_gain)
     exp_gain = min(exp_gain, missing)
     
@@ -6333,6 +6453,7 @@ THEMES = {
         "panel": "rgba(24,26,48,0.92)", "border": "rgba(150,140,255,0.24)",
         "accent": "#22d3ee", "accent2": "#8b5cf6", "accent3": "#34d399", "glow": "#a78bfa",
         "text": "#eef0ff", "muted": "#a0a4c8",
+        "on_primary": "#ffffff", "on_accent": "#052530"
     },
     "modern_light": {
         "label": "🌤️ Aurora Light",
@@ -6341,6 +6462,7 @@ THEMES = {
         "panel": "rgba(255,255,255,0.94)", "border": "rgba(124,108,210,0.32)",
         "accent": "#0891b2", "accent2": "#7c3aed", "accent3": "#059669", "glow": "#8b5cf6",
         "text": "#191430", "muted": "#57516b",
+        "on_primary": "#ffffff", "on_accent": "#ffffff"
     },
     "overworld": {
         "label": "🌿 Overworld",
@@ -6349,6 +6471,7 @@ THEMES = {
         "panel": "rgba(16,44,26,0.92)", "border": "rgba(74,222,128,0.24)",
         "accent": "#a3e635", "accent2": "#22c55e", "accent3": "#fbbf24", "glow": "#6ee7b7",
         "text": "#e8f8ee", "muted": "#8fb3a0",
+        "on_primary": "#062b16", "on_accent": "#1a2e05"
     },
     "nether": {
         "label": "🔥 Nether",
@@ -6357,6 +6480,7 @@ THEMES = {
         "panel": "rgba(46,16,20,0.92)", "border": "rgba(248,113,113,0.26)",
         "accent": "#fb923c", "accent2": "#ef4444", "accent3": "#fbbf24", "glow": "#fb7185",
         "text": "#ffecee", "muted": "#b89090",
+        "on_primary": "#ffffff", "on_accent": "#431407"
     },
     "the_end": {
         "label": "🌌 The End",
@@ -6365,6 +6489,7 @@ THEMES = {
         "panel": "rgba(32,20,54,0.92)", "border": "rgba(192,132,252,0.24)",
         "accent": "#818cf8", "accent2": "#a855f7", "accent3": "#e879f9", "glow": "#d8b4fe",
         "text": "#f4ebff", "muted": "#ab99bd",
+        "on_primary": "#ffffff", "on_accent": "#0e1136"
     },
     "ocean": {
         "label": "🌊 Ocean",
@@ -6373,6 +6498,7 @@ THEMES = {
         "panel": "rgba(14,38,58,0.92)", "border": "rgba(56,189,248,0.24)",
         "accent": "#22d3ee", "accent2": "#0ea5e9", "accent3": "#2dd4bf", "glow": "#7dd3fc",
         "text": "#e6f5ff", "muted": "#8fadbf",
+        "on_primary": "#032b3d", "on_accent": "#052530"
     },
     "ancient_city": {
         "label": "🏚️ Ancient City",
@@ -6381,6 +6507,7 @@ THEMES = {
         "panel": "rgba(16,42,44,0.92)", "border": "rgba(45,212,191,0.24)",
         "accent": "#5eead4", "accent2": "#0d9488", "accent3": "#93c5fd", "glow": "#2dd4bf",
         "text": "#e5f7f3", "muted": "#8caca4",
+        "on_primary": "#032e2a", "on_accent": "#04302a"
     },
     # ── I02: 5 tema baru (v1.7.2) ──
     "sakura": {
@@ -6390,6 +6517,7 @@ THEMES = {
         "panel": "rgba(44,20,36,0.92)", "border": "rgba(244,114,182,0.26)",
         "accent": "#fb7185", "accent2": "#ec4899", "accent3": "#c084fc", "glow": "#f9a8d4",
         "text": "#fdeef5", "muted": "#bb93a6",
+        "on_primary": "#4c0519", "on_accent": "#4c0519"
     },
     "desert": {
         "label": "🏜️ Desert",
@@ -6398,6 +6526,7 @@ THEMES = {
         "panel": "rgba(44,28,12,0.92)", "border": "rgba(245,158,11,0.26)",
         "accent": "#fbbf24", "accent2": "#d97706", "accent3": "#fb923c", "glow": "#fcd34d",
         "text": "#fdf3e3", "muted": "#bda37e",
+        "on_primary": "#3f1206", "on_accent": "#451a03"
     },
     "sunflower": {
         "label": "🌻 Sunflower",
@@ -6406,6 +6535,7 @@ THEMES = {
         "panel": "rgba(38,36,12,0.92)", "border": "rgba(250,204,21,0.24)",
         "accent": "#a3e635", "accent2": "#eab308", "accent3": "#fb923c", "glow": "#fde047",
         "text": "#fbf8e7", "muted": "#b3ae7f",
+        "on_primary": "#221c02", "on_accent": "#1a2e05"
     },
     "royal": {
         "label": "👑 Royal",
@@ -6414,6 +6544,7 @@ THEMES = {
         "panel": "rgba(16,24,56,0.92)", "border": "rgba(250,204,21,0.28)",
         "accent": "#facc15", "accent2": "#3b82f6", "accent3": "#f8fafc", "glow": "#fde68a",
         "text": "#f1f4ff", "muted": "#98a2c8",
+        "on_primary": "#0b1e4b", "on_accent": "#422006"
     },
     "graphite": {
         "label": "🖤 Graphite",
@@ -6422,6 +6553,7 @@ THEMES = {
         "panel": "rgba(24,24,27,0.92)", "border": "rgba(226,232,240,0.18)",
         "accent": "#94a3b8", "accent2": "#e2e8f0", "accent3": "#64748b", "glow": "#cbd5e1",
         "text": "#f4f4f5", "muted": "#9d9da5",
+        "on_primary": "#10131a", "on_accent": "#0f172a"
     },
 }
 
@@ -9465,6 +9597,18 @@ ACHIEVEMENTS_REBALANCED = [
     ("Social King", "Miliki 20 teman", "👑", "social", "friend_count", 20, 600, 300),
     ("Focus Overlord", "Selesaikan 200 sesi pomodoro", "⏰", "focus", "pomodoro_sessions", 200, 800, 400),
     ("Craft Legend", "Tempa 10 item di halaman Crafting", "⚒️", "crafting", "craft_count", 10, 800, 350),
+    # ── 🆕 v1.7.4 (L03) — 10 achievement baru (metrik+target unik) ──
+    ("Sang Perintis", "Mencapai level 75", "⛰️", "level", "level_reach", 75, 3000, 1200),
+    ("Seribu Langkah Kecil", "Selesaikan 1.000 habit", "🌋", "habit", "habit_complete", 1000, 4000, 1500),
+    ("Ikon Rutinitas", "Selesaikan 1.000 daily", "📅", "daily", "daily_complete", 1000, 3500, 1400),
+    ("Setahun Penuh Bara", "Pertahankan streak habit 365 hari", "🗓️", "habit", "habit_streak", 365, 5000, 2000),
+    ("Penakluk Misi", "Selesaikan 500 quest", "🗺️", "todo", "todo_complete", 500, 3000, 1200),
+    ("Arsitek Waktu", "Kumpulkan 5.000 menit fokus pomodoro", "⏳", "focus", "pomodoro_minutes", 5000, 2500, 1000),
+    ("Atlet Abadi", "Kumpulkan 10.000 poin olahraga", "🏃", "sport", "sport_points", 10000, 3500, 1500),
+    ("Seratus Hari Bugar", "Pertahankan streak kesehatan 100 hari", "💚", "health", "health_streak", 100, 3000, 1200),
+    ("Sumber Kehidupan", "Capai target minum air 100 hari", "💧", "nutrition", "water_goal", 100, 2000, 800),
+    ("Ahli Gizi Pribadi", "Capai target kalori 100 hari", "🥗", "nutrition", "calorie_goal", 100, 2500, 1000),
+
 ]
 
 def init_achievements():
@@ -10381,6 +10525,29 @@ def redeem_code(user_id, code):
         _mark_redeemed(code_data, user_id)
         return {"ok": True, "msg": tr_db(user_id=user_id, key="db_redeem_item_success", name=item['name'])}
     
+    elif reward_type == "pet":
+        # L03 (v1.7.4): kode redeem berhadiah pet (mis. pet SECRET).
+        # Pet valid = ada di PETS_DATA; sudah dimiliki = kode TIDAK hangus.
+        pet = PETS_DATA.get(reward_item)
+        if not pet:
+            return {"ok": False, "code": "item_fail", "msg": tr_db(user_id=user_id, key="db_redeem_item_fail")}
+        conn2 = get_conn()
+        owned = conn2.execute(
+            "SELECT 1 FROM user_pets WHERE user_id=? AND pet_id=?", (user_id, reward_item)
+        ).fetchone()
+        if owned:
+            conn2.close()
+            return {"ok": False, "code": "pet_owned", "msg": tr_db(user_id=user_id, key="db_pet_already_owned")}
+        conn2.execute(
+            "INSERT INTO user_pets(user_id, pet_id, hunger, happiness) VALUES(?,?,100,50)",
+            (user_id, reward_item)
+        )
+        conn2.commit()
+        conn2.close()
+        check_achievements(user_id, "pet_adopt", 1)
+        _mark_redeemed(code_data, user_id)
+        return {"ok": True, "msg": tr_db(user_id=user_id, key="db_redeem_pet_success", icon=pet['icon'], name=pet['name'])}
+
     else:
         return {"ok": False, "code": "unknown_type", "msg": tr_db(user_id=user_id, key="db_redeem_unknown")}
     

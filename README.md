@@ -9,7 +9,7 @@
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.7.2-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v1.7.4-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -34,9 +34,24 @@ sync and online social features, but the app never requires it.
 
 - **Local first** — one SQLite database, stored on your machine, updated in place.
 - **No fake success** — online actions only complete after the server confirms.
-- **Two languages** — every screen ships in Indonesian and English (4,447 strings).
+- **Two languages** — every screen ships in Indonesian and English (4,613 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
+
+## ✨ What's New in v1.7.4
+
+| Area | Highlights |
+|------|------------|
+| 🎰 Pet gacha | Spin is now the ONLY way to get pets (pet purchases removed from the Shop) — 120 gold/spin, open odds (Common 34% → **Secret 2%**), pity Epic+@10 & Legendary+@30; duplicates convert to training EXP, owned pets never touched |
+| 🐾 39 pets + arena | 25 pets rebalanced into rank tiers + 14 new (incl. 2 Secrets: 🐲 Void Dragon, 🦢 Luminara); Pokémon-style spotlight stage, spin machine, and a full encyclopedia with silhouettes |
+| ⚡ Active pet skills | Legendary/Mythic/Secret only — cost user MP, per-rank cooldowns (30/20/15 min), power scales with pet level |
+| 🍜 Food 874 → 1,074 | +100 foods & +100 drinks, bilingual names, factual macros, zero duplicates (auto-filtered against 1,361 existing names) |
+| ⚒️ Enchant anvil | Enchanting now lives ONLY in the new **Forge** tab (manual enchant removed from the Shop inventory): Minecraft-anvil feel with hammer & sparks, exact buff preview per level; 28 items rebalanced onto a consistent cost/power curve |
+| 🔨 Crafting table | Crafting page rebuilt as a Minecraft-style crafting table — wooden panels, beveled ingredient slots, animated forge arrow, pressable wood button with shake & pop on craft |
+| 💡 Ambient LEDs | Perimeter ambient LED lighting around the app frame (side/bottom rails, corner accents, edge light-spill) — never overlaps content; three motion modes (breathe/chase/twinkle) with a unique signature per page × per theme, cursor-reactive nodes, event brightness waves, and an on/off switch in Settings |
+| 📊 Social pages | Leaderboard top-3 podium, achievement category chips + claimable glow, staggered guild stat cards & friend rows |
+| 🐛 Bug batch | Notes Collapse/Expand-all fixed + state checkpoint + folder search + bigger rows; chart tooltips no longer clip at max values; duplicate popups merged; 12-theme button contrast tokens |
+| 🎁 Database | 3 new redeem codes (incl. `VOIDHATCH` → Secret pet) & 10 new achievements (74 total, id/en) |
 
 ## ✨ What's New in v1.7.2
 
@@ -101,9 +116,9 @@ Year Wrapped report in your own currency.
 done-today indicator, recurring dailies with fail and freeze, one-time quests,
 folders, templates, drag-to-reorder with undo.
 
-**Body** — Workout log with reps chart, food database with meals and macros,
-health logs (steps, sleep, weight, height, mood) with 7-day trends, water goals,
-and a global Pomodoro timer with alarm.
+**Body** — Workout log with reps chart, a 1,074-item bilingual food
+database with meals and macros, health logs (steps, sleep, weight, height,
+mood) with 7-day trends, water goals, and a global Pomodoro timer with alarm.
 
 **Money** — Income/expense tracking, debts with installments, savings,
 investments, subscriptions, multi-currency display, and a supplies inventory.
@@ -122,9 +137,11 @@ search, manual `.lrc`/`.txt` import, and export.
 **Calendar & reminders** — Indonesian holidays (2025–2027), day notes, and
 reminders with sounds, including yearly repeats (29 Feb safely lands on 28 Feb).
 
-**RPG systems** — Shop and 10-slot equipment, crafting and enchanting, pets with
-training and buffs, solo and guild boss battles, achievements, redeem codes,
-and a leaderboard.
+**RPG systems** — Shop and 10-slot equipment; a Minecraft-style crafting
+table; enchanting on an interactive Forge anvil; pets obtained via spin gacha
+(open odds + pity, 39 pets across six ranks incl. Secret, active skills,
+training, buffs, encyclopedia); solo and guild boss battles; achievements;
+redeem codes; and a leaderboard.
 
 **Social** — Friends with full chat (attachments, replies, reactions),
 couple link with a six-tab Love Space (overview, plans, memories, connection,
@@ -133,8 +150,8 @@ notification center.
 
 **Account & settings** — Local login with lockout protection, backup codes, and
 optional app lock. Cloud link with explicit conflict resolution. Themes, font
-scale, high contrast, sound toggle, tracker export/import, scheduled database
-self-care, and working in-app updates.
+scale, high contrast, sound toggle, an ambient-LED effects toggle, tracker
+export/import, scheduled database self-care, and working in-app updates.
 
 ## Getting started
 
@@ -246,8 +263,8 @@ CraftLife/
 ├── cloud_api.py          Cloud HTTP surface for the UI
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
-├── translations.py       UI strings, Indonesian + English (4,447 keys)
-├── updater.py            Auto-update from GitHub Releases (v1.7.2, SHA-256)
+├── translations.py       UI strings, Indonesian + English (4,613 keys)
+├── updater.py            Auto-update from GitHub Releases (v1.7.4, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
 ├── mathtools.py          Math text and LaTeX conversion
@@ -287,7 +304,10 @@ Design docs and phase reports kept in the repo:
 | [RELEASE_NOTES_v1.6.5.md](RELEASE_NOTES_v1.6.5.md) | v1.6.5 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.7.md](RELEASE_NOTES_v1.6.7.md) | v1.6.7 GitHub Release notes |
 | [RELEASE_NOTES_v1.7.2.md](RELEASE_NOTES_v1.7.2.md) | v1.7.2 GitHub Release notes |
+| [RELEASE_NOTES_v1.7.4.md](RELEASE_NOTES_v1.7.4.md) | v1.7.4 GitHub Release notes |
 | [UPDATE_ROADMAP_I01_I07_v1.7.2.md](UPDATE_ROADMAP_I01_I07_v1.7.2.md) | v1.7.2 plan (I01–I07) |
+| [UPDATE_ROADMAP_L01_L10_v1.7.4.md](UPDATE_ROADMAP_L01_L10_v1.7.4.md) | v1.7.4 plan (L01–L10) |
+| [OPERATOR_RELEASE_v1.7.4.md](OPERATOR_RELEASE_v1.7.4.md) | v1.7.4 release operator runbook |
 | [RELEASE_NOTES_v1.7.0.md](RELEASE_NOTES_v1.7.0.md) | v1.7.0 GitHub Release notes |
 | [UPDATE_ROADMAP_H01_H07_v1.7.0.md](UPDATE_ROADMAP_H01_H07_v1.7.0.md) | v1.7.0 plan (H01–H07) |
 | [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |
@@ -334,7 +354,7 @@ places the result in `dist\CraftLife\`. Do not use `--optimize 2` or `--strip`
 (the AI SDK crashes on missing docstrings).
 
 To ship an auto-update (full runbook:
-[OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md)):
+[OPERATOR_RELEASE_v1.7.4.md](OPERATOR_RELEASE_v1.7.4.md)):
 
 1. Zip the **contents** of `dist\CraftLife\` (no `.env`, no `craftlife.db*`).
 2. Draft a GitHub Release with a tag newer than `APP_VERSION`, attach the zip
@@ -357,6 +377,21 @@ To ship an auto-update (full runbook:
 
 Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/releases).
 
+- **v1.7.4 "Spin & Spectrum"** (3–4 Oct 2026) — Content & feel:
+  pets become a full gacha system and the ONLY pet path (spin with open
+  odds + pity, 39 pets incl. 2 Secrets, active skills, Pokémon-style
+  arena + encyclopedia; pet purchases removed from the Shop), food
+  database grows 874 → 1,074, enchanting moves entirely to an
+  interactive Minecraft-style anvil (28 items rebalanced; manual shop
+  enchant removed), the app frame gains perimeter ambient LED lighting
+  (breathe/chase/twinkle signatures per page × 12 themes,
+  cursor-reactive nodes, event brightness waves, Settings toggle), the
+  Crafting page becomes a Minecraft-style crafting table, social pages
+  become interactive (podium, chips, stagger), plus a bug batch (notes
+  folders, chart tooltips, duplicate popups, theme contrast) and a full
+  i18n sweep (4,613 keys). 3 new redeem codes & 10 new achievements.
+  Shipped with in-release revisions rev-B (crafting table, FX toggle,
+  single-path Shop) and rev-C (perimeter LED fix).
 - **v1.7.2 "Signature & Spectrum"** (29 Sep 2026) — UI/UX
   reconstruction: every page gets its own visual signature (SignatureKit +
   `.ct-sig-*` toolkit), theme catalog grows 7 → 12 (five new identities,
@@ -438,6 +473,6 @@ the exact error. Never attach `.env`, `craftlife.db`, or API keys.
 
 **Complete real quests. Keep your data. Level up your life.**
 
-*CraftLife v1.7.2 — "Signature & Spectrum"*
+*CraftLife v1.7.4 — "Spin & Spectrum"*
 
 </div>

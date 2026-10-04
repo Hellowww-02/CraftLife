@@ -2131,9 +2131,14 @@ def _map_inv(row: dict) -> dict:
 
 
 def _map_pet(row: dict) -> dict:
+    # L06 (v1.7.4): meta rank & skill mengalir dari PETS_DATA (source of truth).
+    _pdata = (getattr(db, "PETS_DATA", {}) or {}).get(row.get("pet_id"), {}) or {}
     return {
         "petId": row.get("pet_id"),
         "nickname": row.get("nickname") or row.get("pet_id"),
+        "rank": _pdata.get("rank", "common"),
+        "skill": _pdata.get("skill"),
+        "skillUsedAt": int(row.get("skill_used_at") or 0),
         "level": int(row.get("level") or 1),
         "xp": int(row.get("exp") or row.get("xp") or 0),
         # P25-fix: jangan pakai `or 100` pada hunger — ketika hunger = 0,
@@ -2955,6 +2960,13 @@ class Handler(BaseHTTPRequestHandler):
             "/api/todos": lambda: _api_daily_reset("todos", uid),
             "/api/inventory": lambda: {"ok": True, "inventory": [_map_inv(r) for r in db.get_inventory(uid)]},
             "/api/pets": lambda: {"ok": True, "userPets": [_map_pet(r) for r in db.get_user_pets(uid)]},
+            # L05 (v1.7.4): odds & state spin (ditampilkan apa adanya di UI) + pokedex.
+            "/api/pets/odds": lambda: {"ok": True, "cost": db.SPIN_COST, "odds": db.SPIN_ODDS,
+                                       "pity": {"epic": db.PITY_EPIC, "legendary": db.PITY_LEGENDARY},
+                                       "training": db.PET_TRAINING,
+                                       "skillRanks": db.PET_SKILL_RANK,
+                                       "state": db.get_spin_state(uid)},
+            "/api/pets/pokedex": lambda: {"ok": True, "pets": db.get_pet_pokedex(uid)},
             "/api/achievements": lambda: {"ok": True, "achievements": [_map_ach(a) for a in db.get_user_achievements(uid)]},
             "/api/catalog/shop": lambda: {"ok": True, "items": _shop_catalog()},
             "/api/catalog/pets": lambda: {"ok": True, "pets": _pet_catalog()},
@@ -2999,7 +3011,9 @@ class Handler(BaseHTTPRequestHandler):
                      "panel": v.get("panel") or "", "border": v.get("border") or "",
                      "accent": v.get("accent") or "", "accent2": v.get("accent2") or "",
                      "accent3": v.get("accent3") or "", "glow": v.get("glow") or "",
-                     "text": v.get("text") or "", "muted": v.get("muted") or ""}
+                     "text": v.get("text") or "", "muted": v.get("muted") or "",
+                     # L01 (v1.7.4): token kontras teks-di-atas-aksen per tema.
+                     "on_primary": v.get("on_primary") or "", "on_accent": v.get("on_accent") or ""}
                     for k, v in (db.THEMES or {}).items()
                 ],
             },
@@ -4182,6 +4196,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/pets/unequip":
                 result = db.unequip_pet(uid, body.get("petId"))
+                self._send(200, _ok_payload(uid, result))
+                return
+            # L05 (v1.7.4): gacha spin & skill aktif pet.
+            if path == "/api/pets/spin":
+                result = db.spin_pet(uid)
+                self._send(200, _ok_payload(uid, result))
+                return
+            if path == "/api/pets/skill":
+                result = db.activate_pet_skill(uid, body.get("petId"))
                 self._send(200, _ok_payload(uid, result))
                 return
 

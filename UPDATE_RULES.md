@@ -7,7 +7,7 @@ released. It supersedes any ad-hoc instruction given earlier in a chat session.
 | | |
 |---|---|
 | **Applies to** | CraftLife (`/home/user/CraftLife`) — desktop (PyQt6 + WebEngine), local API, React UI, SQLite, optional Supabase cloud |
-| **Current version** | `v1.6.7` “Performance & Polish” (phase `D01–D05`) |
+| **Current version** | `v1.7.4` “Spin & Spectrum” (revisions ship in-release: keep version, new commit, move tag — §5) |
 | **Owner** | Project maintainer |
 | **Status of this file** | Living document — update it whenever the process itself changes |
 
@@ -24,7 +24,7 @@ released. It supersedes any ad-hoc instruction given earlier in a chat session.
 5. Copy-paste starter for a new session:
 
 ```text
-Repo: /home/user/CraftLife   (CraftLife v1.6.7, phase D01–D05)
+Repo: /home/user/CraftLife   (CraftLife v1.7.4, release revisions follow §5)
 Read and follow UPDATE_RULES.md for this session.
 Request: <what you want fixed or built>, <acceptance criteria>, <scope limits>.
 Deliverable: complete the work, verify it, then report the Ten-Point Phase Report (§3) and the
@@ -45,6 +45,8 @@ in-chat delivery items 1–6 (§4) — concrete, not summaries.
 | P6 | **Never lose user data** | Migrations are idempotent and non-destructive; updates must not overwrite `craftlife.db`, `.env` or user settings |
 | P7 | **Bilingual by default** | Every user-facing string ships in **Indonesian and English** |
 | P8 | **Reproducible releases** | One commit phase, one tag, documented operator steps, deterministic builds |
+| P9 | **Toggleable effects** | Every ambient/decorative effect system (LED lighting, scene FX) must ship with an on/off control in Settings, persist the preference locally, and honor `prefers-reduced-motion` |
+| P10 | **Single monetization path** | When a system moves to a new acquisition path (e.g. pets → spin gacha), the old purchase/enchant entry points are removed from the Shop UI so exactly one path remains; backend helpers may stay only if still used by the new path |
 
 ---
 
@@ -114,6 +116,8 @@ Rules for this section:
 | Commit identity | Use explicit `-c user.name="CraftLife Release" -c user.email="release@craftlife.local"` when the repo has no configured identity |
 | Working tree | Every phase ends with a clean tree (`git status --porcelain` empty). Runtime artifacts (`craftlife.db*`, `logs/`, `_update_state.json`, `learning_audio/`) are never committed |
 | Pushing | The workspace repo has no remote; the report states exactly which files the maintainer must upload and how |
+| **Version anchors** | `updater.py` `APP_VERSION` AND `web/package.json` `version` must always be identical; bump **both** at release close and rebuild the UI, verify before tagging (v1.7.4 rev-D lesson: `web/package.json` lagged at `1.7.2`) |
+| **Same-release revision narrative** | Each revision REVISES the documented narrative in place (README sections, release notes, runbooks) — stale numbers/titles are overwritten, never duplicated or appended |
 
 ---
 
@@ -202,6 +206,10 @@ Current state and the rules that follow from it:
    version afterwards, so success/failure is provable.
 6. **Never ship the developer’s `.env`** — rotate any key that has ever been inside a public archive.
 
+7. **Operator runbook per release.** Each release ships an `OPERATOR_RELEASE_vX.Y.Z.md` carrying the
+   release's own header and narrative (build → zip → checksum → tag → publish → verify → rollback),
+   plus the overwritten/new/removed file list the maintainer must know about. The release-closing chat
+   report references this runbook by header.
 ---
 
 ## 11. Handoff checklist (end of every session)
@@ -210,7 +218,7 @@ Current state and the rules that follow from it:
 - [ ] All ten points (§3) satisfied; items 1–6 delivered in chat (§4)
 - [ ] Verification gates (§7) all green, with the real numbers quoted
 - [ ] `translations.py` + both `messages.json` files updated and identical
-- [ ] `updater.py` changelog entry added; `APP_VERSION` correct for the release
+- [ ] `updater.py` changelog entry added; `APP_VERSION` **and `web/package.json` version** both correct and identical for the release
 - [ ] `README.md` consistent with the shipped version; release history accurate
 - [ ] `RELEASE_NOTES_<version>.md` written or updated
 - [ ] Commit created (single phase commit), tag placed, working tree clean
