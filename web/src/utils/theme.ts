@@ -23,6 +23,8 @@ const VAR_MAP: Array<[keyof ThemePalette, string]> = [
   ['glow', '--ct-glow'],
   ['text', '--ct-text'],
   ['muted', '--ct-muted'],
+  ['on_primary', '--ct-on-primary'],
+  ['on_accent', '--ct-on-accent'],
 ];
 
 export function applyTheme(palette: ThemePalette | null | undefined): void {

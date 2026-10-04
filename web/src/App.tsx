@@ -14,6 +14,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { LoginView } from './components/views/LoginView';
 import { ViewFallback } from './components/ViewFallback';
+import { AmbientLeds } from './components/ui/AmbientLeds';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { t } from './i18n';
@@ -104,6 +105,17 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // v1.7.4 rev: preferensi efek LED ambient (default ON) — dari Settings.
+  useEffect(() => {
+    const applyFx = () => {
+      const off = localStorage.getItem('craftlife_fx_ambient') === '0';
+      document.documentElement.setAttribute('data-fx-leds', off ? 'off' : 'on');
+    };
+    applyFx();
+    window.addEventListener('ct-fx-ambient-change', applyFx);
+    return () => window.removeEventListener('ct-fx-ambient-change', applyFx);
+  }, []);
+
   const renderActiveView = () => {
     switch (activeView) {
       case 'dashboard':
@@ -177,6 +189,9 @@ const MainLayout: React.FC = () => {
         <div className="ct-scene-orbs" />
         <div className="ct-scene-grain" />
       </div>
+
+      {/* v1.7.4 rev: Ambient LED environment — signature per halaman (seed) × tema. */}
+      <AmbientLeds seed={activeView} />
 
       <Navbar
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}

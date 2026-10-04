@@ -394,7 +394,8 @@ html.high-contrast .ct-scene { display: none; }
 .ct-btn-glow {
   position: relative;
   background: linear-gradient(135deg, var(--ct-accent2), var(--ct-accent));
-  color: #fff;
+  /* L01: teks ikut token kontras tema */
+  color: var(--ct-on-accent, #fff);
   border: none;
   box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--ct-accent) 70%, transparent),
               inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -580,7 +581,8 @@ html.high-contrast .ct-scene { display: none; }
     color-mix(in srgb, var(--ct-accent2) 82%, #fff 18%) 0%,
     var(--ct-accent2) 45%,
     color-mix(in srgb, var(--ct-accent2) 80%, #000 20%) 100%);
-  color: #fff;
+  /* L01: teks mengikuti token kontras tema — tidak lagi tenggelam di tema terang */
+  color: var(--ct-on-primary, #fff);
   border-color: color-mix(in srgb, var(--ct-accent2) 60%, #000 40%);
 }
 .ct-btn-primary:not(:disabled):hover {
@@ -1833,8 +1835,351 @@ button.ct-sig-card:focus-visible {
   animation: ct-pop var(--ct-t-fast) var(--ct-ease-spring) backwards;
 }
 .ct-chart-tip-label { display: block; font-size: 9px; font-weight: 700; color: var(--ct-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+/* L01 (v1.7.4): tooltip chart dekat tepi atas → tampil di bawah titik,
+   tidak lagi terpotong layout chart (bug nilai maksimum). */
+.ct-chart-tip--below { transform: translate(-50%, 12px); }
 
 @media (prefers-reduced-motion: reduce) {
   .ct-backdrop, .ct-task-card, .ct-chart-tip, .ct-drop-line { animation: none; }
   .ct-btn-primary::after, .ct-btn-gold::after, .ct-btn-glow::after, .ct-btn-success::after { display: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   v1.7.4 rev-C — AMBIENT LEDS (perimeter): pencahayaan LED di tepi
+   frame lingkungan CraftLife — TIDAK menyentuh konten (fix: rev-B rail
+   melintang di atas halaman). Rail kiri/kanan/bawah + aksen sudut +
+   spill cahaya tipis. 3 mode gerak per halaman (breathe/chase/twinkle),
+   warna/bentuk/tempo per tema, node terdekat kursor menyala, pulse
+   gelombang saat event. Opacity/transform saja; reduced-motion statis;
+   html[data-fx-leds="off"] menyembunyikan seluruh layer.
+   ══════════════════════════════════════════════════════════════════════ */
+.ct-amb {
+  position: fixed; inset: 0; z-index: 3; pointer-events: none;
+  /* pasangan warna aktif dipilih per halaman lewat [data-pair] di bawah */
+  --ct-amb-a: var(--ct-primary);
+  --ct-amb-b: var(--ct-accent);
+  --ct-amb-hi: var(--ct-accent3);
+  --ct-amb-size: 5px;
+  --ct-amb-glow-r: 9px;
+  --ct-amb-tempo: 2.6s;
+}
+html[data-fx-leds="off"] .ct-amb { display: none; }
+.ct-amb[data-pair="1"] { --ct-amb-a: var(--ct-accent); --ct-amb-b: var(--ct-accent3); --ct-amb-hi: var(--ct-glow); }
+.ct-amb[data-pair="2"] { --ct-amb-a: var(--ct-accent3); --ct-amb-b: var(--ct-primary); --ct-amb-hi: var(--ct-accent); }
+.ct-amb[data-pair="3"] { --ct-amb-a: var(--ct-accent2); --ct-amb-b: var(--ct-accent); --ct-amb-hi: var(--ct-accent3); }
+
+/* Rel perimeter — menempel di tepi frame, jauh dari area baca */
+.ct-amb-rail { position: absolute; display: flex; justify-content: space-between; align-items: center; }
+.ct-amb-rail--left   { top: 76px; bottom: 26px; left: 5px;   flex-direction: column; }
+.ct-amb-rail--right  { top: 76px; bottom: 26px; right: 5px;  flex-direction: column; }
+.ct-amb-rail--bottom { left: 22px; right: 22px; bottom: 5px; }
+
+.ct-amb-node {
+  position: relative; flex-shrink: 0;
+  width: var(--ct-amb-size); height: var(--ct-amb-size);
+  border-radius: var(--ct-amb-round, 50%);
+  background: color-mix(in srgb, var(--ct-amb-a) 80%, var(--ct-amb-b));
+  box-shadow: 0 0 var(--ct-amb-glow-r) 1px color-mix(in srgb, var(--ct-amb-a) 62%, transparent);
+  opacity: 0.4; transform: scale(0.8);
+  transition: transform var(--ct-t-fast, 130ms) var(--ct-ease, ease),
+              box-shadow var(--ct-t-fast, 130ms) var(--ct-ease, ease);
+}
+.ct-amb-node--hi {
+  background: var(--ct-amb-hi);
+  box-shadow: 0 0 calc(var(--ct-amb-glow-r) + 3px) 1px color-mix(in srgb, var(--ct-amb-hi) 68%, transparent);
+}
+/* Node yang tersorot kursor — override mode apa pun tanpa !important */
+.ct-amb .ct-amb-node.ct-amb-node--lit {
+  animation: none;
+  opacity: 1; transform: scale(1.5);
+  box-shadow: 0 0 calc(var(--ct-amb-glow-r) + 6px) 2px color-mix(in srgb, var(--ct-amb-b) 80%, transparent);
+}
+
+/* Mode gerak (dipilih per halaman via data-mode) */
+.ct-amb[data-mode="breathe"] .ct-amb-node { animation: ct-amb-breathe var(--ct-amb-tempo) ease-in-out infinite; animation-delay: var(--ct-amb-d, 0ms); }
+.ct-amb[data-mode="chase"]   .ct-amb-node { animation: ct-amb-chase calc(var(--ct-amb-tempo) * 1.15) linear infinite; animation-delay: var(--ct-amb-d, 0ms); }
+.ct-amb[data-mode="twinkle"] .ct-amb-node { animation: ct-amb-twinkle calc(var(--ct-amb-tempo) * 1.3) ease-in-out infinite; animation-delay: var(--ct-amb-d, 0ms); }
+@keyframes ct-amb-breathe {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 0.95; transform: scale(1.12); }
+}
+@keyframes ct-amb-chase {
+  0%, 18% { opacity: 0.3; transform: scale(0.8); }
+  9% { opacity: 1; transform: scale(1.25); }
+  30%, 100% { opacity: 0.3; transform: scale(0.8); }
+}
+@keyframes ct-amb-twinkle {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  12% { opacity: 1; transform: scale(1.18); }
+  24% { opacity: 0.45; transform: scale(0.9); }
+}
+
+/* Gelombang pulse saat event (toast/level-up/craft/spin) */
+.ct-amb-pulsing .ct-amb-node {
+  animation: ct-amb-pulse 0.95s var(--ct-ease, ease) both;
+  animation-delay: calc(var(--ct-amb-d, 0ms) * 0.4);
+}
+@keyframes ct-amb-pulse {
+  0% { opacity: 0.4; transform: scale(0.8); }
+  38% { opacity: 1; transform: scale(1.5); }
+  100% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* Aksen sudut: tiga titik mengecil */
+.ct-amb-corner { position: absolute; display: flex; gap: 6px; }
+.ct-amb-corner--tl { top: 66px; left: 14px; }
+.ct-amb-corner--tr { top: 66px; right: 14px; }
+.ct-amb-corner--br { bottom: 16px; right: 14px; }
+.ct-amb-corner i {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--ct-amb-b);
+  box-shadow: 0 0 7px 1px color-mix(in srgb, var(--ct-amb-b) 60%, transparent);
+  animation: ct-amb-breathe calc(var(--ct-amb-tempo) * 1.25) ease-in-out infinite;
+}
+.ct-amb-corner i:nth-child(2) { animation-delay: 0.5s; opacity: 0.75; }
+.ct-amb-corner i:nth-child(3) { animation-delay: 1s; opacity: 0.55; }
+
+/* Spill cahaya tepi — sangat tipis, hanya gradasi radial statis */
+.ct-amb-spill { position: absolute; opacity: 0.5; }
+.ct-amb-spill--l { top: 76px; bottom: 26px; left: 0; width: 70px;
+  background: radial-gradient(ellipse 75% 50% at 0% 50%, color-mix(in srgb, var(--ct-amb-a) 10%, transparent), transparent 72%); }
+.ct-amb-spill--r { top: 76px; bottom: 26px; right: 0; width: 70px;
+  background: radial-gradient(ellipse 75% 50% at 100% 50%, color-mix(in srgb, var(--ct-amb-b) 10%, transparent), transparent 72%); }
+.ct-amb-spill--b { left: 22px; right: 22px; bottom: 0; height: 56px;
+  background: radial-gradient(ellipse 55% 85% at 50% 100%, color-mix(in srgb, var(--ct-amb-a) 9%, transparent), transparent 70%); }
+
+/* ── 12 tema: bentuk, ukuran, tempo, kekuatan glow ── */
+[data-theme="modern_dark"] .ct-amb { --ct-amb-tempo: 2.4s; --ct-amb-glow-r: 10px; }
+[data-theme="modern_light"] .ct-amb { --ct-amb-size: 4px; --ct-amb-tempo: 3.2s; --ct-amb-glow-r: 6px; }
+[data-theme="overworld"] .ct-amb { --ct-amb-round: 2px; --ct-amb-size: 6px; }
+[data-theme="nether"] .ct-amb { --ct-amb-round: 1px; --ct-amb-tempo: 1.9s; --ct-amb-glow-r: 11px; }
+[data-theme="the_end"] .ct-amb { --ct-amb-tempo: 2.8s; --ct-amb-glow-r: 11px; }
+[data-theme="ocean"] .ct-amb { --ct-amb-round: 40%; --ct-amb-tempo: 3.4s; }
+[data-theme="ancient_city"] .ct-amb { --ct-amb-round: 2px; --ct-amb-tempo: 3s; --ct-amb-glow-r: 10px; }
+[data-theme="sakura"] .ct-amb { --ct-amb-size: 4px; --ct-amb-tempo: 3.1s; --ct-amb-glow-r: 7px; }
+[data-theme="desert"] .ct-amb { --ct-amb-round: 1px; --ct-amb-tempo: 2.7s; }
+[data-theme="sunflower"] .ct-amb { --ct-amb-size: 6px; --ct-amb-tempo: 2.2s; --ct-amb-glow-r: 11px; }
+[data-theme="royal"] .ct-amb { --ct-amb-round: 2px; --ct-amb-tempo: 3.3s; }
+[data-theme="graphite"] .ct-amb { --ct-amb-round: 40%; --ct-amb-size: 4px; --ct-amb-tempo: 3.6s; --ct-amb-glow-r: 5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ct-amb-node, .ct-amb-corner i, .ct-amb-pulsing .ct-amb-node { animation: none; opacity: 0.75; transform: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   L06 (v1.7.4) — PETS BOSS ARENA: panggung pet, mesin spin, ensiklopedia.
+   Animasi transform/opacity saja; masuk sekali lalu statis (P42);
+   prefers-reduced-motion → tanpa animasi.
+   ══════════════════════════════════════════════════════════════════════ */
+.ct-arena-stage {
+  position: relative; overflow: hidden;
+  border-radius: 16px; padding: 28px 16px 22px;
+  background:
+    radial-gradient(ellipse 65% 55% at 50% 108%, color-mix(in srgb, var(--ct-primary) 26%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 30% at 50% 0%, color-mix(in srgb, var(--ct-accent) 14%, transparent), transparent 70%),
+    color-mix(in srgb, var(--ct-bg2) 88%, var(--ct-bg3));
+  border: 1px solid var(--ct-border);
+}
+.ct-arena-spot {
+  position: absolute; inset: auto 0 8px 0; height: 34px; margin: 0 auto;
+  width: 46%; border-radius: 50%;
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--ct-glow) 30%, transparent), transparent 72%);
+}
+.ct-arena-pet { display: flex; flex-direction: column; align-items: center; gap: 10px; position: relative; z-index: 1; }
+.ct-arena-pet-icon {
+  font-size: 64px; line-height: 1;
+  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--ct-rank-c, var(--ct-primary)) 55%, transparent));
+  animation: ct-arena-enter 0.7s var(--ct-ease, ease) both;
+}
+@keyframes ct-arena-enter {
+  0% { opacity: 0; transform: translateY(18px) scale(0.7); }
+  60% { opacity: 1; transform: translateY(-6px) scale(1.06); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ct-rank-badge {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ct-rank-c, #9ca3af);
+  background: color-mix(in srgb, var(--ct-rank-c, #9ca3af) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ct-rank-c, #9ca3af) 45%, transparent);
+  padding: 2px 8px; border-radius: 999px;
+}
+.ct-rank-badge--sm { font-size: 9px; padding: 1px 6px; }
+.ct-rank-badge--secret { animation: none; text-shadow: 0 0 10px color-mix(in srgb, var(--ct-rank-c) 60%, transparent); }
+/* Mesin spin */
+.ct-spin-orb {
+  width: 120px; height: 120px; margin: 4px auto; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 34% 30%, color-mix(in srgb, var(--ct-accent) 34%, var(--ct-bg3)), var(--ct-bg2) 70%);
+  border: 2px solid color-mix(in srgb, var(--ct-primary) 55%, transparent);
+  box-shadow: 0 0 24px -6px color-mix(in srgb, var(--ct-primary) 60%, transparent);
+}
+.ct-spin-orb--on { animation: ct-spin-shake 0.32s linear infinite; }
+.ct-spin-orb--reveal { animation: ct-spin-pop 0.55s var(--ct-ease, ease) both; border-color: var(--ct-rank-c, var(--ct-primary)); }
+@keyframes ct-spin-shake {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(2.4deg) scale(1.03); }
+  75% { transform: rotate(-2.4deg) scale(1.03); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+@keyframes ct-spin-pop {
+  0% { transform: scale(0.8); opacity: 0.4; }
+  55% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.ct-reveal-card {
+  border-radius: 12px; padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--ct-rank-c, var(--ct-primary)) 55%, transparent);
+  background: color-mix(in srgb, var(--ct-rank-c, var(--ct-primary)) 10%, var(--ct-bg2));
+  animation: ct-reveal-in 0.5s var(--ct-ease, ease) both;
+}
+@keyframes ct-reveal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ct-dex-silhouette { filter: brightness(0) opacity(0.45); }
+@media (prefers-reduced-motion: reduce) {
+  .ct-arena-pet-icon, .ct-spin-orb--on, .ct-spin-orb--reveal, .ct-reveal-card { animation: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   L07 (v1.7.4) — ENCHANT ANVIL (EnchantForge): palu mengayun + percikan
+   saat menempa; kilat hijau saat sukses. Animasi sekali per aksi
+   (transform/opacity), reduced-motion → statis.
+   ══════════════════════════════════════════════════════════════════════ */
+.ct-forge-stage {
+  position: relative; width: 200px; height: 170px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+}
+.ct-forge-anvil { font-size: 56px; line-height: 1; filter: grayscale(0.25) brightness(0.9); }
+.ct-forge-item {
+  font-size: 44px; line-height: 1; margin-bottom: -6px; z-index: 2;
+  filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--ct-primary) 55%, transparent));
+}
+.ct-forge-hammer {
+  position: absolute; top: 6px; right: 26px; font-size: 34px; z-index: 3;
+  transform-origin: 80% 80%;
+}
+.ct-forge-sparks { position: absolute; bottom: 44px; left: 0; right: 0; display: flex; justify-content: center; gap: 14px; }
+.ct-forge-sparks i { width: 5px; height: 5px; border-radius: 50%; background: var(--ct-accent); opacity: 0; }
+.ct-forge-stage--on .ct-forge-hammer { animation: ct-forge-swing 0.42s var(--ct-ease, ease) infinite; }
+.ct-forge-stage--on .ct-forge-item { animation: ct-forge-tap 0.42s var(--ct-ease, ease) infinite; }
+.ct-forge-stage--on .ct-forge-sparks i { animation: ct-forge-spark 0.42s var(--ct-ease, ease) infinite; }
+.ct-forge-stage--on .ct-forge-sparks i:nth-child(2) { animation-delay: 0.08s; }
+.ct-forge-stage--on .ct-forge-sparks i:nth-child(3) { animation-delay: 0.16s; }
+.ct-forge-stage--on .ct-forge-sparks i:nth-child(4) { animation-delay: 0.24s; }
+.ct-forge-stage--ok .ct-forge-item { animation: ct-forge-flash 0.9s var(--ct-ease, ease) both; }
+@keyframes ct-forge-swing {
+  0% { transform: rotate(0deg); }
+  45% { transform: rotate(-52deg); }
+  60% { transform: rotate(8deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes ct-forge-tap {
+  0%, 38% { transform: translateY(0) scale(1); }
+  52% { transform: translateY(3px) scale(0.96); }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes ct-forge-spark {
+  0%, 40% { opacity: 0; transform: translateY(0); }
+  55% { opacity: 1; transform: translateY(-10px); }
+  100% { opacity: 0; transform: translateY(-22px); }
+}
+@keyframes ct-forge-flash {
+  0% { filter: drop-shadow(0 0 0 transparent) brightness(1); transform: scale(1); }
+  35% { filter: drop-shadow(0 0 18px color-mix(in srgb, var(--ct-accent3) 80%, transparent)) brightness(1.5); transform: scale(1.12); }
+  100% { filter: drop-shadow(0 4px 12px color-mix(in srgb, var(--ct-primary) 55%, transparent)) brightness(1); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ct-forge-stage--on .ct-forge-hammer, .ct-forge-stage--on .ct-forge-item,
+  .ct-forge-stage--on .ct-forge-sparks i, .ct-forge-stage--ok .ct-forge-item { animation: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   L08 (v1.7.4) — Toolkit interaktivitas halaman sosial: stagger masuk,
+   hover-lift kartu, sorot claimable. Transform/opacity; reduced-motion
+   → tanpa animasi (R4).
+   ══════════════════════════════════════════════════════════════════════ */
+.ct-stagger { animation: ct-stagger-in 0.45s var(--ct-ease, ease) both; animation-delay: calc(var(--ct-stag-i, 0) * 45ms); }
+@keyframes ct-stagger-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.ct-card-lift { transition: transform var(--ct-t-fast, 130ms) var(--ct-ease, ease), border-color var(--ct-t-fast, 130ms); }
+.ct-card-lift:hover { transform: translateY(-3px); }
+.ct-claimable {
+  border-color: color-mix(in srgb, var(--ct-accent) 70%, transparent);
+  box-shadow: 0 0 20px -6px color-mix(in srgb, var(--ct-accent) 60%, transparent);
+}
+.ct-podium { display: flex; align-items: flex-end; justify-content: center; gap: 10px; }
+.ct-podium-card {
+  flex: 1; max-width: 200px; text-align: center; border-radius: 14px; padding: 12px 8px;
+  background: color-mix(in srgb, var(--ct-bg2) 85%, var(--ct-bg3));
+  border: 1px solid color-mix(in srgb, var(--ct-podium-c, var(--ct-accent)) 55%, transparent);
+  animation: ct-stagger-in 0.5s var(--ct-ease, ease) both;
+  animation-delay: calc(var(--ct-stag-i, 0) * 120ms);
+}
+.ct-podium-medal { font-size: 26px; line-height: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .ct-stagger, .ct-podium-card { animation: none; }
+  .ct-card-lift:hover { transform: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   v1.7.4 rev — CRAFTING TABLE (gaya Minecraft): panel kayu, slot bevel,
+   panah tempa, tombol kayu. Nada coklat = seni game (meja craft), bukan
+   chrome tema. Animasi transform/opacity; reduced-motion → statis.
+   ══════════════════════════════════════════════════════════════════════ */
+.ct-craft-table {
+  border-radius: 14px; padding: 16px;
+  background:
+    linear-gradient(180deg, #7a5230 0%, #6b4527 55%, #5d3b20 100%);
+  border: 3px solid #3f2a17;
+  box-shadow: inset 0 2px 0 rgba(255, 235, 200, 0.14), inset 0 -3px 0 rgba(0, 0, 0, 0.28),
+    0 10px 24px -12px rgba(0, 0, 0, 0.6);
+}
+.ct-craft-table--on { animation: ct-craft-shake 0.3s linear infinite; }
+.ct-craft-grid { display: flex; flex-wrap: wrap; gap: 6px; max-width: 240px; }
+.ct-craft-slot {
+  width: 56px; height: 56px; border-radius: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: linear-gradient(180deg, #4a3018, #3c2713);
+  border: 2px solid; border-color: #2c1c0d #8a6238 #8a6238 #2c1c0d; /* bevel inset */
+  transition: transform var(--ct-t-fast, 120ms) var(--ct-ease, ease);
+}
+.ct-craft-slot:hover { transform: scale(1.06); }
+.ct-craft-slot-name { font-size: 8px; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+.ct-craft-slot--ok .ct-craft-slot-name { color: #6ee7a0; }
+.ct-craft-slot--miss { border-color: #7f1d1d; }
+.ct-craft-slot--miss .ct-craft-slot-name { color: #fda4af; }
+.ct-craft-arrow { font-size: 26px; font-weight: 900; color: #fcd34d; text-shadow: 0 2px 0 rgba(0,0,0,0.4); }
+.ct-craft-arrow--on { animation: ct-craft-push 0.4s ease-in-out infinite; }
+.ct-craft-result {
+  width: 68px; height: 68px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #3a2512, #2c1c0d);
+  border: 3px solid; border-color: #241608 #93683c #93683c #241608;
+}
+.ct-craft-result--ready { box-shadow: 0 0 16px -2px rgba(252, 211, 77, 0.55); }
+.ct-craft-result--pop { animation: ct-craft-pop 0.7s var(--ct-ease, ease); }
+.ct-craft-btn {
+  border-radius: 8px; padding: 8px 18px;
+  font-size: 11px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #fff8e7; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, #a5713d 0%, #8a5a2c 60%, #74481f 100%);
+  border: 2px solid #3f2a17; box-shadow: 0 3px 0 #3f2a17;
+  transition: transform var(--ct-t-fast, 100ms) var(--ct-ease, ease), box-shadow var(--ct-t-fast, 100ms) var(--ct-ease, ease);
+}
+.ct-craft-btn:not(:disabled):hover { filter: brightness(1.08); }
+.ct-craft-btn:not(:disabled):active { transform: translateY(2px); box-shadow: 0 1px 0 #3f2a17; }
+@keyframes ct-craft-shake {
+  0% { transform: rotate(0); } 25% { transform: rotate(0.4deg); }
+  75% { transform: rotate(-0.4deg); } 100% { transform: rotate(0); }
+}
+@keyframes ct-craft-push {
+  0%, 100% { transform: translateX(0); opacity: 0.8; }
+  50% { transform: translateX(6px); opacity: 1; }
+}
+@keyframes ct-craft-pop {
+  0% { transform: scale(0.75); } 55% { transform: scale(1.14); } 100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ct-craft-table--on, .ct-craft-arrow--on, .ct-craft-result--pop { animation: none; }
 }

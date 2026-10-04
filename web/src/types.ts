@@ -249,6 +249,10 @@ export interface UserPet {
   hunger: number; // 0 to 100
   isEquipped: boolean;
   adoptedAt: string;
+  /** L05/L06 (v1.7.4): meta gacha — mengalir dari PETS_DATA via API. */
+  rank?: string;
+  skill?: { key: string; name: string; name_id?: string; effect: string; base: number; per_level: number } | null;
+  skillUsedAt?: number;
 }
 
 export interface Boss {
@@ -732,4 +736,7 @@ export interface ThemePalette {
   glow: string;
   text: string;
   muted: string;
+  /** L01 (v1.7.4): warna teks di atas isian primary/accent (kontras terjamin). */
+  on_primary?: string;
+  on_accent?: string;
 }
