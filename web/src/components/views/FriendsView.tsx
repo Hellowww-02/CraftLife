@@ -274,8 +274,8 @@ export const FriendsView: React.FC = () => {
       {(friendRequests || []).length > 0 && (
         <section className="ct-panel p-4 space-y-2">
           <h3 className="text-sm font-black text-slate-100">{tr('friends_pending')}</h3>
-          {friendRequests.map((req: any) => (
-            <div key={req.id} className="flex items-center gap-2 text-xs">
+          {friendRequests.map((req: any, ri: number) => (
+            <div key={req.id} style={{ ['--ct-stag-i' as any]: Math.min(ri, 8) }} className="ct-stagger ct-card-lift flex items-center gap-2 text-xs rounded-lg p-1">
               <span className="text-2xl">⚔️</span>
               <span className="flex-1">
                 <b className="text-slate-100">{req.name || req.displayName}</b>

@@ -1682,7 +1682,7 @@ export const LearningView: React.FC = () => {
               <NotebookIconPicker value={newNbIcon} onChange={setNewNbIcon} label={tr('learning_icon_label', 'Emoji Icon')} />
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setShowNewNbModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+              <button onClick={() => setShowNewNbModal(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">{tr('btn_cancel', 'Cancel')}</button>
               <button onClick={() => { if (!newNbTitle.trim()) return; addNotebook(newNbTitle.trim(), newNbDesc.trim(), newNbIcon); setShowNewNbModal(false); setNewNbTitle(''); setNewNbDesc(''); setNewNbIcon('📚'); }} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-xs font-semibold text-white rounded-xl">{tr('create_notebook', 'Create Notebook')}</button>
             </div>
           </div>
@@ -1827,7 +1827,7 @@ export const LearningView: React.FC = () => {
               {newSourceMode === 'text' ? (<div><label className="block text-xs font-bold text-slate-400 mb-1">{tr('content_text', 'Content / Text')}</label><textarea rows={6} value={newSourceContent} onChange={(e) => setNewSourceContent(e.target.value)} placeholder={tr('learning_source_content_ph', 'Paste notes, textbook paragraphs, or document content here...')} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100 text-xs focus:outline-none focus:border-violet-500 font-mono" /></div>) : (<div><label className="block text-xs font-bold text-slate-400 mb-1">{newSourceMode === 'youtube' ? tr('learning_add_youtube', 'YouTube') : tr('learning_add_website', 'Website')} URL</label><input type="url" value={newSourceUrl} onChange={(e) => setNewSourceUrl(e.target.value)} placeholder={tr('learning_url_ph', 'https://…')} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-slate-100 text-sm focus:outline-none focus:border-violet-500" /><p className="text-[10px] text-slate-500 mt-1">{trq('learning_add_url_prompt', { type: newSourceMode === 'youtube' ? tr('learning_add_youtube', 'YouTube') : tr('learning_add_website', 'Website') }, 'Tempel URL')}</p>{sourceErr && (<p className="text-[11px] text-rose-400 mt-1">{sourceErr}</p>)}</div>)}
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => { setShowNewSourceModal(false); setSourceErr(''); }} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">Cancel</button>
+              <button onClick={() => { setShowNewSourceModal(false); setSourceErr(''); }} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl">{tr('btn_cancel', 'Cancel')}</button>
               <button onClick={handleSaveSource} disabled={savingSource} className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-xs font-semibold text-white rounded-xl">{savingSource ? tr('learning_fetching_source', 'Mengambil…') : newSourceMode === 'text' ? tr('save_source', 'Save Source') : tr('learning_fetch_save', 'Ambil & simpan')}</button>
             </div>
           </div>

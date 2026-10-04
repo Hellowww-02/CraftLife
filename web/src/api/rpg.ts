@@ -37,6 +37,11 @@ export const rpg = {
   trainPet: (petId: string) => apiPost<any>('/api/pets/train', { petId }),
   equipPet: (petId: string) => apiPost<any>('/api/pets/equip', { petId }),
   unequipPet: (petId: string) => apiPost<any>('/api/pets/unequip', { petId }),
+  // L05/L06 (v1.7.4): gacha spin, skill aktif, odds & ensiklopedia.
+  spinPet: () => apiPost<any>('/api/pets/spin', {}),
+  castPetSkill: (petId: string) => apiPost<any>('/api/pets/skill', { petId }),
+  getPetOdds: () => apiGet<any>('/api/pets/odds'),
+  getPetPokedex: () => apiGet<any>('/api/pets/pokedex'),
   startBoss: (bossId: string) => apiPost<any>('/api/boss/start', { bossId }),
   attackBoss: (action: string) => apiPost<any>('/api/boss/attack', { action }),
   fleeBoss: () => apiPost<any>('/api/boss/flee', {}),

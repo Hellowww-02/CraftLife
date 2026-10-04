@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { t } from '../i18n';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { rpg } from '../api/rpg';
@@ -95,8 +96,8 @@ export const DashboardWidgetsDialog: React.FC<{ onClose: () => void }> = ({ onCl
           </div>
         )}
         <div className="flex items-center justify-end gap-2 pt-1">
-          <button onClick={onClose} className="ct-btn ct-btn-secondary ct-btn-sm">Batal</button>
-          <button onClick={save} disabled={saving || cfg.length === 0} className="ct-btn ct-btn-primary ct-btn-sm">Simpan</button>
+          <button onClick={onClose} className="ct-btn ct-btn-secondary ct-btn-sm">{t('btn_cancel', 'Batal')}</button>
+          <button onClick={save} disabled={saving || cfg.length === 0} className="ct-btn ct-btn-primary ct-btn-sm">{t('btn_save', 'Simpan')}</button>
         </div>
       </div>
     </div>

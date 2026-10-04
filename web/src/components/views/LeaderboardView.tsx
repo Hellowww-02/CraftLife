@@ -143,7 +143,27 @@ export const LeaderboardView: React.FC = () => {
       )}
 
       {mode === 'local' || !cloudLinked ? (
-        <div className="ct-reveal ct-panel rounded-2xl overflow-hidden overflow-x-auto">
+        <>
+          {/* L08 (v1.7.4): podium top-3 — kartu medal dengan stagger masuk. */}
+      {mode === 'local' && !loading && rows.length >= 3 && (
+        <div className="ct-podium" aria-label="Top 3">
+          {[rows[1], rows[0], rows[2]].map((r, k) => {
+            const place = k === 1 ? 1 : k === 0 ? 2 : 3;
+            const medal = place === 1 ? '🥇' : place === 2 ? '🥈' : '🥉';
+            const col = place === 1 ? '#fbbf24' : place === 2 ? '#cbd5e1' : '#d97706';
+            return (
+              <div key={r.id} className="ct-podium-card"
+                   style={{ ['--ct-stag-i' as any]: k, ['--ct-podium-c' as any]: col, transform: place === 1 ? undefined : 'scale(0.94)' }}>
+                <span className="ct-podium-medal" aria-hidden="true">{medal}</span>
+                <p className="text-xs font-black text-slate-100 truncate mt-1">{r.displayName || r.username}</p>
+                <p className="text-[10px] text-slate-400 font-mono">Lv.{r.level} · {Number(r.gold).toFixed(0)} G</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+<div className="ct-reveal ct-panel rounded-2xl overflow-hidden overflow-x-auto">
           <table className="w-full text-xs min-w-[680px]">
             <thead className="bg-slate-900 text-slate-400">
               <tr>
@@ -159,7 +179,8 @@ export const LeaderboardView: React.FC = () => {
                 return (
                   <tr
                     key={r.id}
-                    className={`border-t border-slate-800 transition-colors hover:bg-slate-800/40 ${isSelf ? 'bg-emerald-950/60 text-emerald-200' : 'text-slate-200'}`}
+                    style={{ ['--ct-stag-i' as any]: Math.min(i, 12) }}
+                    className={`ct-stagger border-t border-slate-800 transition-colors hover:bg-slate-800/40 ${isSelf ? 'bg-emerald-950/60 text-emerald-200' : 'text-slate-200'}`}
                   >
                     <td className="p-2 font-bold">
                       {i + 1 <= 3 ? (
@@ -211,6 +232,7 @@ export const LeaderboardView: React.FC = () => {
             </tbody>
           </table>
         </div>
+        </>
       ) : (
         <div className="ct-reveal ct-panel rounded-2xl overflow-hidden overflow-x-auto">
           <table className="w-full text-xs min-w-[520px]">

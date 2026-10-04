@@ -242,7 +242,10 @@ export function LineChart({ data, width = 320, height = 160, color = '#34d399', 
         )}
       </svg>
       {hp && (
-        <div className="ct-chart-tip" style={{ left: hp.x, top: hp.y }}>
+        /* L01: tooltip clamp horizontal + flip ke bawah bila titik dekat tepi
+           atas (bug lama: nilai maksimum tertutup layout chart). */
+        <div className={`ct-chart-tip${hp.y < 46 ? ' ct-chart-tip--below' : ''}`}
+             style={{ left: Math.max(36, Math.min(resolved - 36, hp.x)), top: hp.y }}>
           <span className="ct-chart-tip-label">{hp.point.label}</span>
           {fv(hp.point.value)}
         </div>
@@ -361,7 +364,9 @@ export function DualLineChart({
         )}
       </svg>
       {hov !== null && (hA || hB) && (
-        <div className="ct-chart-tip" style={{ left: pad + (hov * innerW) / Math.max(1, n - 1), top: Math.min(hA?.y ?? 999, hB?.y ?? 999) }}>
+        /* L01: clamp + flip tooltip dua seri. */
+        <div className={`ct-chart-tip${Math.min(hA?.y ?? 999, hB?.y ?? 999) < 52 ? ' ct-chart-tip--below' : ''}`}
+             style={{ left: Math.max(44, Math.min(resolved - 44, pad + (hov * innerW) / Math.max(1, n - 1))), top: Math.min(hA?.y ?? 999, hB?.y ?? 999) }}>
           <span className="ct-chart-tip-label">{lbl(hov)}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 7, height: 7, borderRadius: 99, background: colorA, display: 'inline-block' }} />
@@ -436,7 +441,9 @@ export function BarChart({ data, width = 320, height = 160, color = '#34d399', l
         })}
       </svg>
       {hd && hov !== null && (
-        <div className="ct-chart-tip" style={{ left: pad + hov * (barW + barGap) + barW / 2, top: hY }}>
+        /* L01: clamp + flip tooltip batang. */
+        <div className={`ct-chart-tip${hY < 46 ? ' ct-chart-tip--below' : ''}`}
+             style={{ left: Math.max(36, Math.min(resolved - 36, pad + hov * (barW + barGap) + barW / 2)), top: hY }}>
           <span className="ct-chart-tip-label">{hd.label}</span>
           {fmtChartVal(hd.value)}
         </div>

@@ -44,7 +44,12 @@ export const NotesView: React.FC<NotesViewProps> = () => {
   const [currentNoteId, setCurrentNoteId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // L01 (v1.7.4): checkpoint collapse/expand — dipulihkan dari localStorage dan
+  // disimpan tiap perubahan (local-first, tanpa migrasi skema).
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    try { const raw = localStorage.getItem('craftlife_notes_folders_v1'); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+  });
+  const [folderSearch, setFolderSearch] = useState('');
 
   // ── Editor state ──
   const [editTitle, setEditTitle] = useState('');
@@ -82,6 +87,30 @@ export const NotesView: React.FC<NotesViewProps> = () => {
     sortRec(roots);
     return roots;
   }, [noteFolders]);
+
+  // L01: simpan checkpoint collapse/expand tiap berubah.
+  useEffect(() => {
+    try { localStorage.setItem('craftlife_notes_folders_v1', JSON.stringify(expanded)); } catch { /* storage penuh — abaikan */ }
+  }, [expanded]);
+
+  // L01: kumpulkan SEMUA ID folder (rekursif) — dasar Expand/Collapse all yang benar.
+  const allFolderIds = useMemo(() => {
+    const ids: string[] = [];
+    const walk = (list: FolderNode[]) => { for (const n of list) { ids.push(n.id); walk(n.children); } };
+    walk(tree);
+    return ids;
+  }, [tree]);
+
+  // L01: search folder — node tampil bila namanya cocok ATAU punya keturunan yang
+  // cocok; selama mencari, semua yang tampil dipaksa terbuka.
+  const folderQuery = folderSearch.trim().toLowerCase();
+  const folderTree = useMemo(() => {
+    if (!folderQuery) return tree;
+    const filterRec = (list: FolderNode[]): FolderNode[] =>
+      list.map((n) => ({ ...n, children: filterRec(n.children) }))
+          .filter((n) => n.name.toLowerCase().includes(folderQuery) || n.children.length > 0);
+    return filterRec(tree);
+  }, [tree, folderQuery]);
 
   // Parity _get_all_subfolder_ids (rekursif).
   const subtreeIds = (rootId: string): string[] => {
@@ -317,22 +346,23 @@ export const NotesView: React.FC<NotesViewProps> = () => {
 
   // ── Render folder tree recursive ──
   const renderFolder = (node: FolderNode, depth: number) => {
-    const isOpen = expanded[node.id] !== false;
+    // L01: saat search folder aktif, semua hasil dipaksa terbuka.
+    const isOpen = folderQuery ? true : expanded[node.id] !== false;
     const selected = String(currentFolderId) === node.id;
     const hasKids = node.children.length > 0;
     return (
       <div key={node.id}>
         <div
-          className={`group flex items-center gap-1 py-1.5 pr-1 rounded-lg cursor-pointer text-xs ${selected ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:bg-slate-800/70 border border-transparent'}`}
-          style={{ paddingLeft: `${6 + depth * 14}px` }}
+          className={`group flex items-center gap-1.5 py-2 pr-1 rounded-lg cursor-pointer text-[13px] ${selected ? 'bg-cyan-950/60 text-cyan-300 border border-cyan-500/40' : 'text-slate-300 hover:bg-slate-800/70 border border-transparent'}`}
+          style={{ paddingLeft: `${8 + depth * 16}px` }}
           onClick={() => { setCurrentFolderId(parseInt(node.id) || -1); setCurrentNoteId(null); }}
         >
           <button
-            className="w-4 shrink-0 text-slate-500 hover:text-slate-200"
+            className="w-5 shrink-0 text-slate-500 hover:text-slate-200"
             onClick={(e) => { e.stopPropagation(); setExpanded((x) => ({ ...x, [node.id]: !isOpen })); }}
             tabIndex={-1}
           >
-            {hasKids ? (isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />) : ' '}
+            {hasKids ? (isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />) : ' '}
           </button>
           <span className="shrink-0">{node.icon}</span>
           <span className="truncate flex-1 font-semibold">{node.name}</span>
@@ -438,11 +468,21 @@ export const NotesView: React.FC<NotesViewProps> = () => {
             <div className="flex items-center justify-between mb-1.5 px-1">
               <span className="text-[11px] font-bold text-slate-400">{t('notes_folder_label', 'Folder')}</span>
               <div className="flex gap-1">
-                <button onClick={() => setExpanded(Object.fromEntries(tree.map((n) => [n.id, true])))} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-slate-200">{t('expand_all', 'Expand')}</button>
-                <button onClick={() => setExpanded({})} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-slate-200">{t('collapse_all', 'Collapse')}</button>
+                <button onClick={() => setExpanded(Object.fromEntries(allFolderIds.map((id) => [id, true])))} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-slate-200">{t('expand_all', 'Expand')}</button>
+                <button onClick={() => setExpanded(Object.fromEntries(allFolderIds.map((id) => [id, false])))} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-slate-200">{t('collapse_all', 'Collapse')}</button>
               </div>
             </div>
-            <div className="max-h-56 overflow-y-auto pr-1">
+            {/* L01: search folder baru */}
+            <div className="relative mb-1.5 px-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                value={folderSearch}
+                onChange={(e) => setFolderSearch(e.target.value)}
+                placeholder={t('notes_folder_search', 'Cari folder…')}
+                className="ct-input w-full rounded-lg pl-8 pr-2 py-1.5 text-xs text-slate-100"
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto pr-1">
               {/* "Semua Catatan" (-1) & "Tanpa Folder" (0) parity item khusus */}
               <button
                 onClick={() => { setCurrentFolderId(-1); setCurrentNoteId(null); }}
@@ -456,7 +496,10 @@ export const NotesView: React.FC<NotesViewProps> = () => {
                 📄 <span className="truncate">{t('notes_no_folder', 'Tanpa Folder')}</span>
                 <span className="ml-auto text-[10px] text-slate-500">{notes.filter((n) => !n.folderId && (showArchived || !n.isArchived)).length}</span>
               </button>
-              {tree.map((n) => renderFolder(n, 0))}
+              {folderTree.map((n) => renderFolder(n, 0))}
+              {folderQuery && folderTree.length === 0 && (
+                <p className="text-[11px] text-slate-500 px-2 py-2">{t('notes_folder_search_empty', 'Tidak ada folder yang cocok.')}</p>
+              )}
             </div>
           </div>
 

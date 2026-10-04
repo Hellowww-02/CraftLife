@@ -427,6 +427,7 @@ export const GuildView: React.FC = () => {
 
       {/* Stat cards (parity _make_stats) */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+        {/* L08: kartu statistik guild dengan stagger masuk. */}
         {[
           [tr('guild_stats_level'), tr('guild_stats_level_value', { level: guild.level || 1 }), 'text-lime-400'],
           [tr('guild_stats_members'), tr('guild_stats_members_value', { count: memberCount }), 'text-sky-400'],
@@ -435,7 +436,9 @@ export const GuildView: React.FC = () => {
           [tr('guild_stats_bonus_damage'), tr('guild_stats_bonus_damage_value', { damage: guild.buffDamage ?? 0 }), 'text-rose-400'],
           [tr('guild_stats_bonus_crit'), tr('guild_stats_bonus_crit_value', { crit: guild.critChance ?? 0 }), 'text-violet-400'],
         ].map(([title, value, color], i) => (
-          <div key={i} className="rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-center">
+          /* L08 (v1.7.4): kartu statistik masuk berurutan + hover-lift. */
+          <div key={i} style={{ ['--ct-stag-i' as any]: i }}
+               className="ct-stagger ct-card-lift rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-center">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">{title}</div>
             <div className={`text-sm font-black ${color}`}>{value}</div>
           </div>

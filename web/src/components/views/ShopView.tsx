@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { PageSignature } from '../ui/SignatureKit';
 import { NumberInput } from '../NumberInput';
+import { EnchantForge } from './EnchantForge';
 import { useGame } from '../../context/GameContext';
 import { liveShopItems, livePets } from '../../data/liveCatalog';
 import { t } from '../../i18n';
@@ -46,7 +47,9 @@ export const ShopView: React.FC = () => {
   const SHOP_ITEMS = liveShopItems() as Record<string, any>;
   const PETS_DATA = livePets() as Record<string, any>;
 
-  const [tab, setTab] = useState<'items' | 'pets' | 'inventory'>('items');
+  // v1.7.4 rev: pembelian PET dihapus dari shop (jalur satu-satunya: SPIN di
+// halaman Pets); enchant manual dipindah penuh ke tab Forge/Anvil.
+const [tab, setTab] = useState<'items' | 'inventory' | 'enchant'>('items');
   // H05 (v1.7.0): sub-tab kategori item (frontend murni — data katalog sama).
   const [shopCat, setShopCat] = useState<string>('all');
   const [sellDlg, setSellDlg] = useState<{ inv: any; it: any } | null>(null);
@@ -93,12 +96,12 @@ export const ShopView: React.FC = () => {
 
       {/* Tabs (parity _tabs items/pets) */}
       <div className="inline-flex rounded-2xl bg-slate-900 border border-slate-800 p-1 gap-1">
-        {(['items', 'pets', 'inventory'] as const).map((tb) => (
+        {(['items', 'inventory', 'enchant'] as const).map((tb) => (
           <button key={tb} type="button" onClick={() => setTab(tb)}
             className={`ct-tab ${tab === tb
               ? 'ct-tab-on ct-tab-gold'
               : ''}`}>
-            {tb === 'items' ? tr('shop_tab_items') : tb === 'pets' ? tr('shop_tab_pets') : tr('shop_tab_inventory')}
+            {tb === 'items' ? tr('shop_tab_items') : tb === 'inventory' ? tr('shop_tab_inventory') : tr('shop_tab_enchant')}
           </button>
         ))}
       </div>
@@ -200,27 +203,10 @@ export const ShopView: React.FC = () => {
                           {tr('shop_sell')}
                         </button>
                         <span className="text-[10px] text-slate-500">{tr('shop_sell_price', { gold: sellPriceOf(cost) })}</span>
-                        {/* Enchanting (parity _enchant, equipment saja) */}
-                        {equipTypesWithEnchant(it.type) && (
-                          <>
-                            {elvl > 0 && (
-                              <span className="text-[11px] font-bold text-violet-400">{tr('enchant_level_tag', { lvl: elvl })}</span>
-                            )}
-                            {elvl >= 5 ? (
-                              <span className="text-[10px] font-bold text-violet-400">{tr('enchant_max_tag')}</span>
-                            ) : (
-                              <button type="button" onClick={() => {
-                                const c = enchantCost(elvl);
-                                if ((user.xp || 0) < c) return;
-                                enchantItem(it.id);
-                              }}
-                                className="ct-btn ct-btn-primary ct-btn-sm h-[30px] rounded-xl text-[11px] disabled:opacity-40"
-                                disabled={(user.xp || 0) < enchantCost(elvl)}
-                                title={(user.xp || 0) < enchantCost(elvl) ? tr('db_enchant_no_xp', { cost: enchantCost(elvl) }) : undefined}>
-                                {tr(elvl > 0 ? 'enchant_btn' : 'enchant_first_btn', { lvl: elvl + 1, cost: enchantCost(elvl) })}
-                              </button>
-                            )}
-                          </>
+                        {/* v1.7.4 rev: enchant manual DIPINDAH penuh ke tab ⚒️ Tempa
+                            (EnchantForge); tag level tetap tampil sebagai info. */}
+                        {equipTypesWithEnchant(it.type) && elvl > 0 && (
+                          <span className="text-[11px] font-bold text-violet-400">{tr('enchant_level_tag', { lvl: elvl })}</span>
                         )}
                       </>
                     )}
@@ -311,45 +297,9 @@ export const ShopView: React.FC = () => {
       )}
 
       {/* ── TAB PETS (3 kolom) ── */}
-      {tab === 'pets' && (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {Object.entries(PETS_DATA).map(([pid, pet]: [string, any]) => {
-            const owned = ownedPetIds.has(pid);
-            const active = activePetIds.has(pid);
-            return (
-              <div key={pid} className="ct-task-card p-3 rounded-2xl flex flex-col gap-1.5 text-center">
-                <span className="text-3xl">{pet.icon}</span>
-                <span className="text-xs font-bold text-slate-100">{pet.name}</span>
-                <p className="text-[10px] font-bold text-cyan-300 leading-relaxed">{pet.bonus}</p>
-                {owned ? (
-                  active ? (
-                    <>
-                      <span className="text-[11px] font-bold text-cyan-300">{tr('shop_active')}</span>
-                      <button type="button" onClick={() => unequipPet(pid)}
-                        className="h-[30px] rounded-xl bg-rose-900/50 hover:bg-rose-900/80 text-rose-200 text-[11px] font-bold">
-                        {tr('shop_unequip')}
-                      </button>
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => equipPet(pid)}
-                      className="h-[30px] rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold">
-                      {tr('shop_equip')}
-                    </button>
-                  )
-                ) : (
-                  <>
-                    <span className="text-xs font-black text-amber-400">💰 {pet.cost} G</span>
-                    <button type="button" onClick={() => adoptPet(pid)} disabled={gold < (pet.cost || 0)}
-                      className="ct-btn ct-btn-gold ct-btn-sm h-[30px] rounded-xl text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed">
-                      {tr('shop_adopt')}
-                    </button>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </section>
-      )}
+      {/* L07 (v1.7.4): sub-tab ANVIL — enchant interaktif (jalur lama di
+          inventory tetap ada; ini tambahan, bukan penggantian). */}
+      {tab === 'enchant' && <EnchantForge />}
 
       {/* SellDialog (parity _sell_item) */}
       {sellDlg && (

@@ -163,7 +163,7 @@ interface GameContextType {
   equipItem: (itemId: string) => void;
   unequipItem: (itemId: string) => void;
   craftItem: (recipeResultId: string) => boolean;
-  enchantItem: (itemId: string) => void;
+  enchantItem: (itemId: string) => Promise<any>; // L07: hasil utk animasi paron
 
   // Pets
   userPets: UserPet[];
@@ -173,6 +173,10 @@ interface GameContextType {
   trainPet: (petId: string) => void;
   equipPet: (petId: string) => void;
   unequipPet: (petId: string) => void;
+  /** L06 (v1.7.4): gacha spin — return hasil mentah utk animasi reveal. */
+  spinPet: () => Promise<any>;
+  /** L06 (v1.7.4): cast skill aktif pet (Legendary+). */
+  castPetSkill: (petId: string) => Promise<any>;
 
   // Boss Combat
   activeBoss: Boss | null;
@@ -737,9 +741,18 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [lang, soundEnabled, activeTheme]);
 
+  // L01 (v1.7.4): dedup pop-up — toast identik dalam jendela 1.5s dianggap satu
+  // (bug lama: 2 popup pesan sama muncul karena call-site ganda).
+  const lastToastRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
   const showToast = useCallback((type: 'success' | 'damage' | 'level_up' | 'info' | 'boss', title: string, message: string) => {
+    const key = `${type}|${title}|${message}`;
+    const now = Date.now();
+    if (lastToastRef.current.key === key && now - lastToastRef.current.at < 1500) return;
+    lastToastRef.current = { key, at: now };
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, type, title, message }]);
+    // L04 (v1.7.4): event global → strip LED halaman berdenyut sekali.
+    window.dispatchEvent(new CustomEvent('ct-led-pulse'));
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
@@ -1203,8 +1216,15 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return true;
   }, [applyLive, notifyApiErr])
 
-  const enchantItem = useCallback((itemId: string) => {
-    rpg.enchantItem(itemId).then((res) => applyLive(res)).catch((e) => showToast('info', String(e?.message || e), ''));
+  const enchantItem = useCallback(async (itemId: string) => {
+    try {
+      const res = await rpg.enchantItem(itemId);
+      if (res?.result?.ok ?? res?.ok) applyLive(res);
+      return res;
+    } catch (e) {
+      showToast('info', String((e as any)?.message || e), '');
+      throw e;
+    }
   }, [applyLive, showToast])
 
   // Pets
@@ -1239,6 +1259,20 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     rpg.startBoss(bossId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
+
+  // L06 (v1.7.4): spin gacha — snapshot langsung dipakai utk reveal; error
+  // API ditangani pemanggil (PetsView) agar bisa menampilkan pesan gagal.
+  const spinPet = useCallback(async () => {
+    const res = await rpg.spinPet();
+    if (res?.result?.ok) applyLive(res);
+    return res?.result;
+  }, [applyLive]);
+
+  const castPetSkill = useCallback(async (petId: string) => {
+    const res = await rpg.castPetSkill(petId);
+    if (res?.result?.ok) applyLive(res);
+    return res?.result;
+  }, [applyLive]);
 
   const attackBoss = useCallback((action: string | boolean = 'light') => {
     const act = action === true ? 'heavy' : action === false ? 'light' : String(action || 'light');
@@ -2010,6 +2044,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         trainPet,
         equipPet,
         unequipPet,
+        spinPet,
+        castPetSkill,
         activeBoss,
         activeBossHp,
         startBossFight,

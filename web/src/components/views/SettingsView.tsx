@@ -275,6 +275,8 @@ export const SettingsView: React.FC = () => {
   const [currency, setCurrency] = useState(String(user.currency || 'IDR'));
   const [fontScale, setFontScale] = useState(Number(user.fontScale || 100));
   const [highContrast, setHighContrast] = useState(Boolean((user as any).highContrast));
+  // v1.7.4 rev: preferensi efek ambient LED (localStorage, default ON).
+  const [fxAmbient, setFxAmbient] = useState(() => localStorage.getItem('craftlife_fx_ambient') !== '0');
   const [dbPath, setDbPath] = useState('');
   const [appVersion, setAppVersion] = useState('');
 
@@ -745,6 +747,27 @@ export const SettingsView: React.FC = () => {
           </label>
         </div>
         <p className="text-[11px] text-slate-500">{t('a11y_font_apply_hint', 'Perubahan skala font diterapkan setelah muat ulang.')}</p>
+      </div>
+
+      {/* ===== v1.7.4 rev: EFEK VISUAL — on/off ambient LED ===== */}
+      <div className="ct-panel p-5 space-y-3">
+        <h3 className="font-bold text-xs text-slate-300 uppercase tracking-wider">{t('settings_fx_title', 'Efek Visual')}</h3>
+        <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+          <input
+            type="checkbox"
+            className="accent-emerald-500 w-4 h-4"
+            checked={fxAmbient}
+            onChange={(e) => {
+              const v = e.target.checked;
+              localStorage.setItem('craftlife_fx_ambient', v ? '1' : '0');
+              document.documentElement.setAttribute('data-fx-leds', v ? 'on' : 'off');
+              window.dispatchEvent(new CustomEvent('ct-fx-ambient-change'));
+              setFxAmbient(v);
+            }}
+          />
+          {t('settings_fx_ambient', 'Lampu ambient LED')}
+          <span className="text-[11px] text-slate-500">{t('settings_fx_ambient_desc', 'Pencahayaan LED dekoratif di lingkungan aplikasi (per halaman × tema).')}</span>
+        </label>
       </div>
 
       {/* ===== Parity SettingsPage: ADMIN panel (is_admin gated) ===== */}

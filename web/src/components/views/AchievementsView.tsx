@@ -107,18 +107,25 @@ export const AchievementsView: React.FC = () => {
           placeholder={t('achievement_search', '🔍 Cari achievement...')}
           className="ct-input flex-1 px-3 py-2.5 rounded-xl text-slate-100 text-sm focus:border-transparent"
         />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="ct-input px-3 py-2.5 rounded-xl text-slate-100 text-sm capitalize focus:border-transparent"
-        >
-          <option value="all">{t('achievement_all', 'Semua')}</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {t(`achievement_category_${c}`, c)}
-            </option>
+        {/* L08 (v1.7.4): chip kategori klik — interaksi lebih hidup dari dropdown. */}
+        <div className="flex gap-1.5 flex-wrap" role="tablist" aria-label={t('achievement_all', 'Kategori')}>
+          {['all', ...CATEGORIES].map((c) => (
+            <button
+              key={c}
+              type="button"
+              role="tab"
+              aria-selected={category === c}
+              onClick={() => setCategory(c)}
+              className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold capitalize cursor-pointer transition-colors ${
+                category === c
+                  ? 'ct-btn ct-btn-primary'
+                  : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              {t(`achievement_category_${c}`, c === 'all' ? t('achievement_all', 'Semua') : c)}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -128,7 +135,7 @@ export const AchievementsView: React.FC = () => {
         </div>
       ) : (
         <div className="ct-reveal grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((a) => {
+          {filtered.map((a, ai) => {
             const pct = Math.max(
               0,
               Math.min(100, Math.round((a.currentProgress / Math.max(1, a.targetProgress)) * 100)),
@@ -136,7 +143,10 @@ export const AchievementsView: React.FC = () => {
             return (
               <div
                 key={a.id}
-                className={`rounded-2xl p-4 border flex flex-col gap-2 transition-all ${
+                style={{ ['--ct-stag-i' as any]: Math.min(ai, 14) }}
+                className={`ct-stagger ct-card-lift rounded-2xl p-4 border flex flex-col gap-2 transition-all ${
+                  a.isUnlocked && !a.isClaimed ? 'ct-claimable ' : ''
+                }${
                   a.isUnlocked
                     ? 'ct-ach-gold bg-slate-900 border-amber-500/50'
                     : 'ct-ach-locked bg-slate-900/70 border-slate-800'

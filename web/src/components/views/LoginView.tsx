@@ -47,7 +47,7 @@ export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {
       const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const res = await apiPost<any>(path, { username, password, displayName, ...(mode === 'register' ? { bio, avatarClass } : {}) });
       if (!res?.ok) {
-        setError(res?.error || res?.result?.msg || 'Gagal');
+        setError(res?.error || res?.result?.msg || t('web_login_failed_fallback', 'Gagal masuk'));
         return;
       }
       if (res.token) {
