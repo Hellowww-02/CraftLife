@@ -144,7 +144,281 @@ from pathlib import Path
 # lonceng notifikasi, E03 timer tidur musik, E04 focus trap 13 dialog, F01 50
 # makanan + F02 50 minuman baru (katalog 774->874, seed otomatis idempoten),
 # F03 sortir grid nutrisi + preset porsi. i18n: +5 key -> total 4.447.
-APP_VERSION = "1.7.4"
+#
+# M02 (2026-10-06): test suite + CI established before any refactor (roadmap
+#   K20). No feature or schema change, so APP_VERSION is unchanged at 1.7.4.
+#   Before this entry the repository had 0 Python tests and 0 frontend tests.
+#   Added: tests/ (73 tests, stdlib unittest only — no new third-party test
+#   dependency, per §8), packages/craftlife-core vitest suite (33 tests over
+#   currency.ts and serverClock.ts), scripts/verify_gates.py implementing the
+#   ten §7 gates plus the K22 version anchors and the §9 secrets rule, and
+#   .github/workflows/ci.yml which runs that runner.
+#   Product fix found by the new suite: settings_fx_title, settings_fx_ambient
+#   and settings_fx_ambient_desc were used by the P9 ambient-LED toggle but
+#   never registered, so English users fell back to Indonesian. i18n:
+#   +3 keys -> total 4,616, still identical across id and en.
+#   Bundle unchanged: entry index-CGxT26e0.js 462.61 kB / gzip 144.89 kB.
+#
+# M03 (2026-10-06): row-level sync prerequisites (G3 + G4). Purely additive
+#   schema work, so APP_VERSION is unchanged at 1.7.4 and no Supabase migration
+#   is added. All 41 tables that take part in personal sync (the 40
+#   EXPORT_TABLES plus debt_notes) gain uuid, rev, updated_at and deleted_at,
+#   a UNIQUE index on uuid, per-user (user_id, deleted_at) and
+#   (user_id, updated_at) indexes, and an AFTER INSERT trigger that stamps uuid
+#   and updated_at. SQLite auto-migration only: columns are added by
+#   _safe_alter inside init_db(), so an existing database picks them up on next
+#   launch and rows already present are backfilled once (WHERE uuid IS NULL),
+#   which makes repeated launches a no-op. No integer primary key is altered,
+#   and nothing reads the new columns yet.
+#   Closes G3 (integer PKs are remapped on import, so entity identity was not
+#   stable across devices) and G4 (no tombstone, so deletes could not
+#   propagate). G10 stays open on purpose: adding debt_notes to EXPORT_TABLES
+#   was measured to break cloud restore for every existing user, and the
+#   obvious workaround would silently delete local debt notes instead.
+#   Cost, recorded as a G5 risk: the four columns add ~111 bytes per row,
+#   +44.8% on the test snapshot, which projects to +21.2 MB at the 200,000-row
+#   ceiling against the 8 MB hard cap.
+#
+# M04 (2026-10-07 .. 2026-10-08): sync engine, channels A and B (closes G1 and
+#   G4). Staged over four commits; APP_VERSION stays 1.7.4 because nothing here
+#   is a user-visible release on its own — the sync engine is infrastructure
+#   that M05+ builds on.
+#   M04a: append-only channel for the 7 measured log tables (food_logs,
+#     water_logs, health_logs, task_history, pomodoro_sessions, sport_rep_logs,
+#     supplies_tx). The roadmap named 9; measurement of which tables are truly
+#     append-only with no user-entity FK said 7, and the measurement won.
+#     Supabase migration 20261007000000_phase_m04a_entity_channel_a.sql.
+#   M04b: row-level 3-way merge for all 34 mutable tables. Applying a cloud
+#     snapshot now MERGES per field instead of replacing the document, so a
+#     habit edited on Desktop and a meal logged on Android both survive.
+#     Deletes propagate through an AFTER DELETE trigger into sync_tombstones
+#     rather than by rewriting 47 delete sites and ~361 queries to filter
+#     deleted_at (measured cost of the roadmap's literal wording, and the
+#     reason for that approved deviation). Supabase migration
+#     20261008000000_phase_m04b_entity_channel_b.sql.
+#   Foreign-key fix (same day): PRAGMA foreign_keys is a no-op inside a
+#     transaction, so init_db()'s attempt to re-enable it was silently ignored
+#     and the pooled connection ran with foreign keys OFF for the whole process
+#     lifetime — no constraint enforcement and no ON DELETE CASCADE, which also
+#     meant cascaded children were never tombstoned. The same in-transaction
+#     pragma sat in six finally blocks. Fixed by committing before the pragma;
+#     ForeignKeyEnforcementTest pins it (4 of 6 fail when the bug is restored).
+#   M04c: sync status panel and a recoverable conflict surface. Also fixed
+#     cloud_api._sync_out(), which called itself with no base case and raised
+#     RecursionError on every call, making /api/cloud/sync-now,
+#     /migrate-local and /conflict unable to return anything at all. That bug
+#     predates M04 entirely (first commit). i18n: +21 keys -> 4,637, still
+#     identical across id and en. Python suite 131 -> 180 tests.
+# M05a (2026-10-11): identity layer untuk CraftLife Rules API. Tahap pertama
+#   dari M05 yang dipecah jadi a-e (identity -> scoping -> rate limit/audit ->
+#   store abstraction -> deployment). Tidak ada perubahan skema, tidak ada
+#   migrasi Supabase, dan APP_VERSION tetap 1.7.4.
+#   rules_auth.py memverifikasi Supabase JWT dengan pustaka standar saja (HS256;
+#   §8 melarang dependensi baru, jadi kunci asimetris ditolak dengan kode
+#   unsupported_alg, bukan diterima diam-diam). Identitas jadi per-request lewat
+#   contextvars, karena _state["user_id"] bersifat global proses dan dua user
+#   akan saling menimpa begitu layanan ini multi-tenant.
+#   Penting untuk desktop: strict mode MATI secara default dan hanya aktif bila
+#   CRAFTLIFE_JWT_SECRET di-set. Selama itu tidak di-set, tidak satu pun jalur
+#   local-only yang berubah perilaku (P1/P4) — dan itu dipaku oleh tes, bukan
+#   hanya diklaim.
+#   Python 193 -> 240 tests.
+# M05b (2026-10-11): tenant scoping untuk Rules API. Tahap kedua M05.
+#   Menguji kriteria penerimaan "JWT user A -> tidak pernah membaca data user B"
+#   secara empiris: setiap tabel ber-user_id diisi satu baris ber-sentinel milik
+#   user B, lalu sebagai user A seluruh 301 route GET yang dipakai client web
+#   dipanggil dan badan responsnya dipindai. Hasil: 0 kebocoran di 58 tabel.
+#   Tidak ada perubahan kode produk di tahap ini - pengukurannya yang baru, dan
+#   pengukurannya ternyata menunjukkan scoping yang ada sudah benar.
+#   Satu peringatan yang tertanam di tes: food_items bersifat hibrida
+#   (is_custom=0 adalah katalog bawaan 1.074 makanan yang memang dibagikan).
+#   Probe versi pertama menandainya sebagai bocor; itu salah probe, bukan salah
+#   produk, dan "memperbaiki" query-nya akan merusak katalog semua pengguna.
+#   Python 240 -> 247 tests. Tidak ada perubahan skema, tidak ada migrasi.
+# M05c (2026-10-11): rate limiting, audit logging, dan penutupan debug endpoint.
+#   Tahap ketiga M05. Ketiga hal ini diukur TIDAK ADA sebelumnya, dan semuanya
+#   jadi berbahaya begitu layanan internet-facing (R5).
+#   rules_guard.py: token bucket per identitas (fallback ke IP) dengan ember
+#   berukuran tetap dan kunci basi dibuang; batas dipasang SEBELUM auth supaya
+#   banjaran tanpa identitas pun terkena. Audit log menulis method/path/status/
+#   ip untuk operasi mutating dan kegagalan saja - isi request TIDAK PERNAH
+#   disimpan karena body bisa berisi kata sandi dan data kesehatan, dan itu
+#   dipaku oleh tes yang memeriksa skema, bukan hanya perilaku.
+#   /api/admin/debug dinonaktifkan di Rules API (404): di layanan multi-tenant
+#   tidak ada "admin" yang sah untuk memberi diri sendiri XP/gold lewat HTTP
+#   (K9). Di desktop tetap ada - itu alat milik pengguna sendiri, dan
+#   menghilangkannya akan jadi regresi P4.
+#   /api/version tidak lagi membocorkan path absolut database di strict mode.
+#   Skema SQLite: tabel baru rules_audit_log (auto-migrate di init_db, idempoten).
+#   Tidak ada migrasi Supabase. Python 247 -> 287 tests.
+#   Batasan yang dinyatakan jujur: rate limiter in-memory per-proses. Dengan
+#   lebih dari satu replika batasnya jadi N x konfigurasi dan butuh store
+#   bersama - itu keputusan deployment (M05e), bukan sesuatu yang dipalsukan.
+# M05d (2026-10-11): lapisan penyimpanan, domain pertama = cloud.
+#   cloud_api.py memanggil database.<fungsi> langsung di 25 tempat. Selama hanya
+#   ada satu penyimpanan itu tidak salah - hanya menutup pintu: menukar SQLite
+#   ke Postgres di sisi server berarti menyunting setiap pemanggilan sekaligus,
+#   dalam satu perubahan yang tidak bisa diuji per bagian (R3 bertemu R5).
+#   storage.py menaruh 16 operasi di satu antarmuka. SqliteCloudStorage murni
+#   delegasi: tidak ada logika, tidak ada perubahan perilaku (P4). Domain kini
+#   memanggil store.get_cloud_user_link(uid), bukan database.get_cloud_user_link(uid).
+#   cloud_api.py tidak lagi mengimpor database sama sekali, dan itu dipaku oleh
+#   tes AST - kalau ada yang menambahkannya lagi, build gagal.
+#   Yang TIDAK diverifikasi: tidak ada adapter Postgres di sini. Kode produksi
+#   tidak punya driver Postgres dan §8 melarang dependensi baru, jadi "bisa
+#   ditukar" masih kemungkinan struktural, bukan sesuatu yang pernah dijalankan.
+#   Adapter dan keputusan penyimpanannya milik M05e.
+#   tests/harness.py: "storage" ditambahkan ke _DB_DEPENDENTS. Tanpa itu,
+#   cloud_api yang diimpor ulang menarik storage LAMA yang masih menunjuk
+#   DB_PATH yang sudah dihapus.
+#   Tidak ada perubahan skema, tidak ada migrasi. Python 287 -> 306 tests.
+# Audit Pemeliharaan Data (2026-10-11): fitur diaudit, tidak ada bug produk.
+#   Semua 7 operasi diuji lewat HTTP sungguhan dan semuanya bekerja: status,
+#   set retensi (5 nilai sah + 3 ditolak), set auto, set jadwal (3 sah + 1
+#   ditolak), checkpoint (membebaskan 1,5 MB), VACUUM, dan purge.
+#   Tiga janji yang tertulis di UI-nya sendiri diverifikasi sebagai janji:
+#   file backup BENAR-BENAR ada di disk (1,8 MB), kelima tabel data master
+#   utuh, dan riwayat yang masih dalam retensi selamat di 9 tabel.
+#   Keterbatasan yang ditemukan dan DIPAKU sebagai batas yang diketahui, bukan
+#   diperbaiki diam-diam: jadwal auto-purge hanya diperiksa saat configure(),
+#   yaitu sekali per login desktop. Aplikasi yang dibiarkan menyala berminggu-
+#   minggu tanpa login ulang tidak memeriksa ulang jadwalnya, jadi "Harian"
+#   pada praktiknya berarti "tiap kali login". Untuk desktop yang dibuka-tutup
+#   tiap hari itu setara.
+#   Tidak ada perubahan kode produk. Python 306 -> 348 tests.
+# Backup tracker ke cloud (2026-10-12): menutup lubang P6 di sisi cloud.
+#   Paket gratis Supabase tidak punya backup otomatis. Backup lokal yang sudah
+#   ada hanya menyelamatkan SQLite di satu perangkat; ia tidak menolong kalau
+#   perangkat itu hilang atau database cloud-nya bermasalah.
+#   Harian, otomatis, dipicu saat login (bersama auto-purge, thread terpisah
+#   supaya kegagalan satu tidak membatalkan yang lain). Snapshot 40 tabel
+#   dikompresi gzip lalu diunggah ke bucket privat `tracker-backups` di folder
+#   milik pengguna. Rotasi menyimpan 14 terbaru.
+#   Keamanan: policy storage owner-only di KEEMPAT operasi, termasuk SELECT.
+#   Sengaja tidak meniru profile-photos yang membolehkan setiap pengguna
+#   terautentikasi membaca objek siapa pun - isi satu backup adalah seluruh
+#   data pribadi pengguna.
+#   Admin: backup diizinkan (baca-saja, bukan vektor curang), restore tetap
+#   ditolak (menulis). Ekspor biasa tidak berubah perilaku sama sekali.
+#   Restore membuat backup LOKAL lebih dulu, dan menolak path di luar folder
+#   pemanggil maupun path traversal.
+#   Migrasi Supabase baru: 20261012000000_tracker_backups_bucket.sql (19 -> 20).
+#   SQLite: 2 kolom baru di maintenance_state (last_backup_at, backup_auto).
+#   Enam operasi baru lewat lapisan storage M05d, bukan panggilan database
+#   langsung. Python 348 -> 484 tests.
+#   Permukaan UI: panel "Backup Cloud" di Settings (status backup terakhir,
+#   jumlah cadangan, toggle otomatis, tombol Backup Sekarang, daftar cadangan
+#   dengan tombol Pulihkan). 15 key i18n dwibahasa baru (4637 -> 4652).
+#   Key `settings_backup_now` sudah dipakai tombol backup database lokal, jadi
+#   tombol cloud memakai `settings_backup_cloud_now` - menimpanya akan mengganti
+#   label fitur lain.
+# M09a (2026-10-22): pet gacha menjadi server-authoritative (roadmap M09
+#   tahap 1, K13). Spin untuk pengguna cloud-linked tidak lagi diundi client:
+#   migrasi Supabase 20261022000000_phase_m09a_pet_gacha_server.sql (21
+#   migrasi) menambah katalog pets_server (39 pet, seed dari PETS_DATA),
+#   cloud_user_pets, cloud_pet_spin_state, log idempoten cloud_pet_spins,
+#   dan RPC spin_pet_cloud/fetch_cloud_pets dengan konstanta persis jalur
+#   lokal (biaya 120, odds 34/26/18/12/8/2, pity 10/30, duplikat 60 EXP).
+#   Gold dipotong lewat reward_ledger (spend_gold), baris state dikunci
+#   FOR UPDATE agar dua device tidak bisa mengundi paralel, dan key yang
+#   sama memutar ulang hasil pertama. Desktop: /api/pets/spin bercabang ke
+#   cloud_api.pets_cloud_spin bila terhubung cloud; hasil server
+#   dicerminkan ke user_pets/pet_spin_state lokal (nilai absolut, aman
+#   diterapkan ulang) + cache cloud_pets_cache/cloud_pet_spin_state_cache.
+#   Pengguna local-only tidak berubah sama sekali (spin lokal, P1).
+#   APP_VERSION tetap 1.7.4 (rilis v2.0.0 milik M14). Python 484 -> 496 tes
+#   (+12 M09a, termasuk pembaruan fake storage M05d). Yang BELUM
+#   diverifikasi: migrasi belum diterapkan ke Supabase live dan RPC belum
+#   dijalankan terhadap Postgres sungguhan - itu langkah operator.
+# M09b (2026-10-22): talents, achievements, dan reward boss menjadi
+#   server-authoritative + P10. Migrasi 20261022010000_phase_m09b_
+#   talents_achievements_boss_server.sql (22 migrasi): constraint sumber
+#   ledger diperluas ('pet_spin' dari M09a + 'boss_local'), katalog
+#   talents_server (30) & bosses_server (16), cloud_user_talents +
+#   unlock_talent_cloud (validasi class/level/poin/prasyarat persis
+#   can_unlock_talent), cloud_user_achievements + claim achievement kini
+#   mensyaratkan catatan unlock server, dan claim_boss_reward_cloud
+#   (angka dari katalog dibagi member_count; satu key satu klaim).
+#   Desktop: unlock_talent & claim_boss_reward mengantre perintah Kanal C
+#   (talent_unlock/boss_reward, prioritas drain 70), handler sync_service
+#   memanggil RPC-nya dan mencatat unlock sebelum klaim achievement;
+#   boss_rewards menyimpan member_count (kolom baru, baris lama default 1);
+#   GET /api/profile/talents menyegarkan talent dari cloud bila terhubung.
+#   P10: jalur beli pet langsung dihapus dari UI (PyQt ShopPage + web
+#   GameContext/rpg/ShopView) — pet hanya dari spin. db.adopt_pet dan
+#   route /api/pets/adopt dipertahankan (bukan UI). Batas yang dicatat:
+#   member_count guild LOKAL dilaporkan client (guild lokal tidak ada di
+#   server); boss guild cloud sudah otoritatif sejak Phase 4C.
+#   APP_VERSION tetap 1.7.4. Python 496 -> 512 tes (+16 M09b).
+# M09c (2026-10-23): layar RPG Android — Pets (koleksi + spin), Shop
+#   (katalog beli + inventaris pakai/equip/jual), Crafting (resep +
+#   enchant), Achievements (progres + klaim). Tanpa endpoint baru: semua
+#   memakai route yang sudah ada (GET /api/pets, /api/pets/odds,
+#   /api/catalog/{shop,pets,recipes}, /api/inventory, /api/achievements;
+#   POST /api/pets/spin, /api/shop/{buy,sell,use,equip,craft,enchant},
+#   /api/achievements/{id}/claim). Perintah Kanal C tidak diantrekan
+#   offline — server yang memutuskan; katalog pet digabung ke koleksi
+#   karena _map_pet tidak membawa nama/ikon. 3 kunci i18n mobile baru
+#   (4.700 -> 4.703). Android vitest 245 -> 252 (+7 model RPG).
+# M10 (2026-10-23): Social di Android sekaligus — hub Social, Friends +
+#   Chat (balas + reaksi + indikator mengetik), Guild lokal & online,
+#   PvP, Leaderboard, Love Space 6 tab, Notifications. Mayoritas route
+#   sosial SUDAH mengalir lewat api_server (life_api -> studio_api ->
+#   cloud_api), jadi yang baru di server hanyalah jembatan cloud di
+#   cloud_api: GET /api/cloud/guild-online + 15 aksi POST (role/transfer/
+#   ban/kick/chat/boss), notifikasi sosial cloud, heartbeat presence, dan
+#   registrasi token push. Push memakai Supabase sebagai "kantor pos":
+#   migrasi device_push_tokens (23 migrasi) + RPC register_push_token
+#   (auth.uid()) + Edge Function send-push yang memanggil FCM HTTP v1.
+#   Token FCM hanya lahir dari google-services.json milik pemilik proyek
+#   (Firebase Console) — tanpa file itu registrasi berhenti diam-diam dan
+#   aplikasi tetap jalan. 14 kunci i18n mobile baru (4.703 -> 4.717).
+#   Python 512 -> 520 tes (+8 M10), Android vitest 252 -> 259 (+7).
+# M11 (2026-10-23): Offline & reliabilitas. (1) Plafon 8 MB snapshot
+#   personal DIHAPUS (G5 tertutup): dokumen besar dipecah menjadi part
+#   tracker_v1/part/NNN (<= 3 MB) yang digabung penerima hanya bila satu
+#   generasi lengkap; migrasi 20261023010000 melonggarkan validasi
+#   document_key RPC (24 migrasi). Dokumen kecil tidak berubah perilaku.
+#   (2) Backoff desktop & Android kini ber-jitter deterministik +0..20%
+#   agar job gagal bersamaan tidak menyerbu server saat jaringan pulih.
+#   (3) Cache Android berpagar: maks 2.000 baris/jenis & 10.000 total,
+#   yang terlama dibuang setelah sync (cache adalah salinan, bukan arsip).
+#   (4) Recovery UI di Settings Android: job mati bisa diantrekan ulang,
+#   konflik cloud diputuskan dari ponsel, sesi kedaluwarsa diarahkan ke
+#   login. Tes: Python 520 -> 529 (+9), Android vitest 259 -> 266 (+7,
+#   termasuk simulasi airplane/force-kill/reinstall). 5 kunci i18n baru
+#   (4.717 -> 4.722). APP_VERSION tetap 1.7.4.
+# v2.0.0 (2026-10-23): RILIS BESAR — CraftLife kini tiga platform.
+#   Desktop (PyQt6 + web) tetap utuh; Android (Expo SDK 57) mencapai
+#   parity fitur penuh lewat M07-M12; cloud Supabase menambah sync
+#   antar-perangkat, RPG server-authoritative (pet gacha, talents,
+#   achievements, boss), sosial online (teman, chat, guild, PvP,
+#   leaderboard), snapshot personal terpecah-part (plafon 8 MB
+#   dihapus), dan mode Rules API yang di-pentest (M13). 26 migrasi
+#   Supabase. Catatan lengkap: RELEASE_NOTES_v2.0.0.md.
+# M13 (2026-10-23): QA. Pentest Rules API (12 tes) menemukan & menutup
+#   2 celah nyata: body request tanpa batas (kini plafon 16 MB -> 413)
+#   dan Content-Length rusak yang membunuh handler (kini 400); method
+#   liar kini 405 JSON. Audit RLS statis (5 tes) bersih. Utang kontras
+#   M06 DIBAYAR: 6 tema digelapkan 6-12% sampai semua >= 4,5:1, Chip
+#   Android 40dp -> 48dp (15 tes aksesibilitas). Performa server lokal:
+#   bootstrap median 9,6 ms. Laporan QA_M13.md; bukti perangkat
+#   (TalkBack, cold start) menunggu verifikasi pengguna setelah M14.
+# M12 (2026-10-23): Verifikasi parity. VERIFIKASI_M12.md membandingkan
+#   Desktop/Android/Cloud baris demi baris terhadap matriks roadmap
+#   dengan bukti uji (Python 531, Android vitest 266 -> 273, core 42).
+#   Tiga rute Android yang masih kerangka (Learning, Music, Cloud)
+#   kini berisi layar nyata; pemutaran musik jujur ditandai belum
+#   tersedia (berkas di desktop, tak ada endpoint streaming). Enam
+#   bukti perangkat/live tersisa di tangan pengguna (daftarnya di
+#   dokumen itu); sel terkait ditandai menunggu, bukan dicek paksa.
+#   15 kunci i18n baru (4.722 -> 4.737). APP_VERSION tetap 1.7.4.
+# Fix (2026-10-23): migrasi 20261023020000 mengganti 3 fungsi M09b
+#   (unlock_talent_cloud, fetch_cloud_talents, claim_boss_reward_cloud)
+#   yang memakai operator // khas Python di SQL Postgres; diganti div()
+#   dengan semantik identik. Ketahuan dari supabase db lint --linked di
+#   mesin pengguna; migrasi lama tidak disunting. +2 tes (529 -> 531).
+APP_VERSION = "2.0.0"
 CHANNEL = "stable"
 USER_AGENT = "CraftLifeDesktop-Updater/1.0"
 

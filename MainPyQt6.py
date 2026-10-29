@@ -7022,12 +7022,12 @@ class ShopPage(QWidget):
                     eq.clicked.connect(lambda _, p=pid: self._equip(p))
                     cl.addWidget(eq)
             else:
-                cl.addWidget(QLabel(
-                    f"💰 {pet['cost']} G",
-                    alignment=Qt.AlignmentFlag.AlignCenter))
-                ab = _btn(tr("shop_adopt"), "gold", h=30)
-                ab.clicked.connect(lambda _, p=pid: self._adopt(p))
-                cl.addWidget(ab)
+                # P10/M09b: jalur beli pet langsung dihapus dari UI.
+                # Pet didapat lewat spin gacha; katalog tinggal info.
+                sl = QLabel(tr("pets_tab_spin"))
+                sl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                sl.setStyleSheet("font-size:10px; color:#8b98a8;")
+                cl.addWidget(sl)
             self._pets_grid.addWidget(f, idx // 3, idx % 3)
 
     def _enchant(self, item_id):
@@ -7140,15 +7140,6 @@ class ShopPage(QWidget):
                   r.get("msg", "Item tidak bisa digunakan."), "error")
         AppState.refresh()
 
-    def _adopt(self, pid):
-        r = db.adopt_pet(self.user_id, pid)
-        if r["ok"]:
-            SND.buy()
-            _show(self, tr("adopt_success"), r["msg"], "success")
-        else:
-            SND.error()
-            _show(self, tr("gagal_title"), r["msg"], "error")
-        AppState.refresh()
 
     def _equip(self, pid):
         r = db.equip_pet(self.user_id, pid)

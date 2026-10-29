@@ -30,6 +30,7 @@ class CloudConfig:
     profile_bucket: str = "profile-photos"
     gallery_bucket: str = "love-space-photos"
     chat_bucket: str = "chat-attachments"
+    backup_bucket: str = "tracker-backups"
 
     @property
     def configured(self) -> bool:

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "Shared compiler options for every CraftLife TypeScript project (packages/*, web, and the future Android app). Only options that are IDENTICAL across consumers live here, so extending this file never changes an existing project's effective configuration. Platform-specific options (DOM libs, JSX, declaration emit) stay in each project's own tsconfig.",
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  }
+}

@@ -142,6 +142,30 @@ class _PooledConnection:
         else:
             setattr(object.__getattribute__(self, "_conn"), name, value)
 
+def _foreign_keys_on(conn):
+    """Nyalakan kembali foreign key dengan benar.
+
+    ``PRAGMA foreign_keys`` DIABAIKAN SQLite bila dijalankan di dalam transaksi
+    — tanpa error, tanpa peringatan. Semua pemanggil di bawah dulu memanggil
+    pragma ini dari blok ``finally`` sesudah DML, jadi transaksinya masih terbuka
+    dan pragma-nya tidak berlaku: koneksi pooled tetap FK OFF, sehingga
+    ``ON DELETE CASCADE`` tidak pernah jalan dan constraint tidak pernah
+    ditegakkan.
+
+    Rollback hanya terjadi bila memang masih ada transaksi terbuka, yang berarti
+    operasi pemanggilnya belum di-commit dan memang harus dibatalkan.
+    """
+    try:
+        if getattr(conn, "in_transaction", False):
+            conn.rollback()
+    except Exception:
+        pass
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+    except Exception:
+        pass
+
+
 def get_conn():
     """Koneksi DB yang di-reuse per thread (pooled). .close() adalah no-op."""
     c = getattr(_db_conn_local, "conn", None)
@@ -178,7 +202,237 @@ def _safe_alter(cur, table, col, defn):
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}") 
     except Exception:
         pass
-    
+
+
+# Kolom yang dipakai sinkronisasi row-level (M04). Ditambahkan di M03.
+#
+# `updated_at` sengaja TANPA default. `DEFAULT(datetime('now'))` adalah default
+# non-konstan: SQLite menerimanya di tabel kosong tetapi MENOLAKNYA di tabel
+# berisi data ("Cannot add a column with non-constant default"). Karena
+# _safe_alter menelan exception, kolomnya akan hilang diam-diam di database
+# pengguna lama sementara di database baru terlihat berhasil. Nilainya diisi
+# oleh trigger (baris baru) dan backfill (baris lama) di bawah.
+SYNC_COLUMNS = (
+    ("uuid", "TEXT"),
+    ("rev", "INTEGER DEFAULT 0"),
+    ("updated_at", "TEXT"),
+    ("deleted_at", "TEXT"),
+)
+
+
+def _install_sync_tables(c):
+    """M04b — buku besar perubahan baris untuk sinkronisasi row-level.
+
+    ``sync_tombstones`` mencatat penghapusan. Roadmap M04 meminta delete menulis
+    ``deleted_at`` alih-alih ``DELETE``; pengukuran menunjukkan biayanya 47 titik
+    delete dan 368 referensi query yang semuanya harus diberi filter
+    ``deleted_at IS NULL`` (hanya 7 yang sudah punya). Trigger ini mencapai tujuan
+    yang sama — penghapusan merambat ke perangkat lain — tanpa mengubah satu pun
+    dari titik-titik itu, jadi perilaku aplikasi tetap identik (P4).
+
+    ``sync_entity_state`` menyimpan ``base_rev`` terakhir yang diketahui server
+    untuk setiap baris, yaitu sisi "base" dari merge 3-way.
+    """
+    c.execute("""CREATE TABLE IF NOT EXISTS sync_tombstones(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        entity_uuid TEXT NOT NULL,
+        deleted_at TEXT DEFAULT(datetime('now')),
+        pushed_at TEXT
+    )""")
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_tombstones_entity "
+              "ON sync_tombstones(table_name, entity_uuid)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sync_tombstones_pending "
+              "ON sync_tombstones(pushed_at, id)")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS sync_entity_state(
+        local_user_id INTEGER NOT NULL,
+        table_name TEXT NOT NULL,
+        entity_uuid TEXT NOT NULL,
+        base_rev INTEGER NOT NULL DEFAULT 0,
+        last_synced_at TEXT,
+        PRIMARY KEY(local_user_id, table_name, entity_uuid)
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sync_entity_state_lookup "
+              "ON sync_entity_state(local_user_id, table_name, last_synced_at)")
+
+    # Kanal A ditarik INKREMENTAL: tiap tabel menyimpan server_updated_at
+    # tertinggi yang sudah dilihat, dan tarikan berikutnya meminta yang lebih
+    # baru saja. Tanpa ini fetch_entities() dipanggil tanpa `since`, sehingga
+    # seluruh riwayat 7 tabel append-only diunduh ulang setiap 60 detik — dan
+    # tabel append-only tidak pernah menyusut, jadi biayanya naik selamanya.
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_channel_a_state(
+        local_user_id INTEGER NOT NULL,
+        table_name TEXT NOT NULL,
+        last_server_updated_at TEXT,
+        PRIMARY KEY(local_user_id, table_name)
+    )""")
+
+    # Status layanan cloud per pengguna. Diisi saat Supabase menjawab 402
+    # (kuota habis / project dibatasi) supaya aplikasi berhenti memukuli
+    # project yang sedang dibatasi, dan memberi tahu pengguna apa yang terjadi
+    # alih-alih gagal diam-diam tiap 60 detik.
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_service_state(
+        local_user_id INTEGER PRIMARY KEY,
+        suspended_reason TEXT,
+        suspended_at TEXT,
+        last_probe_at TEXT
+    )""")
+
+    # M04c: konflik field yang terselesaikan otomatis oleh merge. K11 menuntut
+    # sisi kalah disimpan dan bisa dipulihkan, bukan dibuang diam-diam — dan
+    # "bisa dipulihkan" hanya berarti sesuatu kalau pengguna bisa MELIHAT dan
+    # menekannya. Inilah daftar itu.
+    c.execute("""CREATE TABLE IF NOT EXISTS sync_conflicts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_user_id INTEGER NOT NULL,
+        table_name TEXT NOT NULL,
+        entity_uuid TEXT NOT NULL,
+        field TEXT NOT NULL,
+        kept_value TEXT,
+        lost_value TEXT,
+        kept_side TEXT NOT NULL,
+        detected_at TEXT DEFAULT(datetime('now')),
+        restored_at TEXT
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_sync_conflicts_recent "
+              "ON sync_conflicts(local_user_id, restored_at, detected_at)")
+
+    # M05c: jejak operasi untuk Rules API. Sengaja tidak menyimpan isi request —
+    # body bisa berisi kata sandi, token, dan data kesehatan. Kolom
+    # `local_user_id` boleh NULL karena request yang ditolak sebelum identitas
+    # diketahui justru yang paling perlu tercatat.
+    c.execute("""CREATE TABLE IF NOT EXISTS rules_audit_log(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_user_id INTEGER,
+        method TEXT,
+        path TEXT,
+        status INTEGER,
+        ip TEXT,
+        user_agent_hash TEXT,
+        created_at TEXT DEFAULT(datetime('now'))
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rules_audit_recent "
+              "ON rules_audit_log(created_at, local_user_id)")
+
+
+def _install_sync_columns(c, tables):
+    """M03 — beri setiap tabel yang ikut sync identitas baris + tombstone.
+
+    Menutup G3 (PK integer lokal di-remap saat import, jadi identitas entitas
+    tidak stabil lintas device) dan G4 (tanpa tombstone, delete tidak bisa
+    merambat). Bersifat aditif: kolom-kolom ini belum dibaca kode mana pun,
+    jadi perilaku aplikasi tidak berubah (P4).
+
+    Tiga batasan SQLite memaksa bentuk implementasinya, semuanya sudah diuji:
+
+    1. ``ALTER TABLE ADD COLUMN ... UNIQUE`` DITOLAK ("Cannot add a UNIQUE
+       column"). Keunikan ``uuid`` therefore ditegakkan lewat UNIQUE INDEX,
+       bukan constraint kolom.
+    2. ``ALTER TABLE ADD COLUMN ... DEFAULT (lower(hex(randomblob(16))))``
+       lolos di tabel kosong tapi GAGAL di tabel berisi data ("Cannot add a
+       column with non-constant default"). Karena itu kolom ``uuid`` dibuat
+       polos, lalu diisi oleh trigger + backfill di bawah.
+    3. UNIQUE INDEX memperlakukan NULL sebagai saling berbeda, jadi index boleh
+       dibuat sebelum backfill selesai tanpa menolak baris ber-uuid NULL.
+
+    Baris baru diisi oleh trigger ``AFTER INSERT``; baris lama oleh satu UPDATE
+    ``WHERE uuid IS NULL``. Keduanya idempoten — menjalankan init_db() berulang
+    kali tidak mengubah uuid yang sudah ada, dan tidak ada PK integer yang
+    disentuh (P4).
+
+    ``uuid`` dibuat ACAK, bukan diturunkan dari (tabel, id). Turunan deterministik
+    akan menghasilkan uuid yang SAMA untuk baris ber-id sama di dua perangkat
+    berbeda — persis tabrakan yang ingin dihindari. Yang dibutuhkan adalah
+    hasilnya yang stabil (idempoten), bukan nilainya yang bisa dihitung ulang.
+
+    G10 (``debt_notes`` ikut sync) sengaja TIDAK ditutup di sini. Kolomnya
+    dipasang supaya prasyaratnya siap, tetapi ``debt_notes`` tidak dimasukkan ke
+    ``EXPORT_TABLES`` karena itu terbukti merusak cloud sync, bukan sekadar
+    berisiko:
+
+    * ``_sanitize_cloud_personal_snapshot`` menolak snapshot yang tabelnya tidak
+      persis ``EXPORT_TABLES``. Diuji: dokumen cloud pra-M03 (40 tabel) ditolak
+      klien M03 dengan ``ValueError: incomplete cloud tracker snapshot:
+      debt_notes`` — restore-from-cloud mati untuk setiap pengguna lama.
+    * Melonggarkan guard itu menjadi "tabel hilang = kosong" TIDAK aman:
+      ``import_tracker_data`` memanggil ``_clear_tracker_data_conn`` lebih dulu,
+      jadi daftar kosong akan MENGHAPUS ``debt_notes`` lokal secara diam-diam.
+      Error berubah menjadi kehilangan data (P6), bukan diperbaiki.
+
+    Menutup G10 dengan benar butuh preservasi per-tabel di jalur impor plus
+    versioning ``cloud_schema`` — itu pekerjaan M04, tempat sync engine memang
+    dirombak.
+    """
+    for t in tables:
+        for col, defn in SYNC_COLUMNS:
+            _safe_alter(c, t, col, defn)
+
+        cols = {r[1] for r in c.execute(f"PRAGMA table_info({t})")}
+
+        c.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{t}_uuid ON {t}(uuid)")
+        # recipe_items tidak punya user_id (di-scope lewat recipe_id), jadi
+        # dua index per-user di bawah dilewati untuk tabel itu.
+        if "user_id" in cols:
+            c.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{t}_user_deleted "
+                f"ON {t}(user_id, deleted_at)"
+            )
+            c.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{t}_user_updated "
+                f"ON {t}(user_id, updated_at)"
+            )
+
+        # Baris yang dibuat setelah init_db() mendapat uuid + updated_at
+        # otomatis. Satu trigger untuk keduanya, dan COALESCE membuatnya aman
+        # dijalankan berapa kali pun. Tabel yang updated_at-nya sudah punya
+        # DEFAULT(datetime('now')) tidak terpengaruh — nilainya tak pernah NULL.
+        c.execute(
+            f"CREATE TRIGGER IF NOT EXISTS trg_{t}_sync_defaults "
+            f"AFTER INSERT ON {t} "
+            f"WHEN NEW.uuid IS NULL OR NEW.updated_at IS NULL "
+            f"BEGIN "
+            f"UPDATE {t} SET "
+            f"uuid = COALESCE(uuid, lower(hex(randomblob(16)))), "
+            f"updated_at = COALESCE(updated_at, datetime('now')) "
+            f"WHERE rowid = NEW.rowid; "
+            f"END"
+        )
+
+        # M04b: tanpa ini updated_at tidak pernah berubah setelah baris dibuat.
+        # Terbukti terukur — update_habit() meninggalkan updated_at apa adanya,
+        # dan 31 dari 34 tabel Kanal B begitu, sehingga "kirim hanya yang berubah
+        # sejak sinkron terakhir" tidak mungkin dilakukan. WHEN-nya memastikan
+        # kode yang memang mengisi updated_at sendiri tidak ditimpa, dan
+        # recursive_triggers default OFF membuat UPDATE di dalam trigger ini
+        # tidak memicu dirinya sendiri.
+        c.execute(
+            f"CREATE TRIGGER IF NOT EXISTS trg_{t}_sync_touch "
+            f"AFTER UPDATE ON {t} "
+            f"WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL "
+            f"BEGIN "
+            f"UPDATE {t} SET updated_at = datetime('now') WHERE rowid = NEW.rowid; "
+            f"END"
+        )
+
+        # M04b: catat penghapusan supaya bisa dirambatkan (G4). DELETE tetap
+        # DELETE; yang bertambah hanya satu baris buku besar.
+        c.execute(
+            f"CREATE TRIGGER IF NOT EXISTS trg_{t}_sync_tombstone "
+            f"AFTER DELETE ON {t} WHEN OLD.uuid IS NOT NULL "
+            f"BEGIN "
+            f"INSERT OR REPLACE INTO sync_tombstones(table_name, entity_uuid, deleted_at) "
+            f"VALUES('{t}', OLD.uuid, datetime('now')); "
+            f"END"
+        )
+
+        # Backfill baris lama. WHERE ... IS NULL membuatnya idempoten, dan
+        # randomblob dievaluasi ulang per baris sehingga tiap baris unik.
+        c.execute(f"UPDATE {t} SET uuid = lower(hex(randomblob(16))) WHERE uuid IS NULL")
+        # updated_at NULL membuat LWW per baris di M04 tidak punya pembanding.
+        # Hanya NULL yang disentuh; nilai yang sudah ada tidak pernah ditimpa.
+        c.execute(f"UPDATE {t} SET updated_at = datetime('now') WHERE updated_at IS NULL")
+
 def update_guild(guild_id, **kwargs):
     conn = get_conn()
     fields = ", ".join(f"{k}=?" for k in kwargs)
@@ -741,6 +995,33 @@ def init_db():
         enchant_level INTEGER DEFAULT 0,
         updated_at TEXT DEFAULT(datetime('now')),
         PRIMARY KEY(user_id, item_key)
+    )""")
+    # M09a: cermin lokal koleksi pet + state spin cloud (sumber kebenarannya
+    # server lewat RPC spin_pet_cloud; tabel ini hanya cache baca).
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_pets_cache(
+        user_id INTEGER NOT NULL,
+        pet_key TEXT NOT NULL,
+        level INTEGER DEFAULT 1,
+        exp INTEGER DEFAULT 0,
+        hunger INTEGER DEFAULT 100,
+        happiness INTEGER DEFAULT 50,
+        is_active INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT(datetime('now')),
+        PRIMARY KEY(user_id, pet_key)
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_pet_spin_state_cache(
+        user_id INTEGER PRIMARY KEY,
+        spins_total INTEGER DEFAULT 0,
+        since_epic INTEGER DEFAULT 0,
+        since_legendary INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT(datetime('now'))
+    )""")
+    # M09b: cache talent cloud (cermin fetch_cloud_talents).
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_talents_cache(
+        user_id INTEGER NOT NULL,
+        talent_key TEXT NOT NULL,
+        updated_at TEXT DEFAULT(datetime('now')),
+        PRIMARY KEY(user_id, talent_key)
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS cloud_user_links(
         local_user_id INTEGER PRIMARY KEY,
@@ -1326,6 +1607,11 @@ def init_db():
     )""")
     # C06: jadwal auto-clean mandiri (terpisah dari retensi).
     _safe_alter(c, "maintenance_state", "schedule", "TEXT DEFAULT 'monthly'")
+    # Backup tracker ke cloud (P6). `last_backup_at` tanpa default: kolom
+    # bertipe TEXT kosong sudah cukup, dan menambah DEFAULT(datetime('now'))
+    # akan gagal di tabel yang sudah berisi baris.
+    _safe_alter(c, "maintenance_state", "last_backup_at", "TEXT")
+    _safe_alter(c, "maintenance_state", "backup_auto", "INTEGER DEFAULT 1")
     try:
         c.execute("UPDATE maintenance_state SET schedule='monthly'"
                   " WHERE schedule IS NULL OR schedule NOT IN ('daily','weekly','monthly')")
@@ -1733,6 +2019,9 @@ def init_db():
     _safe_alter(c, "users", "high_contrast", "INTEGER DEFAULT 0")
     _safe_alter(c, "users", "onboarding_done", "INTEGER DEFAULT 0")
     _safe_alter(c, "users", "talent_points_spent", "INTEGER DEFAULT 0")
+    # M09b: jumlah member saat reward boss dibuat — server menghitung ulang
+    # reward dari katalog dibagi angka ini. Baris lama default 1.
+    _safe_alter(c, "boss_rewards", "member_count", "INTEGER DEFAULT 1")
     _safe_alter(c, "users", "dashboard_widgets", "TEXT DEFAULT ''")
     _safe_alter(c, "users", "gemini_api_key", "TEXT DEFAULT ''")
     _safe_alter(c, "users", "cloud_user_id", "TEXT")
@@ -2131,7 +2420,21 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_dailies_last_done ON dailies(user_id, last_done)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_task_history_user_date ON task_history(user_id, task_type, action_date)")
 
-    # Nyalakan kembali foreign key
+    # ========== M03: prasyarat skema row-level (G3 + G4) ==========
+    # Dijalankan SETELAH seed data supaya baris hasil seeding ikut ter-backfill.
+    _install_sync_tables(c)
+    _install_sync_columns(c, list(SYNC_TABLES))
+
+    # Nyalakan kembali foreign key.
+    #
+    # Commit-nya HARUS lebih dulu. SQLite mengabaikan perubahan
+    # `PRAGMA foreign_keys` yang dijalankan di dalam transaksi — tanpa
+    # diam-diam, tanpa error. Sebelumnya pragma ini dieksekusi saat transaksi
+    # migrasi masih terbuka, jadi nilainya tetap OFF dari baris di atas, dan
+    # karena koneksi ini di-pool maka FK mati seumur hidup proses: setiap
+    # ON DELETE CASCADE tidak pernah jalan dan constraint tidak pernah
+    # ditegakkan.
+    conn.commit()
     c.execute("PRAGMA foreign_keys = ON")
     conn.commit()
     conn.close()
@@ -2249,12 +2552,23 @@ EXPORT_TABLES = [
     'menstrual_cycles',
 ]
 
+# ========== M03: tabel yang diberi kolom identitas & tombstone ==========
+# EXPORT_TABLES + debt_notes. debt_notes sengaja BELUM dimasukkan ke
+# EXPORT_TABLES (G10 masih terbuka) — lihat catatan di _install_sync_columns.
+SYNC_TABLES = tuple(EXPORT_TABLES) + ("debt_notes",)
+
 # ========== EKSPOR ==========
-def export_tracker_data(user_id):
+def export_tracker_data(user_id, allow_admin=False):
     conn = get_conn()
-    # Cek admin
+    # Cek admin. Larangan ini menjaga vektor curang: admin mengekspor lalu
+    # mengimpor kembali data tracker untuk memanipulasi statistik. Sebuah
+    # BACKUP tidak termasuk vektor itu — ia baca-saja, tidak menulis apa pun,
+    # dan menolak admin di sini berarti admin tidak punya cadangan data sama
+    # sekali (melanggar P6). Karena itu hanya jalur backup yang boleh meminta
+    # allow_admin=True; default tetap False supaya semua pemanggil lama tidak
+    # berubah perilaku sedikit pun.
     u = conn.execute("SELECT is_admin FROM users WHERE id=?", (user_id,)).fetchone()
-    if u and u["is_admin"]:
+    if u and u["is_admin"] and not allow_admin:
         conn.close()
         raise PermissionError("Admin tidak diperbolehkan mengekspor data tracker.")
     
@@ -2330,7 +2644,7 @@ def clear_tracker_data(user_id):
         conn.rollback()
         raise
     finally:
-        conn.execute("PRAGMA foreign_keys = ON")
+        _foreign_keys_on(conn)
         conn.close()
 
 # ========== HELPER: DAPATKAN ID DEFAULT FOOD BERDASARKAN NAMA ==========
@@ -2705,7 +3019,7 @@ def import_tracker_data(user_id, data, preserve_progress=False):
         conn.rollback()
         raise e
     finally:
-        conn.execute("PRAGMA foreign_keys = ON")
+        _foreign_keys_on(conn)
         conn.close()
 
 def get_food_translation(name_id: str, lang: str = "id") -> str:
@@ -5923,9 +6237,9 @@ def attack_boss(user_id, guild_id, action="light"):
                 if attack_counts.get(uid, 0) > 0:
                     rewarded_members.append(m["user_id"])
                     conn.execute("""
-                        INSERT INTO boss_rewards(user_id, guild_id, boss_name, boss_tier, xp_reward, gold_reward)
-                        VALUES(?,?,?,?,?,?)
-                    """, (m["user_id"], guild_id, boss["boss_name"], boss["boss_tier"], xp_reward, gold_reward))
+                        INSERT INTO boss_rewards(user_id, guild_id, boss_name, boss_tier, xp_reward, gold_reward, member_count)
+                        VALUES(?,?,?,?,?,?,?)
+                    """, (m["user_id"], guild_id, boss["boss_name"], boss["boss_tier"], xp_reward, gold_reward, cnt))
 
             conn.commit()
             conn.close()
@@ -6084,6 +6398,16 @@ def claim_boss_reward(reward_id, user_id):
     finally:
         conn2.close()
 
+    # M09b (Kanal C): klaim dicatat server. Angka resmi dihitung server
+    # dari katalog bosses_server dibagi member_count baris ini; client
+    # tidak mengirim jumlah reward apa pun.
+    _boss_key = next((k for k, b in BOSSES.items()
+                      if b.get("name") == reward["boss_name"]
+                      and b.get("tier") == reward["boss_tier"]), None)
+    if _boss_key:
+        _queue_cloud_econ(user_id, "boss_reward", "claim",
+                          {"boss_key": _boss_key,
+                           "member_count": int(reward.get("member_count") or 1)})
     return {
         "ok": True,
         "msg": tr_db(user_id=user_id, key="db_boss_reward_claimed", xp=reward['xp_reward'], gold=reward['gold_reward']),
@@ -6448,7 +6772,7 @@ THEMES = {
     # ── Modern Aurora (default, toggle target) ──
     "modern_dark": {
         "label": "🔮 Aurora Dark",
-        "primary": "#8b5cf6", "light": "#a78bfa",
+        "primary": "#8256e7", "light": "#a78bfa",
         "bg": "#0a0a14", "bg2": "#131129", "bg3": "#0b1824",
         "panel": "rgba(24,26,48,0.92)", "border": "rgba(150,140,255,0.24)",
         "accent": "#22d3ee", "accent2": "#8b5cf6", "accent3": "#34d399", "glow": "#a78bfa",
@@ -6460,7 +6784,7 @@ THEMES = {
         "primary": "#7c3aed", "light": "#6d28d9",
         "bg": "#eef1fb", "bg2": "#e8e2f9", "bg3": "#e3eff8",
         "panel": "rgba(255,255,255,0.94)", "border": "rgba(124,108,210,0.32)",
-        "accent": "#0891b2", "accent2": "#7c3aed", "accent3": "#059669", "glow": "#8b5cf6",
+        "accent": "#077f9c", "accent2": "#7c3aed", "accent3": "#059669", "glow": "#8b5cf6",
         "text": "#191430", "muted": "#57516b",
         "on_primary": "#ffffff", "on_accent": "#ffffff"
     },
@@ -6475,7 +6799,7 @@ THEMES = {
     },
     "nether": {
         "label": "🔥 Nether",
-        "primary": "#ef4444", "light": "#f87171",
+        "primary": "#d23b3b", "light": "#f87171",
         "bg": "#140508", "bg2": "#26090f", "bg3": "#1c0a04",
         "panel": "rgba(46,16,20,0.92)", "border": "rgba(248,113,113,0.26)",
         "accent": "#fb923c", "accent2": "#ef4444", "accent3": "#fbbf24", "glow": "#fb7185",
@@ -6484,7 +6808,7 @@ THEMES = {
     },
     "the_end": {
         "label": "🌌 The End",
-        "primary": "#a855f7", "light": "#c084fc",
+        "primary": "#974cde", "light": "#c084fc",
         "bg": "#0a0616", "bg2": "#180b2b", "bg3": "#120a20",
         "panel": "rgba(32,20,54,0.92)", "border": "rgba(192,132,252,0.24)",
         "accent": "#818cf8", "accent2": "#a855f7", "accent3": "#e879f9", "glow": "#d8b4fe",
@@ -6502,7 +6826,7 @@ THEMES = {
     },
     "ancient_city": {
         "label": "🏚️ Ancient City",
-        "primary": "#0d9488", "light": "#14b8a6",
+        "primary": "#0ea295", "light": "#14b8a6",
         "bg": "#051214", "bg2": "#0a2226", "bg3": "#06181b",
         "panel": "rgba(16,42,44,0.92)", "border": "rgba(45,212,191,0.24)",
         "accent": "#5eead4", "accent2": "#0d9488", "accent3": "#93c5fd", "glow": "#2dd4bf",
@@ -6517,7 +6841,7 @@ THEMES = {
         "panel": "rgba(44,20,36,0.92)", "border": "rgba(244,114,182,0.26)",
         "accent": "#fb7185", "accent2": "#ec4899", "accent3": "#c084fc", "glow": "#f9a8d4",
         "text": "#fdeef5", "muted": "#bb93a6",
-        "on_primary": "#4c0519", "on_accent": "#4c0519"
+        "on_primary": "#440416", "on_accent": "#4c0519"
     },
     "desert": {
         "label": "🏜️ Desert",
@@ -6927,16 +7251,23 @@ def get_maintenance_state(user_id):
         if sched not in _SCHEDULE_DAYS:
             sched = "monthly"
         return {"retention_days": int(rd), "auto": bool(row["auto"]),
-                "last_purge_at": row["last_purge_at"] or "", "schedule": sched}
-    return {"retention_days": 30, "auto": True, "last_purge_at": "", "schedule": "monthly"}
+                "last_purge_at": row["last_purge_at"] or "", "schedule": sched,
+                # backup_auto default NYALA: mencadangkan data adalah perilaku
+                # aman, dan mematikannya harus keputusan sadar pengguna.
+                "backup_auto": bool(row["backup_auto"]) if row["backup_auto"] is not None else True,
+                "last_backup_at": row["last_backup_at"] or ""}
+    return {"retention_days": 30, "auto": True, "last_purge_at": "", "schedule": "monthly",
+            "backup_auto": True, "last_backup_at": ""}
 
 
-def set_maintenance_state(user_id, retention_days=None, auto=None, schedule=None):
+def set_maintenance_state(user_id, retention_days=None, auto=None, schedule=None,
+                          backup_auto=None):
     if schedule is not None:
         schedule = str(schedule).strip().lower()
         if schedule not in _SCHEDULE_DAYS:
             raise ValueError("schedule_invalid")
-    if retention_days is None and auto is None and schedule is None:
+    if (retention_days is None and auto is None and schedule is None
+            and backup_auto is None):
         return
     conn = get_conn()
     row = conn.execute("SELECT user_id FROM maintenance_state WHERE user_id=?", (user_id,)).fetchone()
@@ -6950,12 +7281,17 @@ def set_maintenance_state(user_id, retention_days=None, auto=None, schedule=None
         if schedule is not None:
             conn.execute("UPDATE maintenance_state SET schedule=? WHERE user_id=?",
                          (schedule, user_id))
+        if backup_auto is not None:
+            conn.execute("UPDATE maintenance_state SET backup_auto=? WHERE user_id=?",
+                         (1 if backup_auto else 0, user_id))
     else:
         rd = int(retention_days) if retention_days is not None else 30
         au = 1 if (auto if auto is not None else True) else 0
         sc = schedule if schedule is not None else "monthly"
-        conn.execute("INSERT INTO maintenance_state(user_id, retention_days, auto, schedule)"
-                     " VALUES(?,?,?,?)", (user_id, rd, au, sc))
+        conn.execute("INSERT INTO maintenance_state(user_id, retention_days, auto, schedule,"
+                     " backup_auto) VALUES(?,?,?,?,?)",
+                     (user_id, rd, au, sc,
+                      1 if (backup_auto if backup_auto is not None else True) else 0))
     conn.commit()
     conn.close()
 
@@ -7013,6 +7349,17 @@ def purge_tracker_history(user_id, retention_days, do_backup=True):
     report["freed_bytes"] = max(0, report["before_bytes"] - report["after_bytes"])
     report["total_deleted"] = sum(report["deleted"].values())
     return report
+
+
+def mark_backup_done(user_id, when=None):
+    """Catat kapan backup cloud terakhir berhasil."""
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO maintenance_state(user_id, last_backup_at) VALUES(?, COALESCE(?, datetime('now')))"
+        " ON CONFLICT(user_id) DO UPDATE SET last_backup_at=excluded.last_backup_at",
+        (user_id, when))
+    conn.commit()
+    conn.close()
 
 
 def maybe_auto_purge(user_id):
@@ -10006,11 +10353,11 @@ def delete_account(user_id, password):
         conn.commit()
     except Exception as e:
         conn.rollback()
-        conn.execute("PRAGMA foreign_keys = ON")
+        _foreign_keys_on(conn)
         conn.close()
         return {"ok": False, "msg": tr_db(user_id=user_id, key="db_delete_account_failed", error=str(e))}
     finally:
-        conn.execute("PRAGMA foreign_keys = ON")
+        _foreign_keys_on(conn)
         conn.close()
     
     return {"ok": True, "msg": tr_db(user_id=user_id, key="db_delete_account_success")}
@@ -10880,7 +11227,7 @@ def reset_user_progress(user_id):
         conn.rollback()
         raise e
     finally:
-        conn.execute("PRAGMA foreign_keys = ON")
+        _foreign_keys_on(conn)
         conn.close()
 
 def reset_progress_keep_assets(user_id):
@@ -11000,7 +11347,7 @@ def reset_progress_keep_assets(user_id):
         conn.rollback()
         raise e
     finally:
-        conn.execute("PRAGMA foreign_keys = ON")
+        _foreign_keys_on(conn)
         conn.close()
 
 def perform_rebirth(user_id):
@@ -13920,6 +14267,9 @@ def unlock_talent(user_id, talent_key):
     conn.commit()
     conn.close()
     recalculate_all_buffs(user_id)
+    # M09b (Kanal C): unlock dicatat server; server memvalidasi ulang
+    # class/level/poin/prasyarat dari katalognya sendiri.
+    _queue_cloud_econ(user_id, "talent_unlock", "unlock", {"talent_key": talent_key})
     t = TALENTS[talent_key]
     u = get_user(user_id)
     name = t["name"][0] if u.get("language", "id") == "id" else t["name"][1]
@@ -15576,21 +15926,222 @@ def enqueue_sync(local_user_id,entity_type,entity_local_id,operation,payload=Non
     conn.commit();conn.close();return {"ok":True,"job_id":job_id}
 
 
+# Urutan drain: induk harus diproses sebelum anak, kalau tidak job anak gagal
+# karena dependensinya belum ada di server dan masuk backoff tanpa perlu.
+# Angka kecil = lebih dulu. Entity type yang tidak terdaftar memakai nilai tengah
+# supaya perilaku lama tidak berubah.
+SYNC_DRAIN_PRIORITY = {
+    "profile": 10,
+    "profile_photo": 20,
+    "love_space_bundle": 30,
+    "couple_end": 31,
+    "personal_snapshot": 40,
+    "event_append": 50,
+    "productivity_event": 60,
+    "achievement_claim": 70,
+    "shop_buy": 70,
+    "craft": 70,
+    "enchant": 70,
+    "talent_unlock": 70,
+    "boss_reward": 70,
+    "direct_message": 80,
+    "direct_message_attachment": 80,
+    "gallery_photo": 90,
+}
+SYNC_DRAIN_DEFAULT_PRIORITY = 55
+
+
+def _drain_order_sql():
+    cases = " ".join(f"WHEN '{k}' THEN {v}" for k, v in sorted(SYNC_DRAIN_PRIORITY.items()))
+    return f"CASE entity_type {cases} ELSE {SYNC_DRAIN_DEFAULT_PRIORITY} END"
+
+
 def get_pending_sync_jobs(local_user_id,limit=25):
-    conn=get_conn();rows=conn.execute("""SELECT * FROM sync_queue WHERE local_user_id=?
+    conn=get_conn();rows=conn.execute(f"""SELECT * FROM sync_queue WHERE local_user_id=?
         AND status IN ('pending','retry') AND (next_retry_at IS NULL OR next_retry_at<=datetime('now'))
-        ORDER BY created_at,id LIMIT ?""",(local_user_id,limit)).fetchall();conn.close();return [dict(r) for r in rows]
+        ORDER BY {_drain_order_sql()},created_at,id LIMIT ?""",(local_user_id,limit)).fetchall();conn.close();return [dict(r) for r in rows]
 
 
 def mark_sync_job_done(job_id):
     conn=get_conn();conn.execute("UPDATE sync_queue SET status='done',last_error=NULL,updated_at=datetime('now') WHERE id=?",(job_id,));conn.commit();conn.close()
 
 
+# Overlap sengaja diambil ulang setiap tarikan Kanal A. RPC memfilter dengan
+# `server_updated_at > p_since` (tajam), jadi beberapa baris yang persis di
+# batas limit bisa terlewat kalau watermark maju tepat ke nilai terakhir.
+# Mengambil ulang beberapa baris itu AMAN: apply_entity_append_rows()
+# melewati baris yang uuid-nya sudah dikenal.
+CHANNEL_A_OVERLAP_SECONDS = 1
+
+
+def get_channel_a_watermark(local_user_id, table_name):
+    """server_updated_at tertinggi yang sudah ditarik untuk tabel ini."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT last_server_updated_at FROM cloud_channel_a_state"
+        " WHERE local_user_id=? AND table_name=?",
+        (local_user_id, table_name)).fetchone()
+    conn.close()
+    return row["last_server_updated_at"] if row else None
+
+
+def set_channel_a_watermark(local_user_id, table_name, value):
+    if not value:
+        return
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO cloud_channel_a_state(local_user_id, table_name, last_server_updated_at)"
+        " VALUES(?,?,?)"
+        " ON CONFLICT(local_user_id, table_name)"
+        " DO UPDATE SET last_server_updated_at=excluded.last_server_updated_at",
+        (local_user_id, table_name, str(value)))
+    conn.commit()
+    conn.close()
+
+
+def channel_a_since(local_user_id, table_name):
+    """Nilai `since` untuk tarikan berikutnya, sudah dikurangi overlap."""
+    mark = get_channel_a_watermark(local_user_id, table_name)
+    if not mark:
+        return None
+    try:
+        from datetime import datetime, timedelta
+        parsed = datetime.fromisoformat(str(mark).replace("Z", "+00:00"))
+        return (parsed - timedelta(seconds=CHANNEL_A_OVERLAP_SECONDS)).isoformat()
+    except Exception:
+        # Penanda yang tidak bisa dibaca lebih baik diabaikan daripada membuat
+        # tarikan gagal selamanya; tarikan penuh berikutnya memulihkan keadaan.
+        return None
+
+
+#: Error yang tidak akan sembuh sendiri dengan mencoba lagi. Job dengan error
+#: ini dimatikan lebih awal. Error jaringan SENGAJA tidak masuk daftar:
+#: mematikan job karena koneksi putus berarti kehilangan data, dan P6
+#: melarangnya.
+PERMANENT_SYNC_ERRORS = (
+    "402", "401", "403", "payment required", "quota", "unauthorized",
+    "forbidden", "account_unavailable", "unsupported_table",
+    "invalid_jwt", "jwt_expired",
+)
+
+#: Berapa kali percobaan sebelum job dengan error permanen dinyatakan mati.
+MAX_PERMANENT_RETRIES = 3
+
+
+#: Jeda antar percobaan ulang saat layanan ditangguhkan. Selama jeda ini
+#: aplikasi TIDAK mengirim satu permintaan pun — itu inti dari berhenti
+#: memukuli project yang dibatasi.
+CLOUD_SUSPEND_PROBE_SECONDS = 3600
+
+
+def get_cloud_service_state(local_user_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM cloud_service_state WHERE local_user_id=?",
+                       (local_user_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
+def set_cloud_suspended(local_user_id, reason):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO cloud_service_state(local_user_id, suspended_reason, suspended_at)"
+        " VALUES(?,?,datetime('now'))"
+        " ON CONFLICT(local_user_id) DO UPDATE SET"
+        " suspended_reason=excluded.suspended_reason,"
+        " suspended_at=excluded.suspended_at",
+        (local_user_id, str(reason or "")[:200]))
+    conn.commit()
+    conn.close()
+
+
+def clear_cloud_suspended(local_user_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM cloud_service_state WHERE local_user_id=?", (local_user_id,))
+    conn.commit()
+    conn.close()
+
+
+def cloud_suspension_active(local_user_id, now=None):
+    """True selama masa tunggu belum lewat.
+
+    Mengembalikan (aktif, alasan). Setelah jeda berakhir hasilnya False, yang
+    berarti loop boleh melakukan SATU percobaan; kalau berhasil, penangguhan
+    dibersihkan, dan kalau gagal lagi, diperbarui.
+    """
+    row = get_cloud_service_state(local_user_id)
+    if not row.get("suspended_reason"):
+        return False, ""
+    mark = row.get("suspended_at") or ""
+    try:
+        from datetime import datetime, timezone
+        parsed = datetime.fromisoformat(str(mark).replace("Z", "+00:00"))
+        # SQLite `datetime('now')` menulis UTC TANPA penanda zona. Kalau itu
+        # dibandingkan dengan datetime.now() (waktu lokal), selisihnya meleset
+        # sebesar offset zona — di Asia/Jakarta jadi 7 jam, sehingga
+        # penangguhan selalu dianggap kedaluwarsa dan aplikasi tidak pernah
+        # berhenti menembak project yang dibatasi. Keduanya dipaksa UTC.
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        now_dt = now or datetime.now(timezone.utc)
+        if now_dt.tzinfo is None:
+            now_dt = now_dt.replace(tzinfo=timezone.utc)
+        elapsed = (now_dt - parsed).total_seconds()
+    except Exception:
+        # Penanda yang tidak terbaca: anggap sudah lewat supaya pengguna tidak
+        # terkunci selamanya oleh satu baris yang rusak.
+        return False, row.get("suspended_reason") or ""
+    return elapsed < CLOUD_SUSPEND_PROBE_SECONDS, row.get("suspended_reason") or ""
+
+
+def mark_cloud_probe(local_user_id):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO cloud_service_state(local_user_id, last_probe_at)"
+        " VALUES(?,datetime('now'))"
+        " ON CONFLICT(local_user_id) DO UPDATE SET last_probe_at=excluded.last_probe_at",
+        (local_user_id,))
+    conn.commit()
+    conn.close()
+
+
+def is_permanent_sync_error(error) -> bool:
+    text = str(error or "").lower()
+    return any(marker in text for marker in PERMANENT_SYNC_ERRORS)
+
+
 def mark_sync_job_failed(job_id,error,retry_count):
-    delay=min(3600,30*(2**min(int(retry_count),6)))
-    conn=get_conn();conn.execute("""UPDATE sync_queue SET status='retry',retry_count=?,last_error=?,
-        next_retry_at=datetime('now', ?),updated_at=datetime('now') WHERE id=?""",
-        (retry_count,str(error)[:1000],f'+{delay} seconds',job_id));conn.commit();conn.close()
+    """Jadwalkan ulang, atau matikan kalau errornya tidak akan sembuh.
+
+    Sebelumnya job SELALU dikembalikan ke status 'retry' dengan backoff yang
+    mentok di 1 jam, tanpa batas dan tanpa status mati. Akibatnya job yang
+    tidak akan pernah berhasil — misalnya karena project Supabase dibatasi dan
+    menjawab 402 — dicoba ulang selamanya, tiap jam, tanpa pernah berhenti.
+
+    Error jaringan tetap dicoba selamanya. Itu disengaja: P6 melarang
+    kehilangan data, dan mematikan job karena koneksi sedang putus akan
+    menghapus perubahan pengguna diam-diam.
+    """
+    retry_count = int(retry_count)
+    conn = get_conn()
+    if is_permanent_sync_error(error) and retry_count >= MAX_PERMANENT_RETRIES:
+        conn.execute(
+            """UPDATE sync_queue SET status='failed',retry_count=?,last_error=?,
+               next_retry_at=NULL,updated_at=datetime('now') WHERE id=?""",
+            (retry_count, str(error)[:1000], job_id))
+    else:
+        # M11: jitter deterministik per job (+0..20%) supaya banyak job yang
+        # gagal bersamaan (mis. jaringan baru pulih) tidak menyerbu server
+        # di detik yang sama. Deterministik per (job, retry) agar bisa diuji.
+        base_delay = min(3600, 30 * (2 ** min(retry_count, 6)))
+        jitter = (int(job_id or 0) * 31 + retry_count * 17) % 21
+        delay = base_delay + (base_delay * jitter) // 100
+        conn.execute(
+            """UPDATE sync_queue SET status='retry',retry_count=?,last_error=?,
+               next_retry_at=datetime('now', ?),updated_at=datetime('now') WHERE id=?""",
+            (retry_count, str(error)[:1000], f'+{delay} seconds', job_id))
+    conn.commit()
+    conn.close()
 
 
 def sync_queue_summary(local_user_id):
@@ -15598,10 +16149,478 @@ def sync_queue_summary(local_user_id):
     return {r["status"]:r["c"] for r in rows}
 
 
+# ========== M04a: Kanal A — union merge untuk tabel append-only (G1) ==========
+# Tabel di bawah ini ditulis sekali dan tidak pernah diedit, jadi dua perangkat
+# yang menambahkan baris bersamaan tidak mungkin berkonflik. Merge yang benar
+# adalah union by uuid, BUKAN last-writer-wins. Ini yang menyebabkan perangkat
+# bisa kehilangan baris perangkat lain saat kanal snapshot mengganti seluruh
+# dokumen.
+#
+# Daftarnya harus sama persis dengan public.sync_append_only_tables() di
+# supabase/migrations/20261007000000_phase_m04a_entity_channel_a.sql; test
+# tests/test_m04_channel_a.py memaku keduanya agar tidak bisa menyimpang (P2).
+APPEND_ONLY_TABLES = (
+    "food_logs",
+    "water_logs",
+    "health_logs",
+    "task_history",
+    "pomodoro_sessions",
+    "sport_rep_logs",
+    "supplies_tx",
+)
+
+# Foreign key yang menunjuk entitas milik pengguna. Isinya id lokal, dan id lokal
+# berbeda di setiap perangkat (G3), jadi payload ikut membawa uuid induknya dan
+# sisi penerima menerjemahkannya kembali. `user_id` tidak termasuk: itu selalu
+# ditulis ulang ke pengguna lokal.
+APPEND_FK_UUID = {
+    "food_logs": ("food_id", "food_items", "food_uuid"),
+    "sport_rep_logs": ("activity_id", "sport_activities", "activity_uuid"),
+}
+
+# Kanal B (M04b): sisanya adalah tabel mutable — barisnya diedit setelah dibuat,
+# jadi butuh merge per field, bukan union. Diturunkan, bukan ditulis ulang, supaya
+# tidak ada tabel yang bisa terlewat saat SYNC_TABLES bertambah (P2).
+CHANNEL_B_TABLES = tuple(t for t in SYNC_TABLES if t not in APPEND_ONLY_TABLES)
+
+
+def _require_append_only(table_name):
+    if table_name not in APPEND_ONLY_TABLES:
+        raise ValueError(f"unsupported append-only table: {table_name}")
+
+
+def build_entity_append_batch(local_user_id, table_name, limit=1000, only_uuid=None):
+    """Kumpulkan baris append-only milik pengguna untuk dikirim ke Kanal A.
+
+    ``id`` lokal sengaja dibuang: tidak berarti di perangkat lain. ``uuid`` dari
+    M03 adalah identitasnya. ``only_uuid`` dipakai jalur queue, yang mengantrekan
+    satu baris, supaya tidak perlu membaca ulang seluruh tabel.
+    """
+    _require_append_only(table_name)
+    conn = get_conn()
+    try:
+        cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table_name})")]
+        if "uuid" not in cols:
+            return []
+        if only_uuid:
+            rows = conn.execute(
+                f"SELECT * FROM {table_name} WHERE user_id=? AND uuid=?",
+                (local_user_id, only_uuid)).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT * FROM {table_name} WHERE user_id=? AND uuid IS NOT NULL "
+                f"ORDER BY id LIMIT ?", (local_user_id, int(limit))).fetchall()
+        fk = APPEND_FK_UUID.get(table_name)
+        batch = []
+        for row in rows:
+            payload = {c: row[c] for c in cols if c != "id"}
+            if fk:
+                col, parent, key = fk
+                parent_row = conn.execute(
+                    f"SELECT uuid FROM {parent} WHERE id=?", (row[col],)).fetchone()
+                payload[key] = parent_row["uuid"] if parent_row else None
+            batch.append(payload)
+        return batch
+    finally:
+        conn.close()
+
+
+def apply_entity_append_rows(local_user_id, table_name, rows):
+    """Terapkan baris dari Kanal A dengan semantik union.
+
+    Baris yang uuid-nya sudah ada dibiarkan persis apa adanya — tidak ditimpa,
+    tidak diduplikasi. Itu yang membuat replay outbox aman dan membuat perangkat
+    yang mengirim ulang versi lama tidak bisa merusak baris yang lebih baru.
+
+    ``unresolved`` menghitung baris yang induknya belum dikenal secara lokal.
+    Baris itu dilewati, bukan dimasukkan dengan FK rusak; pengirim lain akan
+    mengirim induknya dan percobaan berikutnya menyelesaikannya.
+    """
+    _require_append_only(table_name)
+    conn = get_conn()
+    inserted = skipped = unresolved = 0
+    try:
+        cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table_name})")]
+        fk = APPEND_FK_UUID.get(table_name)
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            entity_uuid = row.get("uuid")
+            if not entity_uuid:
+                continue
+            if conn.execute(f"SELECT 1 FROM {table_name} WHERE uuid=?",
+                            (entity_uuid,)).fetchone():
+                skipped += 1
+                continue
+            values = dict(row)
+            if fk:
+                col, parent, key = fk
+                parent_uuid = values.get(key)
+                parent_row = (conn.execute(f"SELECT id FROM {parent} WHERE uuid=?",
+                                           (parent_uuid,)).fetchone()
+                              if parent_uuid else None)
+                if parent_row is None:
+                    unresolved += 1
+                    continue
+                values[col] = parent_row["id"]
+            # Perangkat lain punya id pengguna yang berbeda; baris ini milik
+            # pengguna lokal.
+            values["user_id"] = local_user_id
+            insert_cols = [c for c in cols if c in values and c != "id"]
+            conn.execute(
+                f"INSERT INTO {table_name}({','.join(insert_cols)}) "
+                f"VALUES({','.join(['?'] * len(insert_cols))})",
+                [values[c] for c in insert_cols])
+            inserted += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "inserted": inserted, "skipped": skipped,
+            "unresolved": unresolved}
+
+
+def enqueue_entity_append(local_user_id, table_name, entity_uuid):
+    """Antrekan satu baris append-only lewat dedupe sync_queue yang sudah ada."""
+    _require_append_only(table_name)
+    return enqueue_sync(local_user_id, "event_append", entity_uuid, "append",
+                        {"table": table_name, "uuid": entity_uuid})
+
+
+# ========== M04b: Kanal B — merge 3-way untuk tabel mutable (G1) ==========
+
+def _require_channel_b(table_name):
+    if table_name not in CHANNEL_B_TABLES:
+        raise ValueError(f"not a Channel B table: {table_name}")
+
+
+def _entity_owner_predicate(table_name):
+    """Fragment SQL "baris ini milik local_user_id" untuk tabel kanal B.
+
+    33 dari 34 tabel kanal B punya kolom ``user_id``. ``recipe_items`` tidak —
+    bahan dimiliki lewat resep induknya. Mengasumsikan ``user_id`` ada membuat
+    ``build_entity_change_batch('recipe_items')`` melempar "no such column",
+    yang ditelan oleh isolasi per-tabel di _sync_channel_b, sehingga bahan resep
+    diam-diam tidak pernah ikut tersinkron ke perangkat lain.
+    """
+    if table_name == "recipe_items":
+        return ("EXISTS(SELECT 1 FROM recipes r WHERE r.id=t.recipe_id AND r.user_id=?)", 1)
+    return ("t.user_id=?", 1)
+
+
+def build_entity_change_batch(local_user_id, table_name, limit=1000):
+    """Kumpulkan baris mutable untuk dikirim ke Kanal B.
+
+    Setiap baris membawa ``base_rev``: versi yang terakhir kali perangkat ini
+    lihat dari server. Itulah sisi "base" dari merge 3-way — tanpa itu server
+    tidak bisa membedakan field yang memang diedit pengguna dari field yang
+    hanya ikut terkirim.
+    """
+    _require_channel_b(table_name)
+    conn = get_conn()
+    try:
+        cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table_name})")]
+        if "uuid" not in cols:
+            return []
+        owner_sql, owner_n = _entity_owner_predicate(table_name)
+        rows = conn.execute(
+            f"SELECT * FROM {table_name} t WHERE {owner_sql} AND t.uuid IS NOT NULL "
+            f"ORDER BY t.rowid LIMIT ?",
+            [local_user_id] * owner_n + [int(limit)]).fetchall()
+        base = {r["entity_uuid"]: r["base_rev"] for r in conn.execute(
+            "SELECT entity_uuid, base_rev FROM sync_entity_state "
+            "WHERE local_user_id=? AND table_name=?", (local_user_id, table_name))}
+        batch = []
+        for row in rows:
+            uuid = row["uuid"]
+            payload = {c: row[c] for c in cols if c not in ("id", "user_id")}
+            batch.append({
+                "uuid": uuid,
+                "base_rev": int(base.get(uuid) or 0),
+                "rev": int(row["rev"] or 0),
+                "updated_at": row["updated_at"],
+                "deleted_at": row["deleted_at"],
+                "payload": payload,
+            })
+        return batch
+    finally:
+        conn.close()
+
+
+def apply_entity_tombstones(local_user_id, table_name, tombstones):
+    """Terapkan penghapusan dari perangkat lain (G4).
+
+    DELETE tetap DELETE secara lokal — lihat catatan di _install_sync_tables.
+    Yang dirambatkan adalah FAKTA penghapusannya, bukan baris bertanda
+    ``deleted_at``.
+    """
+    _require_channel_b(table_name)
+    conn = get_conn()
+    deleted = missing = 0
+    try:
+        for item in tombstones or []:
+            if not isinstance(item, dict):
+                continue
+            uuid = item.get("uuid") or item.get("entity_uuid")
+            if not uuid:
+                continue
+            cursor = conn.execute(
+                f"DELETE FROM {table_name} WHERE user_id=? AND uuid=?",
+                (local_user_id, uuid))
+            if cursor.rowcount:
+                deleted += cursor.rowcount
+            else:
+                missing += 1
+            # Jangan sampai baris yang sudah dihapus di perangkat lain dihidupkan
+            # lagi oleh push berikutnya dari perangkat ini.
+            conn.execute(
+                "DELETE FROM sync_entity_state WHERE local_user_id=? AND table_name=? "
+                "AND entity_uuid=?", (local_user_id, table_name, uuid))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "deleted": deleted, "already_absent": missing}
+
+
+def record_entity_revisions_synced(local_user_id, table_name, rows):
+    """Catat ``rev`` yang diakui server sebagai base_rev berikutnya.
+
+    ``last_synced_at`` diisi dari ``updated_at`` baris itu sendiri, bukan dari
+    ``datetime('now')``. Selisihnya penting: ``now()`` adalah saat server selesai
+    menjawab, yang bisa beberapa detik sesudah barisnya dibaca untuk dikirim,
+    sehingga edit yang terjadi di antara keduanya akan tertutup dan tidak pernah
+    terlihat sebagai pending. Menyimpan penanda waktu versi yang benar-benar
+    dikirim membuat perbandingannya tepat.
+    """
+    _require_channel_b(table_name)
+    conn = get_conn()
+    try:
+        for row in rows or []:
+            uuid = row.get("uuid")
+            if not uuid:
+                continue
+            current = conn.execute(
+                f"SELECT updated_at FROM {table_name} WHERE uuid=?", (uuid,)).fetchone()
+            watermark = current["updated_at"] if current else None
+            conn.execute(
+                "INSERT OR REPLACE INTO sync_entity_state"
+                "(local_user_id, table_name, entity_uuid, base_rev, last_synced_at) "
+                "VALUES(?,?,?,?,COALESCE(?, datetime('now')))",
+                (local_user_id, table_name, uuid, int(row.get("rev") or 0), watermark))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def pending_sync_tombstones(table_name, limit=500):
+    """Tombstone lokal yang belum dikirim ke server."""
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT entity_uuid, deleted_at FROM sync_tombstones "
+            "WHERE table_name=? AND pushed_at IS NULL ORDER BY id LIMIT ?",
+            (table_name, int(limit))).fetchall()
+        return [{"uuid": r["entity_uuid"], "deleted_at": r["deleted_at"]} for r in rows]
+    finally:
+        conn.close()
+
+
+def mark_tombstones_pushed(table_name, uuids):
+    if not uuids:
+        return
+    conn = get_conn()
+    try:
+        marks = ",".join(["?"] * len(uuids))
+        conn.execute(
+            f"UPDATE sync_tombstones SET pushed_at=datetime('now') "
+            f"WHERE table_name=? AND entity_uuid IN ({marks})",
+            [table_name, *uuids])
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ========== M04c: konflik yang terlihat dan bisa dipulihkan (K11) ==========
+
+def _conflict_text(value):
+    """Nilai field bisa berupa apa saja; simpan sebagai teks yang bisa dibaca."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def record_sync_conflict(local_user_id, table_name, entity_uuid, field,
+                         kept_value, lost_value, kept_side):
+    """Catat satu field yang diselesaikan otomatis oleh merge.
+
+    Tanpa ini K11 hanya setengah benar: sisi kalah memang tidak dibuang, tapi
+    pengguna tidak pernah tahu ada yang dikalahkan, jadi tidak bisa memulihkannya.
+    """
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO sync_conflicts(local_user_id, table_name, entity_uuid, "
+            "field, kept_value, lost_value, kept_side) VALUES(?,?,?,?,?,?,?)",
+            (local_user_id, table_name, entity_uuid, field,
+             _conflict_text(kept_value), _conflict_text(lost_value), kept_side))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_sync_conflicts(local_user_id, limit=50, include_restored=False):
+    """Konflik terbaru, yang belum dipulihkan lebih dulu."""
+    conn = get_conn()
+    try:
+        sql = ("SELECT * FROM sync_conflicts WHERE local_user_id=?"
+               + ("" if include_restored else " AND restored_at IS NULL")
+               + " ORDER BY restored_at IS NOT NULL, detected_at DESC, id DESC LIMIT ?")
+        return [dict(r) for r in conn.execute(sql, (local_user_id, int(limit))).fetchall()]
+    finally:
+        conn.close()
+
+
+def restore_sync_conflict(local_user_id, conflict_id):
+    """Tulis kembali nilai yang kalah ke barisnya.
+
+    Sengaja menulis kolomnya langsung, bukan menukar seluruh baris: yang kalah
+    adalah satu FIELD, jadi hanya field itu yang dikembalikan.
+    """
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM sync_conflicts WHERE id=? AND local_user_id=?",
+            (int(conflict_id), local_user_id)).fetchone()
+        if row is None:
+            return {"ok": False, "code": "conflict_not_found"}
+        if row["restored_at"]:
+            return {"ok": False, "code": "already_restored"}
+        table_name = row["table_name"]
+        if table_name not in SYNC_TABLES:
+            return {"ok": False, "code": "unsupported_table"}
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table_name})")}
+        field = row["field"]
+        if field not in cols:
+            return {"ok": False, "code": "unknown_field"}
+        target = conn.execute(
+            f"SELECT id FROM {table_name} WHERE uuid=? AND user_id=?",
+            (row["entity_uuid"], local_user_id)).fetchone()
+        if target is None:
+            return {"ok": False, "code": "entity_not_found"}
+        conn.execute(
+            f"UPDATE {table_name} SET {field}=?, updated_at=datetime('now') WHERE id=?",
+            (row["lost_value"], target["id"]))
+        conn.execute(
+            "UPDATE sync_conflicts SET restored_at=datetime('now') WHERE id=?",
+            (int(conflict_id),))
+        conn.commit()
+        return {"ok": True, "table": table_name, "field": field,
+                "value": row["lost_value"]}
+    finally:
+        conn.close()
+
+
+def pending_entity_change_count(local_user_id):
+    """Baris kanal B yang berubah lokal tapi belum diakui server.
+
+    Kanal B sengaja TIDAK memakai sync_queue: set perubahannya diturunkan dengan
+    membandingkan ``rev`` tiap baris terhadap ``base_rev`` terakhir yang diakui
+    server. Konsekuensinya angka "pending" yang hanya membaca sync_queue akan
+    melaporkan 0 sambil ada edit yang belum terkirim — panel status lalu menulis
+    "semua tersinkron" padahal tidak. Hitungan inilah yang menutup lubang itu.
+
+    Baris dianggap belum tersinkron bila belum punya catatan sama sekali (baru
+    dibuat, belum pernah dikirim) atau ``updated_at``-nya lebih baru daripada
+    ``last_synced_at`` pada catatan itu.
+
+    Catatan: kolom ``rev`` lokal TIDAK dipakai sebagai penanda. Tidak ada satu
+    pun pernyataan di database.py yang menaikkannya saat baris diedit — yang
+    menstempel perubahan adalah trigger ``trg_*_sync_touch`` pada ``updated_at``.
+    Membandingkan rev terhadap base_rev karena itu selalu menjawab "sudah
+    sinkron", dan panel status akan berbohong.
+    """
+    conn = get_conn()
+    try:
+        parts = []
+        params = []
+        for table_name in CHANNEL_B_TABLES:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table_name})")}
+            if "uuid" not in cols or "rev" not in cols:
+                continue
+            owner_sql, owner_n = _entity_owner_predicate(table_name)
+            parts.append(
+                f"SELECT COUNT(*) FROM {table_name} t WHERE {owner_sql} AND t.uuid IS NOT NULL "
+                f"AND NOT EXISTS(SELECT 1 FROM sync_entity_state s WHERE s.local_user_id=? "
+                f"AND s.table_name=? AND s.entity_uuid=t.uuid "
+                f"AND COALESCE(t.updated_at,'') <= COALESCE(s.last_synced_at,''))")
+            params.extend([local_user_id] * owner_n + [local_user_id, table_name])
+        if not parts:
+            return 0
+        rows = conn.execute(" UNION ALL ".join(parts), params).fetchall()
+        return int(sum(r[0] or 0 for r in rows))
+    finally:
+        conn.close()
+
+
+def sync_status_summary(local_user_id):
+    """Ringkasan untuk UI status sync: antrean, kegagalan, sinkron terakhir."""
+    conn = get_conn()
+    try:
+        counts = {r["status"]: r["c"] for r in conn.execute(
+            "SELECT status, COUNT(*) c FROM sync_queue WHERE local_user_id=? "
+            "GROUP BY status", (local_user_id,))}
+        pending = int(counts.get("pending") or 0)
+        retry = int(counts.get("retry") or 0)
+        failed_jobs = [
+            {"entity_type": r["entity_type"], "operation": r["operation"],
+             "retry_count": r["retry_count"],
+             "last_error": (r["last_error"] or "")[:200],
+             "next_retry_at": r["next_retry_at"]}
+            for r in conn.execute(
+                "SELECT entity_type, operation, retry_count, last_error, next_retry_at "
+                "FROM sync_queue WHERE local_user_id=? AND status='retry' "
+                "ORDER BY next_retry_at LIMIT 10", (local_user_id,))]
+        unresolved = conn.execute(
+            "SELECT COUNT(*) FROM sync_conflicts WHERE local_user_id=? "
+            "AND restored_at IS NULL", (local_user_id,)).fetchone()[0]
+        pending_tombstones = conn.execute(
+            "SELECT COUNT(*) FROM sync_tombstones WHERE pushed_at IS NULL").fetchone()[0]
+        # Kanal B tidak lewat sync_queue, jadi hitung terpisah lalu gabungkan —
+        # tanpa ini `pending` bisa 0 padahal ada baris yang belum diakui server.
+        pending_entities = pending_entity_change_count(local_user_id)
+        state = conn.execute(
+            "SELECT last_pushed_at, last_pulled_at FROM cloud_personal_sync_state "
+            "WHERE local_user_id=? AND document_key='tracker_v1'",
+            (local_user_id,)).fetchone()
+        # Tidak ada kolom `last_synced_at`; yang tercatat adalah push dan pull.
+        # Yang lebih baru di antaranya adalah saat terakhir terjadi sinkronisasi.
+        last_synced = None
+        if state:
+            stamps = [s for s in (state["last_pushed_at"], state["last_pulled_at"]) if s]
+            last_synced = max(stamps) if stamps else None
+        return {
+            "pending": pending + retry + pending_entities,
+            "pending_queue": pending + retry,
+            "pending_entities": pending_entities,
+            "failed": len(failed_jobs),
+            "failed_jobs": failed_jobs,
+            "unresolved_conflicts": int(unresolved),
+            "pending_tombstones": int(pending_tombstones),
+            "last_synced_at": last_synced,
+        }
+    finally:
+        conn.close()
+
+
 def get_all_sync_jobs(local_user_id, limit=100):
     """Semua antrean (pending+retry+done) untuk inspeksi UI — termasuk yang masih backoff."""
-    conn=get_conn();rows=conn.execute("""SELECT * FROM sync_queue WHERE local_user_id=?
-        ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END, created_at,id LIMIT ?""",(local_user_id,limit)).fetchall();conn.close();return [dict(r) for r in rows]
+    conn=get_conn();rows=conn.execute(f"""SELECT * FROM sync_queue WHERE local_user_id=?
+        ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'retry' THEN 1 ELSE 2 END,
+        {_drain_order_sql()}, created_at,id LIMIT ?""",(local_user_id,limit)).fetchall();conn.close();return [dict(r) for r in rows]
 
 
 def get_sync_failed_samples(local_user_id, limit=5):
@@ -15645,9 +16664,9 @@ def rename_local_cloud_device(local_user_id,name):
     conn=get_conn();conn.execute("UPDATE cloud_device_state SET device_name=? WHERE local_user_id=?",(str(name)[:120],local_user_id));conn.commit();conn.close()
 
 
-def build_cloud_personal_snapshot(local_user_id):
+def build_cloud_personal_snapshot(local_user_id, allow_admin=False):
     """Build the private tracker_v1 document; BLOB/media and credentials are excluded."""
-    snapshot=export_tracker_data(local_user_id)
+    snapshot=export_tracker_data(local_user_id, allow_admin=allow_admin)
     # Absolute custom-sound paths are device-local and can reveal Windows folder
     # names. Sync reminder metadata without uploading that unusable path.
     for reminder in snapshot.get("tables",{}).get("reminders",[]):
@@ -15655,6 +16674,129 @@ def build_cloud_personal_snapshot(local_user_id):
     snapshot["cloud_schema"]=1
     snapshot["document_key"]="tracker_v1"
     return snapshot
+
+
+# --- M11: payload inkremental untuk snapshot personal (menutup G5) --------
+#
+# Dulu seluruh tracker adalah SATU dokumen JSON dan server menolak payload
+# di atas 8 MB (RPC octet_length) — pengguna dengan data besar tidak bisa
+# sync sama sekali. Sekarang dokumen yang besar dipecah menjadi beberapa
+# dokumen part (`tracker_v1/part/NNN`), masing-masing jauh di bawah plafon
+# transport. Setiap part membawa `generation` = hash Kanonik dokumen utuh:
+# penerima hanya menggabungkan part dari generasi yang sama dan set yang
+# lengkap, jadi tarikan di tengah proses unggah perangkat lain menghasilkan
+# "belum lengkap" — bukan data setengah rusak. Dokumen tunggal lama tetap
+# didukung penuh (snapshot kecil tidak berubah perilaku sama sekali).
+SNAPSHOT_PART_MAX_BYTES=3*1024*1024
+SNAPSHOT_PART_KEY_PREFIX="tracker_v1/part/"
+SNAPSHOT_TRANSPORT_MAX_BYTES=8*1024*1024
+
+
+def snapshot_part_key(index):
+    return f"{SNAPSHOT_PART_KEY_PREFIX}{int(index):03d}"
+
+
+def _snapshot_tables_size(tables):
+    return len(json.dumps({"tables":tables},ensure_ascii=False).encode("utf-8"))
+
+
+def split_cloud_personal_snapshot(snapshot, max_bytes=SNAPSHOT_PART_MAX_BYTES):
+    """Pecah snapshot menjadi part-part <= max_bytes (satu part bila muat).
+
+    Ukuran dihitung inkremental (panjang JSON per baris) supaya tabel
+    dengan puluhan ribu baris tidak membuat serialisasi ulang seluruh
+    dokumen untuk setiap baris. Marginnya besar: part dibatasi 3 MB
+    sedangkan plafon transport server 8 MB.
+    """
+    snapshot=snapshot or {}
+    tables=snapshot.get("tables") or {}
+    generation=cloud_personal_snapshot_hash(snapshot)
+    chunks=[]
+    current={}
+    current_size=_snapshot_tables_size({})
+    for table, rows in tables.items():
+        if not isinstance(rows, list):
+            rows=[]
+        for row in rows:
+            row_size=len(json.dumps(row,ensure_ascii=False).encode("utf-8"))+1
+            extra=row_size+(0 if table in current else len(str(table))+8)
+            if current and current_size+extra>max_bytes:
+                chunks.append(current)
+                current={}
+                current_size=_snapshot_tables_size({})
+                extra=row_size+len(str(table))+8
+            if table not in current:
+                current[table]=[]
+            current[table].append(row)
+            current_size+=extra
+        if table not in current:
+            current[table]=[]
+    if current or not chunks:
+        chunks.append(current)
+    total=len(chunks)
+    parts=[]
+    for index, chunk in enumerate(chunks):
+        parts.append({
+            "version":int(snapshot.get("version") or 1),
+            "cloud_schema":1,
+            "document_key":"tracker_v1",
+            "part":{"index":index,"total":total,"generation":generation},
+            "tables":{table:(chunk.get(table) or []) for table in tables},
+        })
+    return parts
+
+
+def merge_cloud_personal_parts(parts):
+    """Gabungkan part satu generasi menjadi snapshot utuh; None bila belum lengkap."""
+    valid=[p for p in (parts or []) if isinstance(p,dict) and isinstance(p.get("part"),dict)]
+    if not valid:
+        return None
+    generations={p["part"].get("generation") for p in valid}
+    totals={int(p["part"].get("total") or 0) for p in valid}
+    if len(generations)!=1 or len(totals)!=1:
+        return None
+    total=totals.pop()
+    if total<=0:
+        return None
+    by_index={}
+    for p in valid:
+        idx=p["part"].get("index")
+        if idx is None:
+            return None
+        by_index[int(idx)]=p
+    if sorted(by_index)!=list(range(total)):
+        return None
+    tables={table:[] for table in EXPORT_TABLES}
+    for index in range(total):
+        for table, rows in (by_index[index].get("tables") or {}).items():
+            if table in tables and isinstance(rows,list):
+                tables[table].extend(rows)
+    return {"version":int(valid[0].get("version") or 1),"cloud_schema":1,
+            "document_key":"tracker_v1","tables":tables}
+
+
+def _sanitize_cloud_personal_snapshot_part(part):
+    """Validasi SATU part sebelum digabung: whitelist tabel + plafon transport."""
+    if not isinstance(part,dict) or not isinstance(part.get("part"),dict):
+        raise ValueError("invalid snapshot part")
+    meta=part["part"]
+    idx = meta.get("index")
+    if int(meta.get("total") or 0)<=0 or idx is None or int(idx)<0:
+        raise ValueError("invalid snapshot part metadata")
+    if not str(meta.get("generation") or ""):
+        raise ValueError("snapshot part has no generation")
+    tables=part.get("tables")
+    if not isinstance(tables,dict):
+        raise ValueError("invalid snapshot part tables")
+    if any(table not in EXPORT_TABLES for table in tables):
+        raise ValueError("snapshot part contains an unsupported table")
+    raw_size=len(json.dumps(part,ensure_ascii=False).encode("utf-8"))
+    if raw_size>SNAPSHOT_TRANSPORT_MAX_BYTES:
+        raise ValueError("snapshot part exceeds transport size")
+    for table, rows in tables.items():
+        if not isinstance(rows,list) or any(not isinstance(r,dict) for r in rows):
+            raise ValueError(f"invalid rows for {table}")
+    return part
 
 
 def cloud_personal_snapshot_hash(snapshot):
@@ -15694,9 +16836,11 @@ def _sanitize_cloud_personal_snapshot(snapshot):
         raise ValueError("incomplete cloud tracker snapshot: "+", ".join(missing[:5]))
     if any(table not in EXPORT_TABLES for table in tables):
         raise ValueError("cloud tracker snapshot contains an unsupported table")
-    raw_size=len(json.dumps(snapshot,ensure_ascii=False).encode("utf-8"))
-    if raw_size>8*1024*1024:
-        raise ValueError("cloud tracker snapshot exceeds 8 MB")
+    # M11 (G5): plafon total 8 MB dihapus. Ukuran kini dibatasi per part di
+    # jalur transport (SNAPSHOT_TRANSPORT_MAX_BYTES lewat
+    # _sanitize_cloud_personal_snapshot_part); dokumen utuh yang sampai ke
+    # sini adalah hasil gabungan part yang sah, jadi menolaknya di sini
+    # justru mengembalikan bug lama. Batas jumlah baris di bawah tetap ada.
     conn=get_conn();allowed={}
     try:
         for table in EXPORT_TABLES:
@@ -15720,11 +16864,128 @@ def _sanitize_cloud_personal_snapshot(snapshot):
     return cleaned
 
 
+# Kolom yang tidak ikut di-merge per field: identitas dan metadata sinkronisasi.
+_MERGE_META_FIELDS = ("id", "uuid", "rev", "updated_at", "deleted_at")
+
+
+def _merge_tracker_row(local_row, remote_row, on_conflict=None):
+    """Gabungkan satu baris dari dua perangkat, field demi field.
+
+    ``on_conflict`` dipanggil untuk setiap field yang kedua sisinya ubah, dengan
+    (field, nilai yang dipakai, nilai yang dikalahkan, sisi pemenang). Fungsi ini
+    tetap murni — tidak menyentuh database — supaya logika merge yang paling rawan
+    bisa diuji tanpa harness; pencatatan konflik adalah urusan pemanggil.
+
+    Sisi dengan ``updated_at`` lebih baru menang; kalau seri, lokal menang agar
+    hasilnya deterministik di kedua perangkat. Field yang kosong di sisi menang
+    diisi dari sisi kalah, jadi informasi tidak hilang hanya karena salah satu
+    perangkat belum pernah mengisinya.
+    """
+    local_ts = str(local_row.get("updated_at") or "")
+    remote_ts = str(remote_row.get("updated_at") or "")
+    if remote_ts > local_ts:
+        base, other = dict(remote_row), local_row
+    else:
+        base, other = dict(local_row), remote_row
+    for key, value in other.items():
+        if key in _MERGE_META_FIELDS:
+            continue
+        if base.get(key) in (None, ""):
+            base[key] = value
+    if on_conflict is not None:
+        # Hanya catat kalau ada nilai yang benar-benar DISINGKIRKAN. Kalau field
+        # sisi pemenang kosong, aturan "isi dari sisi kalah" di atas memakainya,
+        # jadi tidak ada yang hilang dan itu bukan konflik — tanpa pengecualian ini
+        # daftar konflik akan penuh baris yang sebenarnya tidak kehilangan apa-apa.
+        if remote_ts > local_ts:
+            winner, loser, side = remote_row, local_row, "cloud"
+        elif local_ts > remote_ts:
+            winner, loser, side = local_row, remote_row, "local"
+        else:
+            winner = loser = None
+        if winner is not None:
+            for key, lost_value in loser.items():
+                if key in _MERGE_META_FIELDS or lost_value in (None, ""):
+                    continue
+                kept_value = winner.get(key)
+                if kept_value in (None, "") or kept_value == lost_value:
+                    continue
+                on_conflict(key, kept_value, lost_value, side)
+    base["uuid"] = local_row.get("uuid") or remote_row.get("uuid")
+    try:
+        base["rev"] = max(int(local_row.get("rev") or 0), int(remote_row.get("rev") or 0))
+    except (TypeError, ValueError):
+        pass
+    base["updated_at"] = max(local_ts, remote_ts) or None
+    # Penghapusan menang atas edit yang lebih tua, kalau tidak delete tidak akan
+    # pernah merambat (G4).
+    tombstones = [str(r.get("deleted_at")) for r in (local_row, remote_row) if r.get("deleted_at")]
+    base["deleted_at"] = max(tombstones) if tombstones else None
+    return base
+
+
+def _row_conflict(on_conflict, table_name, entity_uuid):
+    """Bungkus callback agar pemanggil mendapat konteks tabel + baris."""
+    if on_conflict is None:
+        return None
+
+    def emit(field, kept, lost, kept_side):
+        on_conflict(table_name, entity_uuid, field, kept, lost, kept_side)
+
+    return emit
+
+
+def merge_tracker_snapshots(local_snapshot, remote_snapshot, on_conflict=None):
+    """Gabungkan dua snapshot tracker per baris, bukan saling menggantikan.
+
+    Inilah inti penutupan G1. Sebelumnya snapshot cloud MENGGANTIKAN seluruh
+    dokumen lokal, sehingga apa pun yang dibuat perangkat lain selagi offline
+    hilang dan hanya tersisa di ``local_backup_payload``. Sekarang:
+
+    * baris yang hanya ada di salah satu sisi dipertahankan (union);
+    * baris yang ada di kedua sisi digabung per field (LWW by ``updated_at``);
+    * baris tanpa uuid tidak bisa dicocokkan, jadi yang lokal dipertahankan
+      alih-alih dibuang diam-diam.
+
+    Fungsi ini murni — tidak menyentuh database — supaya logika merge yang paling
+    rawan bisa diuji tanpa harness.
+    """
+    local_tables = (local_snapshot or {}).get("tables") or {}
+    remote_tables = (remote_snapshot or {}).get("tables") or {}
+    merged = {}
+    for table in set(local_tables) | set(remote_tables):
+        local_rows = local_tables.get(table) or []
+        remote_rows = remote_tables.get(table) or []
+        local_by_uuid = {r["uuid"]: r for r in local_rows
+                         if isinstance(r, dict) and r.get("uuid")}
+        remote_by_uuid = {r["uuid"]: r for r in remote_rows
+                          if isinstance(r, dict) and r.get("uuid")}
+        out = [r for r in local_rows if not (isinstance(r, dict) and r.get("uuid"))]
+        for uuid, remote_row in remote_by_uuid.items():
+            local_row = local_by_uuid.get(uuid)
+            out.append(_merge_tracker_row(local_row, remote_row,
+                                          _row_conflict(on_conflict, table, uuid))
+                       if local_row else remote_row)
+        out.extend(row for uuid, row in local_by_uuid.items() if uuid not in remote_by_uuid)
+        merged[table] = out
+    result = dict(remote_snapshot or {})
+    result["tables"] = merged
+    return result
+
+
 def apply_cloud_personal_snapshot(local_user_id, snapshot):
-    """Atomically replace cloud-covered tracker tables while preserving progress."""
+    """Gabungkan snapshot cloud ke data lokal (M04b).
+
+    Dulunya fungsi ini mengganti seluruh dokumen, dan itu penyebab utama G1.
+    Kanal snapshot sekarang diturunkan jadi backup/import/recovery (K6/K14):
+    impor manual tetap memakai ``import_tracker_data`` langsung dengan semantik
+    ganti, sedangkan jalur sync menggabung.
+    """
     clean=_sanitize_cloud_personal_snapshot(snapshot)
     local_backup=build_cloud_personal_snapshot(local_user_id)
-    import_tracker_data(local_user_id,clean,preserve_progress=True)
+    merged=merge_tracker_snapshots(local_backup,clean,
+                                   on_conflict=lambda *a: record_sync_conflict(local_user_id,*a))
+    import_tracker_data(local_user_id,merged,preserve_progress=True)
     # SQLite remaps relational integer IDs on import. Baseline the actual local
     # representation so an unchanged device does not upload a duplicate revision.
     imported_local=build_cloud_personal_snapshot(local_user_id)
@@ -16575,6 +17836,150 @@ def get_cloud_inventory_cache(user_id):
     conn.close()
     return [dict(r) for r in rows]
 
+def save_cloud_pets(user_id, payload):
+    """M09a: cache lokal koleksi pet cloud (hasil fetch_cloud_pets)."""
+    payload = payload or {}
+    conn = get_conn()
+    conn.execute("DELETE FROM cloud_pets_cache WHERE user_id=?", (user_id,))
+    for r in payload.get("pets") or []:
+        conn.execute("INSERT INTO cloud_pets_cache(user_id,pet_key,level,exp,hunger,happiness,is_active,updated_at) VALUES(?,?,?,?,?,?,?,datetime('now'))",
+                     (user_id, r.get("pet_key"), int(r.get("level") or 1), int(r.get("exp") or 0),
+                      int(r.get("hunger") or 100), int(r.get("happiness") or 50), 1 if r.get("is_active") else 0))
+    state = payload.get("spin_state") or {}
+    conn.execute("""INSERT INTO cloud_pet_spin_state_cache(user_id,spins_total,since_epic,since_legendary,updated_at)
+                    VALUES(?,?,?,?,datetime('now'))
+                    ON CONFLICT(user_id) DO UPDATE SET spins_total=excluded.spins_total,
+                        since_epic=excluded.since_epic, since_legendary=excluded.since_legendary,
+                        updated_at=datetime('now')""",
+                 (user_id, int(state.get("spins_total") or 0), int(state.get("since_epic") or 0),
+                  int(state.get("since_legendary") or 0)))
+    conn.commit(); conn.close()
+
+
+def get_cloud_pets_cache(user_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM cloud_pets_cache WHERE user_id=? ORDER BY pet_key", (user_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_cloud_pet_spin_state_cache(user_id):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM cloud_pet_spin_state_cache WHERE user_id=?", (user_id,)).fetchone()
+    conn.close()
+    if not row:
+        return {"spins_total": 0, "since_epic": 0, "since_legendary": 0}
+    return {"spins_total": int(row["spins_total"] or 0),
+            "since_epic": int(row["since_epic"] or 0),
+            "since_legendary": int(row["since_legendary"] or 0)}
+
+
+def save_cloud_talents(user_id, payload):
+    """M09b: cache lokal daftar talent cloud (hasil fetch_cloud_talents)."""
+    payload = payload or {}
+    conn = get_conn()
+    conn.execute("DELETE FROM cloud_talents_cache WHERE user_id=?", (user_id,))
+    for key in payload.get("talents") or []:
+        conn.execute("INSERT OR IGNORE INTO cloud_talents_cache(user_id,talent_key) VALUES(?,?)",
+                     (user_id, key))
+    conn.commit(); conn.close()
+
+
+def get_cloud_talents_cache(user_id):
+    conn = get_conn()
+    rows = conn.execute("SELECT talent_key FROM cloud_talents_cache WHERE user_id=? ORDER BY talent_key", (user_id,)).fetchall()
+    conn.close()
+    return [r["talent_key"] for r in rows]
+
+
+def apply_cloud_talents(user_id, payload):
+    """M09b: cerminkan talent cloud ke user_talents lokal.
+
+    Server adalah buku catatan unlock (unlock_talent_cloud memvalidasi
+    class/level/poin). Di sini kunci yang belum ada ditambahkan dan
+    talent_points_spent dihitung ulang dari jumlah baris, supaya buff
+    lokal memakai kumpulan talent gabungan kedua device. Idempoten.
+    """
+    keys = (payload or {}).get("talents") or []
+    conn = get_conn()
+    for key in keys:
+        conn.execute("INSERT OR IGNORE INTO user_talents(user_id, talent_key) VALUES(?,?)",
+                     (user_id, key))
+    conn.execute("UPDATE users SET talent_points_spent=(SELECT COUNT(*) FROM user_talents WHERE user_id=?) WHERE id=?",
+                 (user_id, user_id))
+    conn.commit(); conn.close()
+    if keys:
+        recalculate_all_buffs(user_id)
+    return {"ok": True, "applied": len(keys)}
+
+
+def apply_cloud_spin_result(user_id, result, payload=None):
+    """M09a: terapkan hasil spin SERVER ke tabel lokal yang dibaca UI.
+
+    Client TIDAK mengundi apa pun di sini: pet, rank, dan EXP duplikat sudah
+    diputuskan RPC `spin_pet_cloud`. Fungsi ini hanya mencerminkan keputusan
+    itu ke `user_pets`/`pet_spin_state` lokal (nilai absolut dari
+    `fetch_cloud_pets` bila tersedia, jadi penerapan ulang hasil yang sama
+    tidak menggandakan apa pun) dan memotong gold lokal sebagai cermin
+    dompet cloud — sekali per spin segar, tidak pada putar-ulang idempoten.
+    """
+    result = result or {}
+    pet_id = result.get("pet_id")
+    if not pet_id:
+        return {"ok": False, "msg": "invalid_spin_result"}
+    payload = payload or {}
+    cloud_row = None
+    for r in payload.get("pets") or []:
+        if r.get("pet_key") == pet_id:
+            cloud_row = r
+            break
+    is_new = bool(result.get("is_new"))
+    replay = bool(result.get("replay"))
+    conn = get_conn()
+    try:
+        owned = conn.execute(
+            "SELECT id FROM user_pets WHERE user_id=? AND pet_id=?", (user_id, pet_id)
+        ).fetchone()
+        if owned:
+            if cloud_row:
+                conn.execute(
+                    "UPDATE user_pets SET level=?, exp=?, hunger=?, happiness=? WHERE id=?",
+                    (int(cloud_row.get("level") or 1), int(cloud_row.get("exp") or 0),
+                     int(cloud_row.get("hunger") or 100), int(cloud_row.get("happiness") or 50),
+                     owned["id"]))
+            elif int(result.get("dupe_exp") or 0):
+                add_pet_exp(conn, owned["id"], int(result["dupe_exp"]))
+        else:
+            conn.execute(
+                "INSERT INTO user_pets(user_id, pet_id, hunger, happiness, level, exp) VALUES(?,?,?,?,?,?)",
+                (user_id, pet_id,
+                 int((cloud_row or {}).get("hunger") or 100),
+                 int((cloud_row or {}).get("happiness") or 50),
+                 int((cloud_row or {}).get("level") or 1),
+                 int((cloud_row or {}).get("exp") or 0)))
+        state = payload.get("spin_state") or {}
+        if state or result.get("spins_total") is not None:
+            conn.execute("""INSERT INTO pet_spin_state(user_id, spins_total, since_epic, since_legendary)
+                            VALUES(?,?,?,?)
+                            ON CONFLICT(user_id) DO UPDATE SET spins_total=excluded.spins_total,
+                                since_epic=excluded.since_epic, since_legendary=excluded.since_legendary""",
+                         (user_id,
+                          int(state.get("spins_total", result.get("spins_total") or 0)),
+                          int(state.get("since_epic", result.get("since_epic") or 0)),
+                          int(state.get("since_legendary", result.get("since_legendary") or 0))))
+        if not replay:
+            # Cermin potongan dompet cloud; MAX(0,...) karena saldo lokal
+            # adalah cermin, bukan otoritas (server sudah memotong persis).
+            conn.execute("UPDATE users SET gold=MAX(0, gold-?) WHERE id=?",
+                         (int(result.get("cost") or SPIN_COST), user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    if is_new and not replay:
+        check_achievements(user_id, "pet_adopt", 1)
+        recalculate_all_buffs(user_id)
+    return {"ok": True, "pet_id": pet_id, "is_new": is_new}
+
 
 def _queue_cloud_econ(user_id, entity, operation, payload):
     """Antre aksi ekonomi lokal ke cloud (idempoten via key uuid)."""
@@ -16582,7 +17987,7 @@ def _queue_cloud_econ(user_id, entity, operation, payload):
         return
     payload = dict(payload)
     payload.setdefault("idempotency_key", str(uuid.uuid4()))
-    enqueue_sync(user_id, entity, payload.get("item_key") or payload.get("recipe_key") or "", operation, payload)
+    enqueue_sync(user_id, entity, payload.get("item_key") or payload.get("recipe_key") or payload.get("talent_key") or payload.get("boss_key") or "", operation, payload)
 
 
 def get_blend_playlist_for_user(user_id):

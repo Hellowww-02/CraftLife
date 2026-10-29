@@ -89,8 +89,10 @@ content (real keys, real file names, real commands, real numbers), in Indonesian
 
 ```text
 Format 1 — Key i18n baru          : table of key | id | en | where used
-Format 2 — File yang ditimpa      : numbered list, one-line reason each
-Format 3 — File baru              : numbered list, purpose each
+Format 2 — File yang ditimpa      : directory tree, every folder from /home/user down to the file
+                                    + one-line reason each, and the absolute path repeated per file
+Format 3 — File baru              : directory tree, every folder from /home/user down to the file
+                                    + purpose each, and the absolute path repeated per file
 Format 4 — Perintah / endpoint    : new routes, env vars, exact commands (including how to verify)
 Format 5 — Kesimpulan             : what changed, what it fixes, what the user sees
 Format 6 — Migrasi                : SQLite auto-apply (what columns/tables) · Supabase (file or "none")
@@ -103,6 +105,63 @@ Rules for this section:
 - No condensed “see above” tables: the reader must be able to act on the chat message alone.
 - Numbers must be the real measured ones (e.g. `tsc: 0 errors`, `4,325 keys`, `23/23 tests`, build hash + size).
 - If something was **not** verified, say so explicitly. Silent optimism is a defect.
+- **Directory detail in Format 2 and Format 3 — every level, from the root folder down to the file.**
+  A file is not identified by its name, nor by its last folder; it is identified by the whole chain
+  of folders that contains it, starting at the workspace root. Two projects share this workspace
+  (`CraftLife/` desktop, `CraftLife-Android/` Android) and both contain a `src/`, a `tests/`, a
+  `package.json` and a `tsconfig.json`, so anything shorter than the full chain is ambiguous —
+  `tests/data.test.ts` could belong to either project, and `src/data/` exists in both.
+  - **Absolute, from `/home/user`.** Write `/home/user/CraftLife-Android/src/sync/outbox.ts`.
+    Never `outbox.ts`, never `src/sync/outbox.ts`, never `CraftLife-Android/outbox.ts`, never a
+    `~/` shorthand, never a `…`-elided middle.
+  - **Show the chain as a directory tree**, one tree per project under its own heading, with every
+    intermediate folder drawn as a node (`├──` / `└──`) all the way down to the file itself. No
+    level may be skipped, collapsed or elided.
+  - **Annotate each folder node once** with what it holds, so the report doubles as a map of the
+    codebase for a reader who has not opened it.
+  - **Tag each file node** with what happened to it: `[new]`, `[modified]`, `[deleted]`, `[moved]`.
+  - **Repeat every file as a numbered line carrying its absolute path** beneath the tree, with the
+    reason (Format 2) or the purpose (Format 3), so each path can be copy-pasted straight into an
+    editor instead of being reassembled by hand from the tree.
+  - **Group by project**, each group with its own heading, so the split between the desktop
+    repository and the Android client stays visible.
+  - **Moved or renamed files** state both chains in full
+    (`/home/user/CraftLife/mobile/src/x.ts` → `/home/user/CraftLife-Android/src/x.ts`), because a
+    move otherwise reads as a deletion plus an addition.
+  - **Deleted files** are listed too, under Format 2 with the reason. A file that disappears
+    silently is indistinguishable from one that was never touched.
+  - **An empty list is stated, not omitted**: “tidak ada file yang ditimpa” is an answer; silence
+    is not.
+
+Shape of Format 2 and Format 3 (illustrative — these paths are an example, not a record):
+
+```text
+Format 3 — File baru
+
+A. CraftLife (desktop) — /home/user/CraftLife/
+
+   CraftLife/                         ← desktop app: PyQt6 shell + local API + React UI + SQLite
+   └── tests/                         ← stdlib unittest suite
+       └── test_m08_x.py              [new]
+
+B. CraftLife-Android (Android client) — /home/user/CraftLife-Android/
+
+   CraftLife-Android/                 ← Expo + expo-router app root
+   ├── src/                           ← all app source
+   │   ├── data/                      ← data layer between the screens and the local cache
+   │   │   ├── serverClock.ts         [new]
+   │   │   └── repository.ts          [new]
+   │   └── sync/                      ← outbox, cache drain, background scheduling
+   │       └── outbox.ts              [modified]
+   └── tests/                         ← vitest unit tests
+       └── data.test.ts               [new]
+
+   1. /home/user/CraftLife/tests/test_m08_x.py                       — [new] <purpose>
+   2. /home/user/CraftLife-Android/src/data/serverClock.ts           — [new] <purpose>
+   3. /home/user/CraftLife-Android/src/data/repository.ts            — [new] <purpose>
+   4. /home/user/CraftLife-Android/src/sync/outbox.ts                — [modified] <reason>
+   5. /home/user/CraftLife-Android/tests/data.test.ts                — [new] <purpose>
+```
 
 ---
 
@@ -232,7 +291,10 @@ Current state and the rules that follow from it:
 1. **Bahasa:** balasan untuk pemilik proyek memakai **Indonesia**; semua berkas publik di repo
    (README, Release Notes, RULES) memakai **bahasa Inggris**.
 2. **Format 10 poin** wajib tiap pembaruan: (1) string baru → key di `translations.py`; (2) daftar file yang
-   ditimpa; (3) daftar file baru; (4) perintah/endpoint/env baru; (5) kesimpulan tiap pembaruan;
+   ditimpa, **dengan pohon direktori lengkap dari folder induk `/home/user` sampai nama file, tiap
+   tingkat folder ikut tertulis dan diberi keterangan**; (3) daftar file baru, **pohon direktori
+   lengkap yang sama, plus path absolut tiap file diulang dalam daftar bernomor**;
+   (4) perintah/endpoint/env baru; (5) kesimpulan tiap pembaruan;
    (6) migrasi Supabase (atau “tidak ada”); (7) satu kesimpulan gabungan di akhir commit phase;
    (8) `updater.py` selalu diperbarui tiap fase; (9) `README.md` selalu diperbarui tiap fase (“REVISI”);
    (10) tulis Release Notes untuk GitHub Release.

@@ -5,6 +5,8 @@ features and Phase 3 conflict-safe personal tracker replication.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 import io
 import json
 import threading
@@ -135,9 +137,45 @@ class CloudSyncService:
         # during sync_now, preventing a first device from overwriting another.
         return db.sync_queue_summary(local_user_id)
 
+    @staticmethod
+    def _quota_seen(node) -> Optional[str]:
+        """Cari jejak kuota/402 di dalam struktur hasil sync yang bersarang.
+
+        Error per-kanal disimpan sebagai STRING, bukan exception, jadi
+        classify_cloud_error() tidak bisa dipakai langsung pada hasilnya.
+        Fungsi ini menelusuri dict/list dan mengklasifikasi setiap string.
+        """
+        if isinstance(node, str):
+            from cloud_service import classify_cloud_error
+            kind = classify_cloud_error(Exception(node))
+            return kind if kind in ("quota", "rate_limited") else None
+        # Rujukan lewat nama kelas, bukan `self`: ini staticmethod, jadi `self`
+        # tidak ada di dalamnya.
+        if isinstance(node, dict):
+            for value in node.values():
+                found = CloudSyncService._quota_seen(value)
+                if found:
+                    return found
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                found = CloudSyncService._quota_seen(value)
+                if found:
+                    return found
+        return None
+
     def sync_now(self, local_user_id: int, force_retry: bool = False) -> dict:
         if not self._lock.acquire(blocking=False):
             return {"ok": False, "code": "already_running"}
+        # Berhenti menembak project yang sedang dibatasi. Selama masa tunggu,
+        # satu permintaan pun tidak dikirim — itu inti dari penanganan 402.
+        # force_retry tetap diizinkan: pengguna yang sengaja menekan tombol
+        # sync berarti ingin mencoba lagi sekarang.
+        if not force_retry:
+            suspended, reason = db.cloud_suspension_active(local_user_id)
+            if suspended:
+                self._lock.release()
+                return {"ok": False, "code": "cloud_suspended", "reason": reason,
+                        "retry_after_seconds": db.CLOUD_SUSPEND_PROBE_SECONDS}
         try:
             if force_retry:
                 try: db.reset_sync_backoff(local_user_id)
@@ -149,9 +187,13 @@ class CloudSyncService:
             # not been pushed yet, Phase 1/2 sync still works and reports the reason.
             phase3 = self._register_phase3_device(local_user_id)
             personal = {"available": False, "reason": phase3.get("error", "migration_not_applied")}
+            channel_a = {"available": False, "reason": phase3.get("error", "migration_not_applied")}
+            channel_b = {"available": False, "reason": phase3.get("error", "migration_not_applied")}
             if phase3.get("available"):
                 personal = self._pull_personal(local_user_id)
                 self._queue_personal_if_changed(local_user_id)
+                channel_a = self._sync_channel_a(local_user_id)
+                channel_b = self._sync_channel_b(local_user_id)
 
             pushed = self._process_queue(local_user_id, force=force_retry)
             pulled = self._pull_social(local_user_id)
@@ -174,16 +216,38 @@ class CloudSyncService:
                     except Exception as guild_exc:maintenance["guild"]={"ok":False,"error":str(guild_exc)}
                 except Exception as exc:
                     maintenance = {"ok": False, "error": str(exc)}
+            # Error per-kanal datang sebagai string, bukan exception, jadi
+            # 402 bisa lolos dari handler di bawah kalau tidak dipindai di sini.
+            quota = self._quota_seen({
+                "personal": personal, "channel_a": channel_a,
+                "channel_b": channel_b, "phase3": phase3,
+                "maintenance": maintenance,
+            })
+            if quota:
+                db.set_cloud_suspended(local_user_id, quota)
+                self.last_result = {"ok": False, "code": "cloud_suspended",
+                                    "reason": quota}
+                return self.last_result
+            db.clear_cloud_suspended(local_user_id)
             db.mark_cloud_sync_complete(local_user_id)
             self.last_result = {
                 "ok": True, "pushed": pushed, "pulled": pulled,
                 "personal": personal, "phase3": phase3,
+                "channel_a": channel_a,
+                "channel_b": channel_b,
                 "maintenance": maintenance,
                 "synced_at": datetime.now().isoformat(),
             }
             return self.last_result
         except Exception as exc:
-            self.last_result = {"ok": False, "code": "sync_error", "error": str(exc)}
+            from cloud_service import classify_cloud_error
+            kind = classify_cloud_error(exc)
+            if kind in ("quota", "rate_limited"):
+                db.set_cloud_suspended(local_user_id, kind)
+                self.last_result = {"ok": False, "code": "cloud_suspended",
+                                    "reason": kind, "error": str(exc)}
+            else:
+                self.last_result = {"ok": False, "code": "sync_error", "error": str(exc)}
             return self.last_result
         finally:
             self._lock.release()
@@ -218,12 +282,78 @@ class CloudSyncService:
             "payload": snapshot,
             "device_id": device["device_id"],
         }
-        db.enqueue_sync(local_user_id, "personal_snapshot", "tracker_v1", "upsert", payload)
-        return {"queued": True, "hash": local_hash}
+        parts = db.split_cloud_personal_snapshot(snapshot)
+        if len(parts) <= 1:
+            db.enqueue_sync(local_user_id, "personal_snapshot", "tracker_v1", "upsert", payload)
+            return {"queued": True, "hash": local_hash}
+        # M11 (G5): dokumen besar diantrekan sebagai part. Manifest (part 0)
+        # PALING TERAKHIR supaya drain FIFO menyelesaikan part data lebih
+        # dulu; penerima tetap memvalidasi kelengkapan satu generasi, jadi
+        # urutan ini optimasi, bukan syarat kebenaran.
+        for part in reversed(parts):
+            meta = part["part"]
+            part_payload = {
+                "document_key": db.snapshot_part_key(meta["index"]),
+                "base_revision": 0,
+                "content_hash": local_hash,
+                "payload": part,
+                "device_id": device["device_id"],
+                "part": meta,
+            }
+            db.enqueue_sync(local_user_id, "personal_snapshot",
+                            part_payload["document_key"], "upsert", part_payload)
+        return {"queued": True, "hash": local_hash, "parts": len(parts)}
 
     def _pull_personal(self, local_user_id: int) -> dict:
+        # CEK VERSI DULU, baru unduh.
+        #
+        # get_personal_snapshots() memakai .select("*") sehingga payload penuh
+        # ikut terkirim. Padahal get_personal_snapshot_versions() hanya meminta
+        # kolom metadata (id, document_key, revision, content_hash, ...) tanpa
+        # payload. Dulu dokumen tracker diunduh penuh setiap 60 detik hanya
+        # untuk sampai ke cabang "unchanged" di bawah.
+        #
+        # Aman karena revision dinaikkan server setiap tulis
+        # (`revision=revision+1`), jadi revision yang tidak naik berarti
+        # benar-benar tidak ada yang berubah. Dua keadaan sengaja TIDAK
+        # mengambil jalan pintas: belum pernah sync sama sekali (`not state`),
+        # dan konflik yang menunggu penyelesaian — keduanya tetap butuh payload.
+        state = db.get_cloud_personal_sync_state(local_user_id)
+        if state and state.get("conflict_status") != "needs_resolution":
+            known_revision = int(state.get("remote_revision") or 0)
+            try:
+                # M11: generasi part memakai revisi manifest (part/000)
+                # sebagai penanda versi; dokumen tunggal lama tetap dibaca.
+                versions = self.cloud.get_personal_snapshot_versions(
+                    db.snapshot_part_key(0), limit=1)
+                if not versions:
+                    versions = self.cloud.get_personal_snapshot_versions("tracker_v1", limit=1)
+            except Exception:
+                versions = None
+            latest = (versions or [None])[0]
+            if latest is not None:
+                remote_revision = int(latest.get("revision") or 0)
+                if remote_revision <= known_revision:
+                    return {"available": True, "remote": True, "unchanged": True,
+                            "revision": remote_revision, "skippedDownload": True}
         rows = self.cloud.get_personal_snapshots()
-        remote = next((row for row in rows if row.get("document_key") == "tracker_v1"), None)
+        # M11 (G5): utamakan dokumen part bila ada. Set part yang belum
+        # lengkap (perangkat lain sedang mengunggah) berarti "belum ada
+        # yang bisa diterapkan siklus ini" — bukan error dan bukan konflik.
+        part_rows = [r for r in (rows or [])
+                     if str(r.get("document_key") or "").startswith(db.SNAPSHOT_PART_KEY_PREFIX)]
+        if part_rows:
+            merged = db.merge_cloud_personal_parts([r.get("payload") or {} for r in part_rows])
+            if merged is None:
+                return {"available": True, "remote": True, "partsIncomplete": True}
+            manifest = next((r for r in part_rows
+                             if r.get("document_key") == db.snapshot_part_key(0)), part_rows[0])
+            remote = {"document_key": "tracker_v1", "payload": merged,
+                      "revision": int(manifest.get("revision") or 0),
+                      "content_hash": manifest.get("content_hash"),
+                      "server_updated_at": manifest.get("server_updated_at")}
+        else:
+            remote = next((row for row in rows if row.get("document_key") == "tracker_v1"), None)
         if not remote:
             return {"available": True, "remote": False}
 
@@ -306,9 +436,108 @@ class CloudSyncService:
                                         "pull", applied["local_backup"])
         return {"ok": True, "applied": True, "revision": remote["revision"]}
 
+    def _sync_channel_a(self, local_user_id: int) -> dict:
+        """M04a Kanal A: union-merge tabel append-only.
+
+        Sengaja aditif dan tahan gagal, mengikuti pola fallback Phase 3 di atas:
+        kalau migrasi M04a belum diterapkan ke proyek Supabase, fungsi ini
+        melaporkan alasannya dan sisa sync tetap jalan.
+
+        Urutannya push lalu pull per tabel. Push dulu supaya baris lokal sudah
+        ada di server sebelum pull, sehingga satu putaran sync langsung
+        menyatukan kedua arah.
+        """
+        device = db.get_or_create_cloud_device(local_user_id)
+        device_id = device["device_id"]
+        pushed, pulled, errors = {}, {}, {}
+        for table in db.APPEND_ONLY_TABLES:
+            try:
+                batch = db.build_entity_append_batch(local_user_id, table, limit=5000)
+                if batch:
+                    result = self.cloud.append_entities(table, batch, device_id)
+                    if isinstance(result, list):
+                        result = result[0] if result else {}
+                    pushed[table] = int((result or {}).get("inserted") or 0)
+                # INKREMENTAL, bukan tarikan penuh. Tabel append-only tidak
+                # pernah berubah setelah ditulis, jadi meminta yang lebih baru
+                # dari watermark saja sudah lengkap — dan itu yang membedakan
+                # beberapa baris per menit dari seluruh riwayat tiap 60 detik.
+                remote = self.cloud.fetch_entities(
+                    table, since=db.channel_a_since(local_user_id, table))
+                if isinstance(remote, list):
+                    remote = remote[0] if remote else {}
+                rows = (remote or {}).get("rows") or []
+                applied = db.apply_entity_append_rows(local_user_id, table, rows)
+                pulled[table] = int(applied.get("inserted") or 0)
+                # Watermark maju ke server_updated_at tertinggi yang diterima.
+                # channel_a_since() mengurangi overlap 1 detik, dan baris yang
+                # terambil ulang dilewati berdasarkan uuid, jadi batas limit
+                # tidak bisa menghilangkan baris.
+                marks = [r.get("server_updated_at") for r in rows
+                         if isinstance(r, dict) and r.get("server_updated_at")]
+                if marks:
+                    db.set_channel_a_watermark(local_user_id, table, max(marks))
+            except Exception as exc:
+                errors[table] = str(exc)[:200]
+        if errors and len(errors) == len(db.APPEND_ONLY_TABLES):
+            return {"available": False, "reason": next(iter(errors.values()))}
+        return {"available": True, "pushed": pushed, "pulled": pulled, "errors": errors}
+
+    def _sync_channel_b(self, local_user_id: int) -> dict:
+        """M04b Kanal B: merge 3-way untuk tabel mutable.
+
+        Urutan per tabel: kirim tombstone dulu (supaya penghapusan tidak kalah
+        oleh baris yang baru saja di-push), lalu upsert baris, lalu tarik
+        tombstone perangkat lain. Sama seperti Kanal A, gagal di satu tabel tidak
+        membatalkan tabel lain.
+        """
+        device = db.get_or_create_cloud_device(local_user_id)
+        device_id = device["device_id"]
+        pushed, deleted_remote, errors = {}, {}, {}
+        for table in db.CHANNEL_B_TABLES:
+            try:
+                pending = db.pending_sync_tombstones(table)
+                if pending:
+                    self.cloud.push_tombstones(table, pending, device_id)
+                    db.mark_tombstones_pushed(table, [t["uuid"] for t in pending])
+
+                batch = db.build_entity_change_batch(local_user_id, table, limit=5000)
+                if batch:
+                    result = self.cloud.upsert_entities(table, batch, device_id)
+                    if isinstance(result, list):
+                        result = result[0] if result else {}
+                    pushed[table] = {
+                        "sent": len(batch),
+                        "inserted": int((result or {}).get("inserted") or 0),
+                        "updated": int((result or {}).get("updated") or 0),
+                        "field_conflicts": int((result or {}).get("field_conflicts") or 0),
+                    }
+                    # Catat rev yang diakui server sebagai base_rev berikutnya.
+                    # Tanpa langkah ini sync_entity_state tidak pernah maju:
+                    # setiap push berikutnya tetap mengaku base_rev 0, server
+                    # tidak menemukan sisi "base", dan merge 3-way diam-diam
+                    # turun kelas menjadi LWW 2-way selamanya.
+                    acked = (result or {}).get("rows") or []
+                    if acked:
+                        db.record_entity_revisions_synced(local_user_id, table, acked)
+
+                remote = self.cloud.fetch_tombstones(table)
+                if isinstance(remote, list):
+                    remote = remote[0] if remote else {}
+                rows = (remote or {}).get("rows") or []
+                if rows:
+                    applied = db.apply_entity_tombstones(local_user_id, table, rows)
+                    if applied["deleted"]:
+                        deleted_remote[table] = applied["deleted"]
+            except Exception as exc:
+                errors[table] = str(exc)[:200]
+        if errors and len(errors) == len(db.CHANNEL_B_TABLES):
+            return {"available": False, "reason": next(iter(errors.values()))}
+        return {"available": True, "pushed": pushed,
+                "deleted_remotely": deleted_remote, "errors": errors}
+
     def _process_queue(self, local_user_id: int, force: bool = False) -> dict:
-        done = failed = conflicts = 0
-        # Untuk manual Sync Sekarang kita paksa retry walau masih dalam backoff,
+        done = failed = conflicts = 0        # Untuk manual Sync Sekarang kita paksa retry walau masih dalam backoff,
         # agar error langsung terlihat (queue 33 tidak lagi \"nyangkut diam\").
         jobs = db.get_all_sync_jobs(local_user_id, 30) if force else db.get_pending_sync_jobs(local_user_id, 30)
         # Filter hanya pending/retry yang siap diproses; jika force, abaikan next_retry_at
@@ -343,6 +572,39 @@ class CloudSyncService:
                     response = self.cloud.upsert_personal_snapshot(
                         payload["document_key"], payload["base_revision"],
                         payload["content_hash"], payload["payload"], payload["device_id"])
+                    if payload.get("part"):
+                        # M11: part punya revisi sendiri-sendiri. Konflik di
+                        # sini berarti basis kita basi (part sudah pernah
+                        # terunggah) — ambil revisi terbaru lalu coba sekali
+                        # lagi. Ini BUKAN konflik data pengguna.
+                        if isinstance(response, dict) and response.get("conflict"):
+                            versions = self.cloud.get_personal_snapshot_versions(
+                                payload["document_key"], limit=1) or []
+                            base = int((versions[0] if versions else {}).get("revision") or 0)
+                            # get_personal_snapshot_versions membaca tabel
+                            # versi; revisi berjalan ada di baris snapshot.
+                            rows = self.cloud.get_personal_snapshots() or []
+                            for row in rows:
+                                if row.get("document_key") == payload["document_key"]:
+                                    base = int(row.get("revision") or base)
+                            response = self.cloud.upsert_personal_snapshot(
+                                payload["document_key"], base,
+                                payload["content_hash"], payload["payload"], payload["device_id"])
+                        if isinstance(response, dict) and response.get("conflict"):
+                            raise RuntimeError("snapshot_part_conflict")
+                        remaining = [j for j in db.get_pending_sync_jobs(local_user_id, 50)
+                                     if j.get("entity_type") == "personal_snapshot"
+                                     and int(j.get("id") or 0) != int(job.get("id") or 0)]
+                        if not remaining:
+                            manifest = response.get("snapshot") if isinstance(response, dict) else {}
+                            if payload["part"].get("index") != 0:
+                                rows = self.cloud.get_personal_snapshots() or []
+                                manifest = next((r for r in rows
+                                                 if r.get("document_key") == db.snapshot_part_key(0)), manifest)
+                            db.record_cloud_personal_synced(local_user_id, manifest or {},
+                                                            payload["content_hash"], "push")
+                        db.mark_sync_job_done(job["id"]); done += 1
+                        continue
                     if isinstance(response, list):
                         response = response[0] if response else {}
                     response = response or {}
@@ -356,9 +618,30 @@ class CloudSyncService:
                     remote = response.get("snapshot") or {}
                     db.record_cloud_personal_synced(local_user_id, remote,
                                                     payload["content_hash"], "push")
+                elif entity == "event_append" and operation == "append":
+                    # M04a Kanal A. Idempoten di server (insert-if-absent by
+                    # uuid), jadi memproses job ini dua kali aman.
+                    payload = json.loads(job.get("payload") or "{}")
+                    table = payload.get("table")
+                    rows = db.build_entity_append_batch(
+                        local_user_id, table, only_uuid=payload.get("uuid"))
+                    if rows:
+                        device = db.get_or_create_cloud_device(local_user_id)
+                        self.cloud.append_entities(table, rows, device["device_id"])
+                    # Baris yang sudah tidak ada secara lokal bukan error: Kanal A
+                    # tidak pernah menghapus, jadi tidak ada yang perlu dirambatkan.
                 elif entity == "achievement_claim" and operation == "claim":
                     payload = json.loads(job.get("payload") or "{}")
                     try:
+                        # M09b: klaim server kini mensyaratkan catatan unlock
+                        # di cloud_user_achievements — catat dulu (idempoten),
+                        # baru klaim. Kunci tak dikenal di server = selesai
+                        # (achievement lokal lama tanpa definisi server).
+                        try:
+                            self.cloud.record_achievement_unlock_cloud(payload["achievement_key"])
+                        except Exception as exc:
+                            if "unknown_achievement" not in str(exc).lower():
+                                raise
                         self.cloud.claim_achievement_reward_cloud(payload["achievement_key"], payload["claim_key"])
                     except Exception as exc:
                         # Klaim ganda (sudah diklaim device lain) = sukses idempoten.
@@ -384,6 +667,23 @@ class CloudSyncService:
                         self.cloud.enchant_item_cloud(payload["item_key"], payload["idempotency_key"])
                     except Exception as exc:
                         if not any(c in str(exc).lower() for c in ("item_not_owned", "max_enchant", "insufficient_balance")):
+                            raise
+                elif entity == "talent_unlock" and operation == "unlock":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.unlock_talent_cloud(payload["talent_key"])
+                    except Exception as exc:
+                        # Penolakan bisnis server (class/poin/level/prasyarat/
+                        # kunci asing) adalah keputusan otoritatif: job
+                        # selesai, state lokal tidak diubah paksa.
+                        if not any(c in str(exc).lower() for c in ("unknown_talent", "talent_class_mismatch", "talent_no_points", "talent_level_required", "talent_prereq_required")):
+                            raise
+                elif entity == "boss_reward" and operation == "claim":
+                    payload = json.loads(job.get("payload") or "{}")
+                    try:
+                        self.cloud.claim_boss_reward_cloud(payload["boss_key"], int(payload.get("member_count") or 1), payload["idempotency_key"])
+                    except Exception as exc:
+                        if "unknown_boss" not in str(exc).lower():
                             raise
                 elif entity == "couple_end" and operation == "end":
                     payload = json.loads(job.get("payload") or "{}")

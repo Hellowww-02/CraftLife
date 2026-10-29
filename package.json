@@ -1,4 +1,17 @@
 {
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "web"
+  ],
+  "scripts": {
+    "build:core": "npm run build --workspace @craftlife/core",
+    "typecheck": "npm run typecheck --workspace @craftlife/core && npm run lint --workspace craftlife",
+    "build": "npm run build --workspace @craftlife/core && npm run build --workspace craftlife",
+    "test": "npm run test --workspace @craftlife/core && npm run test --workspace craftlife",
+    "test:py": "python3 -m unittest discover -s tests -t .",
+    "test:all": "npm run test:py && npm run test"
+  },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3"

@@ -4,14 +4,15 @@
 
 # CraftLife
 
-**An offline-first, Minecraft-themed desktop RPG for real life.**
+**An offline-first, Minecraft-themed RPG for real life — now on desktop, Android, and cloud sync.**
 
 Habits, quests, bosses, pets, money, health, learning, and social features —
 with your data in a local SQLite file you own.
 
-[![Release](https://img.shields.io/badge/release-v1.7.4-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Release](https://img.shields.io/badge/release-v2.0.0-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
+[![CI](https://github.com/Hellowww-02/CraftLife/actions/workflows/ci.yml/badge.svg)](https://github.com/Hellowww-02/CraftLife/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [Download](https://github.com/Hellowww-02/CraftLife/releases/latest) ·
@@ -34,7 +35,7 @@ sync and online social features, but the app never requires it.
 
 - **Local first** — one SQLite database, stored on your machine, updated in place.
 - **No fake success** — online actions only complete after the server confirms.
-- **Two languages** — every screen ships in Indonesian and English (4,613 strings).
+- **Two languages** — every screen ships in Indonesian and English (4,637 strings).
 - **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
   still available as a fallback.
 
@@ -175,11 +176,16 @@ cd CraftLife
 
 pip install -r requirements.txt
 
-cd web && npm install && npm run build && cd ..
+npm install        # root: npm workspaces links packages/craftlife-core + web
+npm run build      # builds the shared core package, then the web UI
 python MainPyQt6.py
 ```
 
 Requirements: Python 3.10+, Node.js 18+ (only to build the UI).
+
+The repository is an **npm workspace** (`packages/*` + `web`). Install once at the
+root — never inside `web/`. The shared contracts live in
+`packages/craftlife-core` and are linked automatically.
 
 Useful modes:
 
@@ -193,12 +199,79 @@ Useful modes:
 Sanity checks after changing code:
 
 ```bash
-python -m py_compile MainPyQt6.py database.py api_server.py life_api.py studio_api.py cloud_api.py web_shell.py updater.py
-cd web && npm run lint && npm run build
+python3 scripts/verify_gates.py     # all §7 verification gates, one command
 ```
 
-`npm run lint` is `tsc --noEmit` and must report 0 errors; the build must
-produce `web/dist/index.html`.
+That single command runs the whole gate table — Python syntax, TypeScript, the
+Vite build (with asset hash + size), i18n parity, the database harnesses against
+a fresh **and** a legacy database, the live API contract tests, the sync engine
+and conflict harnesses, the frontend unit tests, a live smoke test, the cleanup
+checks, the version anchors, and the no-secrets rule. See
+[Testing](#testing) and `scripts/verify_gates.py --list`.
+
+Running the pieces by hand:
+
+```bash
+python -m py_compile MainPyQt6.py database.py api_server.py life_api.py studio_api.py cloud_api.py web_shell.py updater.py
+npm run typecheck   # core tsc --noEmit, then web tsc --noEmit
+cd web && npm run build
+```
+
+`npm run typecheck` runs `tsc --noEmit` in `packages/craftlife-core` and then in
+`web`; both must report 0 errors. The build must produce `web/dist/index.html`.
+
+## Testing
+
+The suite was established by milestone M02 (roadmap K20: no refactor starts
+until a test suite exists to catch the regressions a refactor causes) and
+extended by M03.
+
+```bash
+npm run test:py     # Python:  484 tests (stdlib unittest, no extra dependency)
+npm run test        # Frontend: 116 tests (vitest, core + web)
+npm run test:all    # both
+python3 scripts/verify_gates.py   # both + every §7 gate
+```
+
+| Area | Tests | Covers |
+|------|-------|--------|
+| `tests/test_database_schema.py` | 19 | Fresh-database schema, indexes, `integrity_check`, FK violations, seeds, idempotency — plus that `PRAGMA foreign_keys` is genuinely ON for the pooled connection and `ON DELETE CASCADE` runs |
+| `tests/test_database_legacy.py` | 16 | Legacy→current migration with rows preserved (§6) |
+| `tests/test_m03_sync_schema.py` | 27 | M03 row-level sync prerequisites: `uuid`/`rev`/`updated_at`/`deleted_at` on all 41 synced tables, unique + never NULL, trigger-filled, legacy migration on a populated database, and the guards pinning why G10 is still open |
+| `tests/test_m04_channel_a.py` | 20 | M04a append-only channel: the 7-table allowlist, append batches, drain order, no duplicates on replay |
+| `tests/test_m04_channel_b.py` | 33 | M04b row-level merge (pure function), `updated_at` and tombstone triggers on all 41 tables, tombstone/GC lifecycle, `recipe_items` ownership, and that the acknowledged `rev` becomes the next `base_rev` |
+| `tests/test_m04c.py` | 23 | M04c sync status and the recoverable conflict surface: conflicts recorded with both values, one field restorable without moving the row, `_sync_out` no longer recurses |
+| `tests/test_sync_engine.py` | 17 | Sync queue: dedup, ordering, exponential backoff, retry, per-user scoping |
+| `tests/test_sync_conflict.py` | 7 | Two-device snapshot conflict; the M04 `xfail` was removed once both channels landed |
+| `tests/test_api_contract.py` | 11 | A live `api_server` on a real socket: auth, response shapes, routes, i18n |
+| `tests/test_api_routes.py` | 11 | Every `/api/...` path the web client calls is dispatched by the server |
+| `tests/test_i18n.py` | 9 | Bilingual catalogue integrity (P7) |
+| `test_cloud_backup.py` | 24 | Cloud tracker backup: the snapshot must carry all 40 export tables (an incomplete one is rejected on restore), an admin must still get a backup even though a plain export refuses them, restore must make a local backup before overwriting, and a path from the request must be refused unless it is inside the caller's own folder |
+| `test_data_maintenance.py` | 42 | The Data Maintenance feature, tested as the three promises its own UI makes: a backup file must really exist on disk, master data (habits/food/water/economy/notes) must survive, and history inside the retention window must survive. Plus every retention/schedule option the UI offers, and the auto-purge trigger pinned to its single caller |
+| `test_m05d_store.py` | 19 | M05d storage boundary, pinned by AST: `cloud_api.py` must hold zero references to `database`. Plus the proof the layer is real rather than indirection - a second in-memory implementation serves the cloud handlers without SQLite and without editing the domain. Signature parity keeps the interface from going stale against `database.py` |
+| `test_m05c_rules_guard.py` | 27 | M05c token bucket: burst, refill rate, per-key independence, bounded memory, and a 16-thread test that fails if the bucket over-admits. Plus the audit-log contract, pinned structurally: the schema has no column that could hold a request body |
+| `test_m05c_api_guard.py` | 13 | The M05c wiring over a live socket: 429 + Retry-After, unauthenticated floods limited, `/api/health` exempt, `dbPath` hidden, `/api/admin/debug` gone in strict mode but still working on desktop, mutating requests audited, successful GETs not |
+| `test_m05b_tenant_scoping.py` | 7 | M05b cross-tenant scoping: every `user_id` table is seeded with a sentinel row for user B, then all 301 client GET routes are called as user A and scanned for it. Pins a coverage floor so the sweep cannot silently shrink, and prints the tables it could not seed |
+| `test_m05a_rules_auth.py` | 35 | M05a JWT verification as attack vectors: alg-confusion, tampered payload, expiry/nbf/iss/aud, empty secret never verifies, error messages never leak the secret, and per-request identity via ContextVar |
+| `test_m05a_api_auth.py` | 12 | The M05 acceptance criteria against a live socket: no/invalid/expired/unlinked JWT → 401, user A never sees user B's habits, `/api/health` stays public, and desktop behaviour is unchanged with strict off |
+| `packages/craftlife-core/src/utils/__tests__/` | 33 | `currency.ts` (money rules) and `serverClock.ts` (daily-reset date key) |
+| `web/src/**/__tests__/` | 83 | `shellState.ts` (layout + preference migration) and `cycleUtils.ts` (cycle calendar maths) |
+
+The legacy harness reconstructs the schema of the oldest `database.py` in this
+repository (commit `be3e2f6`) rather than shipping a fixture, because user
+databases must never be committed. To run it against a **real** archive:
+
+```bash
+CRAFTLIFE_LEGACY_DB=/path/to/craftlife.db python3 -m unittest tests.test_database_legacy -v
+```
+
+Without that variable those tests skip loudly, and a self-test asserts the skip
+is explicit — the gap is visible in CI output instead of looking green.
+
+CI (`.github/workflows/ci.yml`) runs the same runner on every push and pull
+request to `main`, and fails if `package-lock.json` is out of date or if any
+gate modified a tracked file. Full details, including known gaps, are in
+[`tests/README.md`](tests/README.md).
 
 ## Configuration
 
@@ -212,10 +285,11 @@ CRAFTLIFE_CLOUD_ENABLED=1
 CRAFTLIFE_SYNC_INTERVAL_SECONDS=300
 ```
 
-Without a `.env`, the app runs fully offline and cloud features simply report
-"not configured". Never commit your `.env`, and never ship one inside a release
-archive. Only the publishable key belongs in a client — a service-role key must
-never be included anywhere.
+Copy `.env.example` to `.env` and fill in your own values. Without a `.env`, the
+app runs fully offline and cloud features simply report "not configured". Never
+commit your `.env`, and never ship one inside a release archive. Only the
+publishable key belongs in a client — a service-role key must never be included
+anywhere.
 
 Feature flags used by the app:
 
@@ -244,8 +318,8 @@ flowchart TD
 Design rules the codebase follows:
 
 - Game logic lives in `database.py` only — the React UI never reimplements it.
-- Money is formatted through `web/src/utils/currency.ts`; dates follow the
-  server clock, not the browser clock.
+- Money is formatted through `currency.ts` in `@craftlife/core`; dates follow the
+  server clock (`serverClock.ts`), not the browser clock.
 - The UI talks to the local API only. It never contacts Supabase directly, so no
   secret key can leak into the web bundle.
 - Schema changes are idempotent (`_safe_alter` in `init_db()`): fresh and
@@ -263,7 +337,7 @@ CraftLife/
 ├── cloud_api.py          Cloud HTTP surface for the UI
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
-├── translations.py       UI strings, Indonesian + English (4,613 keys)
+├── translations.py       UI strings, Indonesian + English (4,637 keys)
 ├── updater.py            Auto-update from GitHub Releases (v1.7.4, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
@@ -272,23 +346,72 @@ CraftLife/
 ├── applog.py             Logging helper
 ├── CraftLife.spec        PyInstaller spec (onedir, web/dist embedded)
 ├── requirements.txt      Python dependencies
-├── package.json          Supabase CLI tooling (root, cloud development only)
+├── package.json          npm workspace root (packages/* + web) + Supabase CLI tooling
+├── tsconfig.base.json    Shared TS compiler options for every TS project
+├── packages/
+│   └── craftlife-core/   @craftlife/core — shared contracts (single source of truth)
+│       ├── src/types.ts          Domain types (interfaces + type aliases)
+│       ├── src/utils/            currency · serverClock · serverTime
+│       ├── src/api/client.ts     HTTP client contract (apiBase, apiGet, apiPost, …)
+│       └── src/i18n/messages.json  Generated catalogue (do not edit by hand)
 ├── icons/craftlife.ico   App icon
 ├── scripts/
 │   ├── build.ps1         Windows release build
 │   ├── build_windows.md  Build notes
-│   ├── export_i18n.py    translations.py -> web i18n JSON
+│   ├── export_i18n.py    translations.py -> craftlife-core + web/public i18n JSON
+│   ├── export_design_tokens.py  db.THEMES + index.css -> design/tokens.json (M06)
+│   ├── verify_gates.py   All §7 verification gates + tests, one command (used by CI)
 │   └── copy_qtwebengine.py  QtWebEngine helper (rarely needed)
+├── tests/                Python suite (484 tests) + harnesses + README
+├── .github/workflows/    ci.yml — runs scripts/verify_gates.py on push & PR
+├── ../CraftLife-Android/  Android client (M07) — SEPARATE folder on purpose,
+│                          consumes @craftlife/core via a file: dependency.
+│                          Not part of this repo: different toolchain, release
+│                          pipeline and cadence. Verified by the `types-mobile`
+│                          gate, which reaches across to the sibling folder.
 ├── web/                  React 18 + Vite 5 + Tailwind 4 + TypeScript UI (29 pages)
 │   ├── src/components/views/  One file per page + Login + Onboarding
 │   ├── src/components/   Shared UI, learning, love, music, notes, wrapped parts
 │   ├── src/context/GameContext.tsx  Global app state
-│   ├── src/api/          Typed API clients (client, life, studio, rpg, cloud)
-│   ├── src/utils/        currency, serverClock, serverTime, theme, sound, pomoAlarm
-│   └── src/i18n/         Generated messages.json (do not edit by hand)
-├── supabase/             17 migrations + attachment-maintenance function + tests
+│   ├── src/api/          Typed route wrappers (life, studio, rpg, cloud)
+│   ├── src/utils/        theme, sound, pomoAlarm
+│   └── public/i18n/      Runtime messages.json served over HTTP (generated)
+├── DESIGN.md             Visual contract for web + Android (M06, K24)
+├── supabase/             16 migrations + attachment-maintenance function + tests
 └── *.md                  This file plus roadmaps and reports (see below)
 ```
+
+## Shared contracts (`@craftlife/core`)
+
+`packages/craftlife-core` holds the TypeScript contracts that every CraftLife
+client must share, so there is exactly **one** implementation of each
+(`UPDATE_RULES.md` P2):
+
+| Export | Purpose |
+|--------|---------|
+| `types.ts` | Domain types — interfaces and type aliases only, no runtime code |
+| `utils/currency.ts` | The one money formatter (`formatMoney`, `currencySymbol`, `fromIdr`, …) |
+| `utils/serverClock.ts` · `utils/serverTime.ts` | Server-clock date handling — streaks and daily resets follow the server clock, never `new Date()` |
+| `api/client.ts` | HTTP client contract (`apiBase`, `apiGet`, `apiPost`, `apiUploadFile`, …) |
+| `i18n/messages.json` | Generated 4,637-key × 2-language catalogue |
+
+Consuming it:
+
+```ts
+import { formatMoney, apiGet, type TaskDifficulty } from "@craftlife/core";
+```
+
+Two resolution paths, deliberately:
+
+- **In-repo (`web`)** resolves to the package **source** via `tsconfig` `paths`
+  and a Vite alias, so `npx tsc --noEmit` and `npx vite build` stay standalone —
+  no requirement to build `dist` first.
+- **External consumers** resolve to the compiled `dist/` through the package
+  `exports` map. Build it with `npm run build --workspace @craftlife/core`.
+
+`web/public/i18n/messages.json` remains a runtime asset fetched over HTTP by
+`web/src/i18n.ts`; `scripts/export_i18n.py` regenerates both copies from
+`translations.py`, which stays the single source of truth.
 
 ## Documentation
 
@@ -297,6 +420,7 @@ Design docs and phase reports kept in the repo:
 | Document | Contents |
 |----------|----------|
 | [UPDATE_RULES.md](UPDATE_RULES.md) | How update sessions are run (process reference) |
+| [tests/README.md](tests/README.md) | Test suite guide — harnesses, how to run, CI, known gaps |
 | [UPDATE_ROADMAP_A01_A14_v1.6.3.md](UPDATE_ROADMAP_A01_A14_v1.6.3.md) | v1.6.3 plan with per-phase evidence |
 | [UPDATE_ROADMAP_C01_C09_v1.6.4.md](UPDATE_ROADMAP_C01_C09_v1.6.4.md) | v1.6.4 plan with per-phase evidence |
 | [OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md) | Release operator runbook (build → zip → tag → publish → verify) |
@@ -365,7 +489,7 @@ To ship an auto-update (full runbook:
 
 | Symptom | Fix |
 |---------|-----|
-| Blank page / "React UI has not been built" | `cd web && npm install && npm run build` |
+| Blank page / "React UI has not been built" | `npm install` at the repo root, then `npm run build` |
 | `ERR_CONNECTION_REFUSED` on `:3000` | Use the API port `8765` in production; `:3000` is dev-only |
 | Cloud shows "not configured" | Put `.env` beside the exe/sources, then restart |
 | `PGRST205` on profiles | Supabase migrations have not been applied yet |
@@ -436,6 +560,11 @@ Full notes live on the [Releases page](https://github.com/Hellowww-02/CraftLife/
 
 ## Roadmap
 
+- 🚧 Android + cloud sync migration (M01–M14): M01–M14 selesai: v2.0.0 "Three Platforms, One Life" (parity di VERIFIKASI_M12.md, QA di QA_M13.md, rilis di RELEASE_NOTES_v2.0.0.md; bukti perangkat fisik diverifikasi pengguna pasca-rilis).
+  (Offline & reliabilitas): plafon 8 MB snapshot dihapus lewat payload
+  part inkremental (G5 tertutup), backoff ber-jitter, cache Android
+  berpagar, dan Recovery UI di Settings. Berikutnya M14 (Rilis v2.0.0).
+  Pengguna lokal tidak berubah.
 - ✅ Commit Phase C (C01–C09) — v1.6.4 "Study & Stability" (Learning · Database
   & Updater · Date Utilities).
 - Closed-app push notifications, attachment malware scanning, deeper anti-cheat

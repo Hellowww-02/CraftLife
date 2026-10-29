@@ -461,6 +461,40 @@ def default_web_url() -> str:
     return f"http://127.0.0.1:{port}/"
 
 
+def _install_session_token_script(view, token: str) -> None:
+    """Suntik token sesi ke sessionStorage sebelum skrip halaman berjalan.
+
+    Menggantikan penempelan ``?token=`` pada URL (temuan keamanan G9).
+    ``InjectionPoint.DocumentCreation`` menjamin skrip ini dieksekusi sebelum
+    bundle React, jadi panggilan API pertama sudah membawa header
+    ``Authorization: Bearer`` tanpa token pernah muncul di URL dokumen.
+
+    Gagal secara halus: bila QtWebEngineCore tidak tersedia, aplikasi tetap
+    jalan dan login web (yang menyimpan token sendiri) masih berfungsi.
+    """
+    try:
+        from PyQt6.QtWebEngineCore import QWebEngineScript
+    except Exception:
+        return
+    try:
+        # json.dumps memberi literal JS yang sudah ter-escape dengan benar,
+        # sehingga token tidak bisa memutus string atau menyuntik kode.
+        payload = json.dumps(str(token))
+        script = QWebEngineScript()
+        script.setName("craftlifeSessionToken")
+        script.setSourceCode(
+            "(function(){try{sessionStorage.setItem('craftlife_token',"
+            + payload
+            + ");}catch(e){}})();"
+        )
+        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+        script.setWorldId(QWebEngineScript.ScriptWorldId.ApplicationWorld)
+        script.setRunsOnSubFrames(False)
+        view.page().scripts().insert(script)
+    except Exception as exc:
+        print(f"[Auth] gagal menyuntik token sesi: {exc}", flush=True)
+
+
 class WebMainWindow(QMainWindow):
     if pyqtSignal is not None:
         logout_signal = pyqtSignal()
@@ -497,8 +531,12 @@ class WebMainWindow(QMainWindow):
 
         view = QWebEngineView(self)
         qs = []
+        # G9: token sesi TIDAK lagi ditempel ke URL. URL dokumen bocor lewat
+        # riwayat navigasi, log, dan header Referer pada setiap permintaan
+        # subresource. Token disuntik ke sessionStorage sebelum bundle React
+        # berjalan, sehingga authToken() langsung menemukannya.
         if token:
-            qs.append(f"token={token}")
+            _install_session_token_script(view, token)
         if uid is not None:
             qs.append(f"uid={uid}")
         full = url

@@ -21,6 +21,58 @@ from cloud_config import CloudConfig, load_cloud_config
 
 log = logging.getLogger("craftlife.cloud")
 
+#: Kode HTTP yang berarti "berhenti mencoba", bukan "coba lagi nanti".
+QUOTA_STATUS = {402}
+RATE_LIMIT_STATUS = {429}
+AUTH_STATUS = {401, 403}
+
+
+def classify_cloud_error(exc) -> Optional[str]:
+    """Kembalikan 'quota' | 'rate_limited' | 'auth' | None.
+
+    Sengaja TIDAK bergantung pada kelas exception tertentu. Paket `supabase`
+    adalah impor opsional, dan bentuk errornya berubah antar versi; mengikat
+    diri ke `postgrest.exceptions.APIError` akan membuat fungsi ini mati
+    persis saat paling dibutuhkan. Jadi status dicari lewat beberapa nama
+    atribut yang umum, lalu lewat `exc.response`, dan terakhir lewat teks
+    pesannya.
+
+    Kenapa ini perlu: saat kuota egress free tier habis, Supabase menjawab 402
+    dan membatasi project. Tanpa pembedaan ini, setiap kegagalan terlihat sama
+    dan loop sync terus menembak tiap 60 detik ke project yang sedang dibatasi.
+    """
+    if exc is None:
+        return None
+    status = None
+    for attr in ("status_code", "status", "code", "http_status"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            status = value
+            break
+        if isinstance(value, str) and value.strip().isdigit():
+            status = int(value.strip())
+            break
+    if status is None:
+        response = getattr(exc, "response", None)
+        for attr in ("status_code", "status"):
+            value = getattr(response, attr, None)
+            if isinstance(value, int):
+                status = value
+                break
+    if status is None:
+        import re as _re
+        match = _re.search(r"\b(40[123]|429)\b", str(exc))
+        if match:
+            status = int(match.group(1))
+    if status in QUOTA_STATUS:
+        return "quota"
+    if status in RATE_LIMIT_STATUS:
+        return "rate_limited"
+    if status in AUTH_STATUS:
+        return "auth"
+    return None
+
+
 try:
     from supabase import Client, acreate_client, create_client
     from realtime.types import RealtimePostgresChangesListenEvent
@@ -268,6 +320,66 @@ class CloudService:
     def download_storage(self, bucket: str, path: str) -> bytes:
         return bytes(self._require_auth().storage.from_(bucket).download(path))
 
+    # ------------------------------------------------------------------
+    # Backup tracker (P6: jangan pernah kehilangan data)
+    # ------------------------------------------------------------------
+    def upload_tracker_backup(self, payload: bytes) -> dict:
+        """Simpan satu snapshot tracker terkompresi ke folder milik pengguna.
+
+        Nama file memakai timestamp UTC supaya urutannya benar tanpa perlu
+        metadata tambahan, dan `upsert: false` supaya backup yang sudah ada
+        tidak pernah tertimpa diam-diam — menimpa backup lama dengan yang baru
+        adalah cara kehilangan data, bukan cara menghemat ruang.
+        """
+        client = self._require_auth()
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        path = f"{self.current_cloud_user_id}/craftlife_backup_{stamp}.json.gz"
+        client.storage.from_(self.config.backup_bucket).upload(
+            path, payload, {"content-type": "application/gzip", "upsert": "false"}
+        )
+        return {"path": path, "size_bytes": len(payload)}
+
+    def list_tracker_backups(self) -> list[dict]:
+        """Backup milik pengguna ini, terbaru dulu."""
+        client = self._require_auth()
+        rows = client.storage.from_(self.config.backup_bucket).list(
+            str(self.current_cloud_user_id))
+        out = []
+        for row in rows or []:
+            name = row.get("name") or ""
+            if not name.startswith("craftlife_backup_"):
+                continue
+            out.append({
+                "name": name,
+                "path": f"{self.current_cloud_user_id}/{name}",
+                "size_bytes": int(row.get("metadata", {}).get("size") or 0),
+                "created_at": row.get("created_at") or "",
+            })
+        out.sort(key=lambda r: r["name"], reverse=True)
+        return out
+
+    def delete_tracker_backups(self, paths: list[str]) -> int:
+        if not paths:
+            return 0
+        # Hanya path di folder sendiri yang boleh dihapus. Tanpa saringan ini,
+        # daftar path dari pemanggil bisa dipakai untuk menghapus milik orang
+        # lain — policy storage akan menolak, tapi lebih baik ditolak di sini
+        # dengan pesan yang jelas.
+        prefix = f"{self.current_cloud_user_id}/"
+        safe = [p for p in paths if p.startswith(prefix)]
+        if not safe:
+            return 0
+        self._require_auth().storage.from_(self.config.backup_bucket).remove(safe)
+        return len(safe)
+
+    def prune_tracker_backups(self, keep: int = 14) -> int:
+        """Simpan `keep` backup terbaru, hapus sisanya. Kembalikan jumlah dihapus."""
+        backups = self.list_tracker_backups()
+        if len(backups) <= keep:
+            return 0
+        stale = [b["path"] for b in backups[keep:]]
+        return self.delete_tracker_backups(stale)
+
     # Phase 2A: chat, presence, notifications
     def get_or_create_direct_conversation(self, other_cloud_user_id: str):
         return self.rpc("get_or_create_direct_conversation", {"p_other_user_id": other_cloud_user_id})
@@ -415,6 +527,16 @@ class CloudService:
     def heartbeat_presence(self, status="online", device_name="CraftLife Desktop"): 
         return self.rpc("heartbeat_presence", {"p_status": status, "p_device_name": device_name})
 
+    def register_push_token(self, token: str, platform: str = "android", device_name: str = ""):
+        """M10: catat token FCM perangkat ini di Supabase (device_push_tokens).
+
+        Supabase hanya "kantor pos": Edge Function send-push membaca token
+        ini lalu memanggil FCM. RPC memakai auth.uid() sehingga token tidak
+        bisa didaftarkan atas nama pengguna lain.
+        """
+        return self.rpc("register_push_token", {
+            "p_token": token, "p_platform": platform, "p_device_name": device_name})
+
     # Phase 3: private multi-device tracker snapshots.
     def register_cloud_device(self, device: dict):
         return self.rpc("register_cloud_device", {
@@ -511,6 +633,57 @@ class CloudService:
 
     def run_cloud_maintenance(self):
         return self.rpc("run_cloud_maintenance")
+
+    # M04a Channel A: append-only entity log. Union by UUID on the server, so a
+    # replay is a no-op and two devices appending concurrently both survive.
+    def append_entities(self, table_name: str, rows: list, device_id: str):
+        return self.rpc("append_entities", {
+            "p_table_name": table_name,
+            "p_rows": rows or [],
+            "p_device_id": device_id,
+            "p_client_updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    def fetch_entities(self, table_name: str, since=None, limit: int = 5000):
+        return self.rpc("fetch_entities", {
+            "p_table_name": table_name,
+            "p_since": since,
+            "p_limit": max(1, min(20000, int(limit))),
+        })
+
+    # M04b Channel B: row-level 3-way merge for mutable entities.
+    def upsert_entities(self, table_name: str, rows: list, device_id: str):
+        return self.rpc("upsert_entities", {
+            "p_table_name": table_name,
+            "p_rows": rows or [],
+            "p_device_id": device_id,
+            "p_client_updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    def push_tombstones(self, table_name: str, tombstones: list, device_id: str):
+        return self.rpc("push_tombstones", {
+            "p_table_name": table_name,
+            "p_tombstones": tombstones or [],
+            "p_device_id": device_id,
+        })
+
+    def fetch_tombstones(self, table_name: str, since=None, limit: int = 5000):
+        return self.rpc("fetch_tombstones", {
+            "p_table_name": table_name,
+            "p_since": since,
+            "p_limit": max(1, min(20000, int(limit))),
+        })
+
+    def gc_sync_tombstones(self, retention_days: int = 30):
+        return self.rpc("gc_sync_tombstones", {"p_retention_days": int(retention_days)})
+
+    def fetch_entity_revisions(self, table_name: str, entity_uuid: str, limit: int = 20):
+        """The losing side of a field conflict, so it can be recovered (K11)."""
+        return self.rpc("fetch_entity_revisions", {
+            "p_table_name": table_name,
+            "p_entity_uuid": entity_uuid,
+            "p_limit": max(1, min(200, int(limit))),
+        })
 
     # Phase 4A: cloud-native shared Love Space records.
     def fetch_love_space_bundle(self, love_space_id: str):
@@ -668,6 +841,29 @@ class CloudService:
     def claim_achievement_reward_cloud(self, achievement_key: str, claim_key: str):
         return self.rpc("claim_achievement_reward_cloud",
                         {"achievement_key": achievement_key, "claim_key": claim_key})
+
+    # M09a: gacha pet otoritatif server. Client hanya mengirim idempotency
+    # key; peluang/pity/hasil diputuskan RPC (lihat migrasi M09a).
+    def spin_pet_cloud(self, idempotency_key: str):
+        return self.rpc("spin_pet_cloud", {"p_idem": idempotency_key})
+
+    def fetch_cloud_pets(self):
+        return self.rpc("fetch_cloud_pets")
+
+    # M09b: talent/achievement/boss otoritatif server (Kanal C).
+    def unlock_talent_cloud(self, talent_key: str):
+        return self.rpc("unlock_talent_cloud", {"p_talent_key": talent_key})
+
+    def fetch_cloud_talents(self):
+        return self.rpc("fetch_cloud_talents")
+
+    def record_achievement_unlock_cloud(self, achievement_key: str):
+        return self.rpc("record_achievement_unlock_cloud", {"p_key": achievement_key})
+
+    def claim_boss_reward_cloud(self, boss_key: str, member_count: int, idempotency_key: str):
+        return self.rpc("claim_boss_reward_cloud",
+                        {"p_boss_key": boss_key, "p_member_count": int(member_count),
+                         "p_idem": idempotency_key})
 
     def record_productivity_event(self, payload: dict):
         # FIX: migrasi Phase 5A mengganti signature RPC ini menjadi TANPA prefix p_

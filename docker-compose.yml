@@ -1,0 +1,54 @@
+# CraftLife Rules API + Postgres (M05 butir 1).
+#
+# Belum pernah dijalankan dengan `docker compose up` — Docker tidak tersedia di
+# lingkungan tempat berkas ini ditulis. Lihat Dockerfile untuk apa yang sudah
+# dan belum diverifikasi.
+#
+#   docker compose up --build
+#   curl http://localhost:8765/api/health
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8765:8765"
+    environment:
+      CRAFTLIFE_API_HOST: "0.0.0.0"
+      CRAFTLIFE_API_PORT: "8765"
+      # Mode ketat M05a: tanpa JWT valid -> 401. Secret WAJIB diisi dari
+      # lingkungan; tidak ada default, dan itu disengaja.
+      CRAFTLIFE_RULES_API: "1"
+      CRAFTLIFE_JWT_SECRET: "${CRAFTLIFE_JWT_SECRET:?isi lewat .env, jangan di-commit}"
+      # Backend Postgres OPSIONAL (P1). Kosongkan supaya tetap SQLite.
+      CRAFTLIFE_STORAGE_BACKEND: "${CRAFTLIFE_STORAGE_BACKEND:-}"
+      CRAFTLIFE_PG_HOST: db
+      CRAFTLIFE_PG_PORT: "5432"
+      CRAFTLIFE_PG_DB: craftlife
+      CRAFTLIFE_PG_USER: craftlife
+      CRAFTLIFE_PG_PASSWORD: "${CRAFTLIFE_PG_PASSWORD:-}"
+    volumes:
+      - craftlife-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: craftlife
+      POSTGRES_USER: craftlife
+      POSTGRES_PASSWORD: "${CRAFTLIFE_PG_PASSWORD:?isi lewat .env, jangan di-commit}"
+    volumes:
+      - craftlife-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U craftlife -d craftlife"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  craftlife-data:
+  craftlife-pg:
