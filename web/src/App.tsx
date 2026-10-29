@@ -2,7 +2,7 @@ import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { GameProvider, useGame } from './context/GameContext';
 import { MusicPlayerProvider } from './music/MusicPlayerContext';
 import { OnboardingWizard } from './components/views/OnboardingWizard';
-import { ActiveView } from './types';
+import { ActiveView } from '@craftlife/core';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer } from './components/ToastContainer';

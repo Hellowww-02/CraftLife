@@ -1,4 +1,4 @@
-import type { ThemePalette } from '../types';
+import type { ThemePalette } from '@craftlife/core';
 
 /**
  * Sistem tema Web (parity db.THEMES / SettingsPage theme radios).

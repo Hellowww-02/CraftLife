@@ -1,4 +1,4 @@
-import { HolidayItem } from '../types';
+import { HolidayItem } from '@craftlife/core';
 
 export const STATIC_HOLIDAYS: HolidayItem[] = [
   // Fixed annual national & international

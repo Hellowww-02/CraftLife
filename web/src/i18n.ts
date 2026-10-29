@@ -1,4 +1,4 @@
-import { apiGet } from './api/client';
+import { apiGet } from '@craftlife/core';
 
 const cache: Record<string, string> = {};
 

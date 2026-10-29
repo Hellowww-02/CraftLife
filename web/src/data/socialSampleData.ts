@@ -1,4 +1,4 @@
-import { FriendUser, ChatMessage, GuildData, PvPChallenge, LoveSpaceData } from '../types';
+import { FriendUser, ChatMessage, GuildData, PvPChallenge, LoveSpaceData } from '@craftlife/core';
 
 export const DEFAULT_LOVE_SPACE: LoveSpaceData = {
   isEnabled: true,

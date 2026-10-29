@@ -1,4 +1,4 @@
-import { ShopItem, PetData, Boss, FoodItem, CraftRecipe, Achievement, AvatarClass } from '../types';
+import { ShopItem, PetData, Boss, FoodItem, CraftRecipe, Achievement, AvatarClass } from '@craftlife/core';
 
 export const AVATAR_CLASSES: Record<AvatarClass, { name: string; icon: string; desc: string; color: string; hpBonus: number; mpBonus: number }> = {
   warrior: {

@@ -1,4 +1,4 @@
-import { LearningNotebook } from '../types';
+import { LearningNotebook } from '@craftlife/core';
 
 export const DEFAULT_NOTEBOOKS: LearningNotebook[] = [
   {

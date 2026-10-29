@@ -1,4 +1,4 @@
-import { MusicTrack } from '../types';
+import { MusicTrack } from '@craftlife/core';
 
 export const DEFAULT_MUSIC_TRACKS: MusicTrack[] = [
   {
