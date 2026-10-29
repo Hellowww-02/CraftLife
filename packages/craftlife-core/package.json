@@ -1,0 +1,35 @@
+{
+  "name": "@craftlife/core",
+  "version": "2.0.0",
+  "private": true,
+  "description": "CraftLife shared contracts: domain types, money formatting, server clock/time, HTTP client contract and the i18n catalogue. Single source of truth for the web/desktop and Android clients (UPDATE_RULES.md P2).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./i18n/messages.json": "./src/i18n/messages.json",
+    "./design/tokens.json": "./src/design/tokens.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3",
+    "vitest": "^3.2.4"
+  }
+}

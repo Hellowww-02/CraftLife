@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "//": "Typecheck-only config. `lib` includes DOM because api/client.ts is written against the web platform (fetch, Blob, FormData, window, sessionStorage). M01 preserves that behaviour verbatim; the platform adapter that makes it React-Native-safe is M07 work.",
+  "compilerOptions": {
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "noEmit": true
+  },
+  "include": ["src"]
+}

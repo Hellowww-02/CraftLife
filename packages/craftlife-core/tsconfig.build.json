@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "//": "Emit config used by `npm run build` to produce dist/ for EXTERNAL consumers (the sibling CraftLife-Android project consumes this package via a file: dependency, so it needs compiled JS + declarations). In-repo consumers (web) resolve straight to src/ via tsconfig paths + the Vite alias, so they never depend on dist/ being built first. messages.json is excluded from emit: it is a 464 KB asset exposed through the package.json `exports` subpath straight from src/, not something to duplicate into dist/.",
+  "compilerOptions": {
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": false
+  },
+  "include": ["src"],
+  "exclude": ["src/i18n/messages.json"]
+}

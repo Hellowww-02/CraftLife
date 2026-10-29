@@ -1,0 +1,124 @@
+/**
+ * Currency single-source (P2).
+ *
+ * Parity dengan EconomyPage/AddEconomyDialog PyQt:
+ *  - DB SELALU menyimpan IDR (add_economy dkk.).
+ *  - Input dialog ditulis dalam mata uang user → server konversi via db.convert_to_idr.
+ *  - Display = convert_from_idr(amount_idr) lalu simbol + pemisah ribuan TANPA desimal
+ *    (PyQt: f"{symbol} {converted:,.0f}").
+ *
+ * Semua formatter uang di Web UI WAJIB lewat modul ini — tidak ada lagi "Rp" hardcoded.
+ */
+import { apiGet } from '../api/client';
+let RATES = { IDR: 1, USD: 17800, EUR: 20700 };
+let ratesLoaded = false;
+/** Ambil kurs dari server (/api/catalog/currency → db.CURRENCY_RATES). Sekali per sesi. */
+export async function ensureCurrencyRates() {
+    if (ratesLoaded)
+        return RATES;
+    try {
+        const d = await apiGet('/api/catalog/currency');
+        if (d?.rates && typeof d.rates === 'object') {
+            RATES = { ...RATES, ...d.rates };
+        }
+    }
+    catch {
+        // fallback ke kurs bawaan (sama dengan database.py)
+    }
+    ratesLoaded = true;
+    return RATES;
+}
+export function getCurrencyRates() {
+    return RATES;
+}
+export function currencySymbol(currency) {
+    const symbols = {
+        IDR: 'Rp', USD: '$', EUR: '€', SGD: 'S$', JPY: '¥',
+        GBP: '£', AUD: 'A$', MYR: 'RM', CNY: '¥', KRW: '₩',
+    };
+    return symbols[currency] || currency || 'Rp';
+}
+/** IDR → mata uang user (db.convert_from_idr). */
+export function fromIdr(amountIdr, currency) {
+    const rate = RATES[currency] || 1;
+    return currency === 'IDR' ? amountIdr : amountIdr / rate;
+}
+/**
+ * Format parity PyQt format_currency(): simbol + ribuan, 0 desimal.
+ * Amount dianggap tersimpan sebagai IDR.
+ */
+export function formatMoney(amountIdr, currency) {
+    const converted = fromIdr(Number(amountIdr) || 0, currency);
+    return `${currencySymbol(currency)} ${converted.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+/**
+ * parse_amount parity `_parse_positive_amount` PyQt:
+ * terima "1000", "1000.5", "1.000,5" tidak — PyQt mengganti koma→titik ("12,5"→12.5).
+ * Return float > 0, atau null bila kosong/bukan angka/<=0.
+ */
+export function parseAmount(text) {
+    try {
+        const val = parseFloat(String(text || '').trim().replace(/,/g, '.'));
+        if (Number.isNaN(val) || val <= 0)
+            return null;
+        return val;
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * P30: parse input nominal uang yang sedang diketik user (mata uang apa pun).
+ * Menangani pemisah ribuan & desimal gaya EN ("1,234,567.89") maupun ID ("1.234.567,89")
+ * sehingga input tetap benar walau currency aktif bukan IDR.
+ * Return number, atau null bila kosong/tidak valid.
+ */
+export function parseMoneyInput(text) {
+    const raw = String(text ?? '').trim().replace(/[^\d.,\-]/g, '');
+    if (!raw || raw === '-' || raw === '.' || raw === ',')
+        return null;
+    const hasDot = raw.includes('.');
+    const hasComma = raw.includes(',');
+    let normalized = raw;
+    if (hasDot && hasComma) {
+        // Pemisah terakhir dianggap desimal; pemisah lain = ribuan.
+        if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) {
+            normalized = raw.replace(/\./g, '').replace(/,/g, '.');
+        }
+        else {
+            normalized = raw.replace(/,/g, '');
+        }
+    }
+    else if (hasComma) {
+        // Koma sebagai desimal bila diikuti 1-2 digit di akhir; selain itu ribuan.
+        if (/,\d{1,2}$/.test(raw))
+            normalized = raw.replace(/,/g, '.');
+        else
+            normalized = raw.replace(/,/g, '');
+    }
+    else if (hasDot) {
+        // Titik desimal hanya bila tunggal & diikuti 1-2 digit; selain itu ribuan.
+        const dots = (raw.match(/\./g) || []).length;
+        if (dots === 1 && /\.\d{1,2}$/.test(raw)) {
+            normalized = raw;
+        }
+        else {
+            normalized = raw.replace(/\./g, '');
+        }
+    }
+    const val = parseFloat(normalized);
+    return Number.isFinite(val) ? val : null;
+}
+/**
+ * P30: format nilai untuk ditampilkan di dalam input uang (pemisah ribuan,
+ * maks 2 desimal). Menerima number ataupun string.
+ */
+export function maskMoney(value) {
+    if (value === null || value === undefined || value === '')
+        return '';
+    const n = typeof value === 'number' ? value : parseMoneyInput(String(value));
+    if (n === null)
+        return '';
+    return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+//# sourceMappingURL=currency.js.map
