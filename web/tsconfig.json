@@ -1,24 +1,21 @@
 {
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
 
     /* Bundler mode */
-    "moduleResolution": "bundler",
     "allowImportingTsExtensions": false,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true
+    /* Shared contracts live in packages/craftlife-core (UPDATE_RULES P2).
+       Mapped to the package SOURCE so `tsc` and `vite build` never depend on
+       dist/ having been built first — the §7 gate command stays standalone. */
+    "baseUrl": ".",
+    "paths": {
+      "@craftlife/core": ["../packages/craftlife-core/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

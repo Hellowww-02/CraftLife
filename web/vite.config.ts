@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -6,6 +7,18 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: './',
+  resolve: {
+    alias: {
+      // Resolve @craftlife/core to the package SOURCE, mirroring the tsconfig
+      // `paths` mapping. This keeps `npx vite build` standalone — no requirement
+      // to build packages/craftlife-core/dist first (UPDATE_RULES §7 gate).
+      // External consumers (the sibling CraftLife-Android project) use the
+      // compiled dist/ via the package.json `exports` map instead.
+      '@craftlife/core': fileURLToPath(
+        new URL('../packages/craftlife-core/src/index.ts', import.meta.url),
+      ),
+    },
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
