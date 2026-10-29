@@ -11,6 +11,7 @@ with your data in a local SQLite file you own.
 
 [![Release](https://img.shields.io/badge/release-v2.0.0-5a8a2e)](https://github.com/Hellowww-02/CraftLife/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2B%20x64-0078D6)](https://github.com/Hellowww-02/CraftLife/releases/latest)
+[![Android](https://img.shields.io/badge/Android-7.0%2B%20(APK%20%2F%20AAB)-3DDC84)](https://github.com/Hellowww-02/CraftLife-Android-Version)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](requirements.txt)
 [![CI](https://github.com/Hellowww-02/CraftLife/actions/workflows/ci.yml/badge.svg)](https://github.com/Hellowww-02/CraftLife/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -35,9 +36,22 @@ sync and online social features, but the app never requires it.
 
 - **Local first** — one SQLite database, stored on your machine, updated in place.
 - **No fake success** — online actions only complete after the server confirms.
-- **Two languages** — every screen ships in Indonesian and English (4,637 strings).
-- **29 pages** — a React UI inside a PyQt6 desktop shell, with the legacy Qt pages
-  still available as a fallback.
+- **Two languages** — every screen ships in Indonesian and English (4,738 strings).
+- **Three platforms** — a 29-page React UI inside a PyQt6 desktop shell (legacy Qt
+  pages still available as a fallback), a 30-screen **Android** app, and an
+  optional Supabase cloud that keeps every device in sync.
+
+## ✨ What's New in v2.0.0 — "Three Platforms, One Life"
+
+| Area | Highlights |
+|------|------------|
+| 📱 **CraftLife for Android (new)** | The complete tracker + RPG + social experience on phones — Expo SDK 57, native navigation, 48 dp touch targets, 12 themes, offline-first cache with a Recovery UI. **Source and releases live in [CraftLife-Android-Version](https://github.com/Hellowww-02/CraftLife-Android-Version)** (being populated). |
+| ☁️ Cloud sync (opt-in) | Supabase-backed cross-device sync: row sync, change feed, and part-based document snapshots — the old 8 MB snapshot ceiling is gone. Server-authoritative RPG (pet gacha with pity, talents, achievements, boss rewards validated by Postgres RPCs). Online friends / chat / guilds / PvP / leaderboards. FCM push wiring end-to-end (activates when the operator supplies Firebase credentials). |
+| 🔒 Security & QA | A dedicated pentest suite over the internet-facing Rules API (request caps, malformed-header handling, JWT tampering/expiry/`alg=none` rejection, tenant isolation over real sockets); RLS audited across all 26 migrations; the long-standing theme contrast debt paid — every theme now meets WCAG AA. |
+| 🧩 Menu parity | Android's feature menu mirrors the desktop sidebar 1:1 — order and labels pinned by tests against `NavBar._TABS`, so parity is enforced, not claimed. |
+| 📦 Resilience | Part-based cloud snapshots, deterministic retry backoff with jitter, cache caps, and a dead-letter Recovery UI in Settings — interruptions leave no half-written data. |
+
+The Android app has its own home: **[github.com/Hellowww-02/CraftLife-Android-Version](https://github.com/Hellowww-02/CraftLife-Android-Version)**.
 
 ## ✨ What's New in v1.7.4
 
@@ -167,6 +181,18 @@ so updating never wipes it. Keep a backup anyway (Settings → Data).
 
 Requirements: Windows 10+ x64. No internet needed except for cloud sync,
 Gemini chat, podcast voices, and music downloads.
+
+### For users (Android)
+
+1. Open the [CraftLife-Android-Version repository](https://github.com/Hellowww-02/CraftLife-Android-Version)
+   — the home of the Android app, where its source and releases are published.
+2. Download the APK from its Releases (or join the Play Store internal test).
+3. For live data, run the desktop app (or `python api_server.py`) reachable on
+   your network — the phone is a full client of it. Without one, the app keeps
+   working offline on cached data.
+
+Requirements: Android 7.0+ (API 24). Emulator/development setup is documented
+in that repository's `RUN_ANDROID.md`.
 
 ### For developers (from source)
 
@@ -337,7 +363,7 @@ CraftLife/
 ├── cloud_api.py          Cloud HTTP surface for the UI
 ├── cloud_service.py      Supabase client · sync_service.py · cloud_config.py
 ├── database.py           SQLite schema + all game logic (single source of truth)
-├── translations.py       UI strings, Indonesian + English (4,637 keys)
+├── translations.py       UI strings, Indonesian + English (4,738 keys)
 ├── updater.py            Auto-update from GitHub Releases (v1.7.4, SHA-256)
 ├── learning_helper.py    Gemini prompts and Studio parameters
 ├── music_downloader.py   Download engine (yt-dlp)
@@ -393,7 +419,7 @@ client must share, so there is exactly **one** implementation of each
 | `utils/currency.ts` | The one money formatter (`formatMoney`, `currencySymbol`, `fromIdr`, …) |
 | `utils/serverClock.ts` · `utils/serverTime.ts` | Server-clock date handling — streaks and daily resets follow the server clock, never `new Date()` |
 | `api/client.ts` | HTTP client contract (`apiBase`, `apiGet`, `apiPost`, `apiUploadFile`, …) |
-| `i18n/messages.json` | Generated 4,637-key × 2-language catalogue |
+| `i18n/messages.json` | Generated 4,738-key × 2-language catalogue |
 
 Consuming it:
 
@@ -423,7 +449,7 @@ Design docs and phase reports kept in the repo:
 | [tests/README.md](tests/README.md) | Test suite guide — harnesses, how to run, CI, known gaps |
 | [UPDATE_ROADMAP_A01_A14_v1.6.3.md](UPDATE_ROADMAP_A01_A14_v1.6.3.md) | v1.6.3 plan with per-phase evidence |
 | [UPDATE_ROADMAP_C01_C09_v1.6.4.md](UPDATE_ROADMAP_C01_C09_v1.6.4.md) | v1.6.4 plan with per-phase evidence |
-| [OPERATOR_RELEASE_v1.6.4.md](OPERATOR_RELEASE_v1.6.4.md) | Release operator runbook (build → zip → tag → publish → verify) |
+| [OPERATOR_RELEASE.md](OPERATOR_RELEASE.md) | **The** release operator runbook — desktop + Android + cloud (build → package → sign → tag → publish → verify → rollback) |
 | [RELEASE_NOTES_v1.6.4.md](RELEASE_NOTES_v1.6.4.md) | v1.6.4 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.5.md](RELEASE_NOTES_v1.6.5.md) | v1.6.5 GitHub Release notes |
 | [RELEASE_NOTES_v1.6.7.md](RELEASE_NOTES_v1.6.7.md) | v1.6.7 GitHub Release notes |
@@ -431,7 +457,8 @@ Design docs and phase reports kept in the repo:
 | [RELEASE_NOTES_v1.7.4.md](RELEASE_NOTES_v1.7.4.md) | v1.7.4 GitHub Release notes |
 | [UPDATE_ROADMAP_I01_I07_v1.7.2.md](UPDATE_ROADMAP_I01_I07_v1.7.2.md) | v1.7.2 plan (I01–I07) |
 | [UPDATE_ROADMAP_L01_L10_v1.7.4.md](UPDATE_ROADMAP_L01_L10_v1.7.4.md) | v1.7.4 plan (L01–L10) |
-| [OPERATOR_RELEASE_v1.7.4.md](OPERATOR_RELEASE_v1.7.4.md) | v1.7.4 release operator runbook |
+| [RELEASE_NOTES_v2.0.0.md](RELEASE_NOTES_v2.0.0.md) | v2.0.0 GitHub Release notes |
+| [VERIFIKASI_M12.md](VERIFIKASI_M12.md) · [QA_M13.md](QA_M13.md) | Android↔desktop parity audit (34 rows) and the v2.0.0 QA report |
 | [RELEASE_NOTES_v1.7.0.md](RELEASE_NOTES_v1.7.0.md) | v1.7.0 GitHub Release notes |
 | [UPDATE_ROADMAP_H01_H07_v1.7.0.md](UPDATE_ROADMAP_H01_H07_v1.7.0.md) | v1.7.0 plan (H01–H07) |
 | [2026-09-23-C01-C09-PHASE-SUMMARY.md](2026-09-23-C01-C09-PHASE-SUMMARY.md) | v1.6.4 consolidated phase report |

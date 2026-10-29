@@ -265,10 +265,13 @@ Current state and the rules that follow from it:
    version afterwards, so success/failure is provable.
 6. **Never ship the developer’s `.env`** — rotate any key that has ever been inside a public archive.
 
-7. **Operator runbook per release.** Each release ships an `OPERATOR_RELEASE_vX.Y.Z.md` carrying the
-   release's own header and narrative (build → zip → checksum → tag → publish → verify → rollback),
-   plus the overwritten/new/removed file list the maintainer must know about. The release-closing chat
-   report references this runbook by header.
+7. **Operator runbook (all platforms, single file).** `OPERATOR_RELEASE.md` is THE runbook: desktop
+   zip + Android AAB + cloud (Supabase) operations in one document — never a second copy. Each release
+   revises it in place (rev-B, rev-C keep the version and **move** the tag). It carries the
+   version-anchor table and the full procedure (build → package → checksum/signing → tag → publish →
+   verify → rollback) plus the release file map the maintainer must know about. The Android project
+   publishes source + releases to the `CraftLife-Android-Version` repository with its own
+   `RELEASE_NOTES_vX.Y.Z.md`. The release-closing chat report references this runbook by header.
 ---
 
 ## 11. Handoff checklist (end of every session)
