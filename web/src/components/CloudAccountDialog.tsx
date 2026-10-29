@@ -29,6 +29,7 @@ import {
   type CloudDevice,
   type CloudStatus,
 } from '../api/cloud';
+import SyncStatusPanel from './SyncStatusPanel';
 import { t } from '../i18n';
 
 export type CloudRunner = (fn: () => Promise<any>, okMsg?: string) => Promise<any>;
@@ -51,10 +52,11 @@ export function cloudErrMsg(err: unknown): string {
   return raw;
 }
 
-const Badge: React.FC<{ ok: boolean; okLabel: string; noLabel: string; tone?: 'green' | 'sky' | 'amber' }> = ({ ok, okLabel, noLabel, tone = 'green' }) => {
+const Badge: React.FC<{ ok: boolean; okLabel: string; noLabel: string; tone?: 'green' | 'sky' | 'amber' | 'red' }> = ({ ok, okLabel, noLabel, tone = 'green' }) => {
   const on = tone === 'green' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
     : tone === 'sky' ? 'bg-sky-500/15 text-sky-300 border-sky-500/40'
-      : 'bg-amber-500/15 text-amber-300 border-amber-500/40';
+      : tone === 'red' ? 'bg-rose-500/15 text-rose-300 border-rose-500/40'
+        : 'bg-amber-500/15 text-amber-300 border-amber-500/40';
   const off = 'bg-slate-800/70 text-slate-500 border-slate-700';
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${ok ? on : off}`}>
@@ -66,6 +68,13 @@ const Badge: React.FC<{ ok: boolean; okLabel: string; noLabel: string; tone?: 'g
 
 const CloudAccountDialog: React.FC<CloudAccountDialogProps> = ({ open, onClose, cloud, busy, runCloud }) => {
   const [tab, setTab] = useState<'account' | 'sync' | 'devices' | 'diag'>('account');
+  // Status penangguhan kuota. `suspended` hanya true selama masa tunggu aktif;
+  // begitu lewat, server mengizinkan satu percobaan lagi.
+  const suspended = !!cloud?.suspended;
+  const suspendReason = cloud?.suspended_reason || '';
+  const retryMinutes = Math.max(1, Math.round((cloud?.retry_after_seconds || 0) / 60));
+  // M04c: menaikkan nilai ini memaksa SyncStatusPanel memuat ulang statusnya.
+  const [syncRefresh, setSyncRefresh] = useState(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [devices, setDevices] = useState<CloudDevice[]>([]);
@@ -114,6 +123,9 @@ const CloudAccountDialog: React.FC<CloudAccountDialogProps> = ({ open, onClose, 
               <Badge ok={!!cloud?.configured} tone="amber" okLabel={tr('cloud_badge_configured', 'Terkonfigurasi')} noLabel={tr('cloud_badge_not_configured', 'Belum dikonfigurasi')} />
               <Badge ok={linked} tone="sky" okLabel={linked ? `${tr('cloud_badge_linked', 'Terhubung')}: ${cloud?.email || ''}` : tr('cloud_badge_unlinked', 'Belum terhubung')} noLabel={tr('cloud_badge_unlinked', 'Belum terhubung')} />
               <Badge ok={!!cloud?.realtime_connected} tone="green" okLabel={tr('cloud_realtime_on', 'Realtime aktif')} noLabel={tr('cloud_realtime_off', 'Realtime nonaktif')} />
+              {suspended ? (
+                <Badge ok={false} tone="red" okLabel="" noLabel={tr('cloud_badge_suspended', 'Sync dijeda')} />
+              ) : null}
               <Badge ok={pending === 0} tone="green" okLabel={tr('cloud_queue_clear', 'Antrean kosong')} noLabel={tr('cloud_queue_pending', '{n} antrean').replace('{n}', String(pending))} />
             </div>
           </div>
@@ -121,6 +133,20 @@ const CloudAccountDialog: React.FC<CloudAccountDialogProps> = ({ open, onClose, 
             <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
+
+        {/* Kuota habis / project dibatasi. Tanpa banner ini yang terlihat hanya
+            "sync tidak jalan" tanpa alasan, dan pengguna tidak tahu harus apa. */}
+        {suspended ? (
+          <div className="px-5 py-3 border-b border-rose-500/30 bg-rose-500/10 text-[11px] leading-relaxed text-rose-200">
+            <p className="font-black">{tr('cloud_suspended_title', 'Sinkron cloud dijeda')}</p>
+            <p className="mt-1 text-rose-200/80">
+              {suspendReason === 'rate_limited'
+                ? tr('cloud_suspended_rate', 'Supabase sedang membatasi laju permintaan. Sync dijeda sebentar lalu dicoba lagi otomatis.')
+                : tr('cloud_suspended_quota', 'Kuota data Supabase sudah terpakai, jadi project dibatasi sementara. Aplikasi tetap berfungsi penuh secara lokal; sync mencoba lagi otomatis dalam {n} menit.')
+                    .replace('{n}', String(retryMinutes))}
+            </p>
+          </div>
+        ) : null}
 
         {/* Tabs */}
         <div className="flex gap-1 px-4 pt-3 border-b border-slate-800" role="tablist" aria-label={tr('cloud_dialog_title', 'Konfigurasi Cloud (Supabase)')}>
@@ -284,6 +310,16 @@ const CloudAccountDialog: React.FC<CloudAccountDialogProps> = ({ open, onClose, 
                   {tr('cloud_queue_retry', 'Coba Lagi')}
                 </button>
               </div>
+              {/* M04c: status sync + konflik yang bisa dipulihkan per field.
+                  Angka antrean di atas berasal dari status yang di-cache; panel
+                  ini membaca keadaan antrean dan buku besar konflik secara
+                  langsung, jadi keduanya bisa berbeda kalau sync baru saja jalan. */}
+              <SyncStatusPanel
+                linked={linked}
+                busy={busy}
+                refreshKey={syncRefresh}
+                onSynced={() => setSyncRefresh((n) => n + 1)}
+              />
             </div>
           )}
 

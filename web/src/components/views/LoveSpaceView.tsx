@@ -5,7 +5,7 @@ import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { studio } from '../../api/studio';
-import { apiUploadFile } from '../../api/client';
+import { apiUploadFile } from '@craftlife/core';
 import { X } from 'lucide-react';
 import {
   Heart,

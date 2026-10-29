@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { TaskFolder } from '../types';
+import { TaskFolder } from '@craftlife/core';
 import { t } from '../i18n';
 import { FolderIconPicker } from './FolderIconPicker';
 

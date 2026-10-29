@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { apiPost, apiGet } from '../../api/client';
+import { apiPost, apiGet } from '@craftlife/core';
 import { t } from '../../i18n';
 
 export const LoginView: React.FC<{ onAuthed: () => void }> = ({ onAuthed }) => {

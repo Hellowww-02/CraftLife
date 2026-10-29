@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { Trophy } from 'lucide-react';
-import { apiGet } from '../../api/client';
+import { apiGet } from '@craftlife/core';
 import { t } from '../../i18n';
 
 // Parity MainPyQt6.LeaderboardPage:

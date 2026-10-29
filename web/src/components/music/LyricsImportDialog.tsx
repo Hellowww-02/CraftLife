@@ -3,7 +3,7 @@ import {
   X, Upload, FileText, Download, Copy, Check, AlertTriangle, Music4, Clock, Info, ClipboardCheck,
 } from 'lucide-react';
 import { studio } from '../../api/studio';
-import { downloadApiFile, saveBlobToFile, downloadTargetInfo } from '../../api/client';
+import { downloadApiFile, saveBlobToFile, downloadTargetInfo } from '@craftlife/core';
 
 type TrFn = (key: string, vars?: Record<string, string | number>, fb?: string) => string;
 

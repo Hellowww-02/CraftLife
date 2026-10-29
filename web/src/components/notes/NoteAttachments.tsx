@@ -8,8 +8,8 @@
 import React from 'react';
 import { t } from '../../i18n';
 import { Paperclip, Trash2, FileText, FileDown } from 'lucide-react';
-import { apiBase } from '../../api/client';
-import { NoteAttachment } from '../../types';
+import { apiBase } from '@craftlife/core';
+import { NoteAttachment } from '@craftlife/core';
 
 /** URL serve file lampiran (owner-checked di server). */
 export const attachmentUrl = (id: string): string =>

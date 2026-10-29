@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
-import { apiGet, apiPost, apiUploadFile, apiBase } from '../../api/client';
+import { apiGet, apiPost, apiUploadFile, apiBase } from '@craftlife/core';
 import { life } from '../../api/life';
 import { t } from '../../i18n';
 import { User, Camera, Trash2, Save, RotateCcw } from 'lucide-react';

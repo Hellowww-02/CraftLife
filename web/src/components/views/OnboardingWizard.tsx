@@ -3,7 +3,7 @@ import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { t } from '../../i18n';
 import { AVATAR_CLASSES } from '../../data/gameData';
-import { AvatarClass } from '../../types';
+import { AvatarClass } from '@craftlife/core';
 import { Sparkles, Rocket, Palette, Languages, Volume2, Check, ArrowRight, ArrowLeft } from 'lucide-react';
 
 const AVATAR_EMOJIS: Record<AvatarClass, string> = {

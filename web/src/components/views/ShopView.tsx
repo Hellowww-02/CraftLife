@@ -37,12 +37,13 @@ const enchantCost = (lvl: number) => (lvl + 1) * 50; // parity ENCHANT_COST_FORM
 const sellPriceOf = (cost: number) => Math.max(1, Math.floor(cost * 0.1));
 
 /** Parity ShopPage (MainPyQt6.py): buff bar + tab Items/Pets + kartu dengan
- * owned/use/buy again/sell/enchant/adopt/equip/unequip + SellDialog qty. */
+ * owned/use/buy again/sell/enchant/equip/unequip + SellDialog qty.
+ * M09b (P10): adopsi pet berbayar dihapus dari UI — pet hanya dari spin gacha. */
 export const ShopView: React.FC = () => {
   const {
     user, inventory, userPets, activeBuffs,
     buyItem, sellItem, useConsumable, equipItem, unequipItem,
-    adoptPet, equipPet, unequipPet, enchantItem, lang,
+    equipPet, unequipPet, enchantItem, lang,
   } = useGame();
   const SHOP_ITEMS = liveShopItems() as Record<string, any>;
   const PETS_DATA = livePets() as Record<string, any>;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGame } from '../../context/GameContext';
 import { liveBosses } from '../../data/liveCatalog';
-import { BossTier } from '../../types';
+import { BossTier } from '@craftlife/core';
 import { Swords, Zap, Shield, Heart, Skull, Play, Flame, Sparkles, Award } from 'lucide-react';
 import { motion } from 'motion/react';
 

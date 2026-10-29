@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
-import { TaskDifficulty } from '../../types';
+import { TaskDifficulty } from '@craftlife/core';
 import { t } from '../../i18n';
 import { Zap, Plus, Trash2, Edit3, Folder, Flame, TrendingUp, TrendingDown, Check, X } from 'lucide-react';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';

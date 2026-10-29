@@ -17,7 +17,7 @@ import {
   Headphones, Play, Pause, RotateCcw, RotateCw, Loader2, Download, Repeat,
   Mic, Gauge, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
-import { downloadApiFile } from '../../api/client';
+import { downloadApiFile } from '@craftlife/core';
 
 export interface PodcastTurn {
   index: number;

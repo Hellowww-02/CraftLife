@@ -8,7 +8,7 @@ import { SPORT_TYPES, SPORT_INTENSITY_FACTOR } from '../../data/gameData';
 import { t } from '../../i18n';
 import { Activity, Plus, Flame, Timer, Trash2, Dumbbell, Award, TrendingUp, X, Pencil, FolderOpen } from 'lucide-react';
 import { BarChart } from '../charts';
-import { TaskDifficulty } from '../../types';
+import { TaskDifficulty } from '@craftlife/core';
 import { TaskFolderBar, filterByFolder, useModeFolders } from '../TaskFolderBar';
 import { useTaskReorder } from '../../hooks/useTaskReorder';
 

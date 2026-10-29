@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
-import { apiGet, apiPost } from '../../api/client';
+import { apiGet, apiPost } from '@craftlife/core';
 import { t } from '../../i18n';
 import { Trophy } from 'lucide-react';
 

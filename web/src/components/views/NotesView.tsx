@@ -4,7 +4,7 @@ import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
 import { life } from '../../api/life';
-import { apiUploadFile } from '../../api/client';
+import { apiUploadFile } from '@craftlife/core';
 import { MATH_PALETTE } from '../../data/mathSymbols';
 import { NoteAttachments, attachmentUrl } from '../notes/NoteAttachments';
 import {

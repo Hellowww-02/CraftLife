@@ -1,4 +1,4 @@
-import { apiGet, apiPost, authToken, apiBase, apiUploadFile } from './client';
+import { apiGet, apiPost, authToken, apiBase, apiUploadFile } from '@craftlife/core';
 
 export const studio = {
   // C07: auto-updater — check / download (poll status) / apply.

@@ -6,9 +6,9 @@ import {
 } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
-import { apiUploadFile } from '../../api/client';
+import { apiUploadFile } from '@craftlife/core';
 import { playReminderSound, startReminderLoop, stopReminderLoop } from '../../utils/sound';
-import type { ReminderItem } from '../../types';
+import type { ReminderItem } from '@craftlife/core';
 
 const tr = (key: string, vars?: Record<string, string>) => {
   let s = t(key, key);

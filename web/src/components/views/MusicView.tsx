@@ -7,7 +7,7 @@ import { LyricsDrawer } from '../../components/music/LyricsDrawer';
 import { PlaylistIconDialog } from '../../components/music/PlaylistIconDialog';
 import { LyricsSearchDialog, type LyricsCandidate } from '../../components/music/LyricsSearchDialog';
 import { LyricsImportDialog, exportLyrics } from '../../components/music/LyricsImportDialog';
-import { downloadTargetInfo } from '../../api/client';
+import { downloadTargetInfo } from '@craftlife/core';
 import { studio } from '../../api/studio';
 import { t } from '../../i18n';
 import {

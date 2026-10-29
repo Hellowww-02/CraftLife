@@ -4,7 +4,7 @@ import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
 import { t } from '../../i18n';
-import { authToken } from '../../api/client';
+import { authToken } from '@craftlife/core';
 function auth(): Record<string, string> {
   return authToken() ? { Authorization: `Bearer ${authToken()}` } : {};
 }

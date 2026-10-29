@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useGame } from '../context/GameContext';
-import { onDownloadEvent } from '../api/client';
+import { onDownloadEvent } from '@craftlife/core';
 import { t } from '../i18n';
 
 /**

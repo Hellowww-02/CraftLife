@@ -3,7 +3,7 @@ import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
-import { apiGet, apiPost, saveFileToComputer, downloadTargetInfo, openDownloadsFolder } from '../../api/client';
+import { apiGet, apiPost, saveFileToComputer, downloadTargetInfo, openDownloadsFolder } from '@craftlife/core';
 import {
   cloudConflict,
   cloudStatus,
@@ -39,6 +39,137 @@ const AdminDebugPanel: React.FC = () => {
         <button type="button" onClick={() => run('pet_feed')} className="ct-btn ct-btn-secondary ct-btn-sm">{t('admin_pet_feed', 'Beri Makan Semua Pet')}</button>
       </div>
       <p className="text-[11px] text-rose-300/80">{t('admin_warning', 'Alat debug — mengubah data game Anda. Gunakan untuk keperluan pengujian.')}</p>
+    </div>
+  );
+};
+
+/** P6 — Backup Cloud: salinan harian seluruh data tracker ke Supabase Storage.
+ *  Mesinnya jalan otomatis saat login; panel ini memberi pengguna kendali
+ *  manual dan, yang lebih penting, kemampuan MELIHAT bahwa backup benar-benar
+ *  terjadi. Backup yang tidak terlihat tidak bisa dipercaya. */
+const CloudBackupSection: React.FC = () => {
+  const { showToast } = useGame();
+  const [st, setSt] = useState<{
+    backupAuto: boolean; lastBackupAt: string; linked: boolean; error?: string;
+    backups: { name: string; path: string; sizeBytes: number; createdAt?: string }[];
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => apiGet<any>('/api/cloud/backups')
+    .then((d) => { if (d) setSt(d); })
+    .catch(() => undefined);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const run = (action: 'create' | 'set-auto' | 'restore', extra: Record<string, unknown> = {}) => {
+    setBusy(true);
+    apiPost<any>('/api/cloud/backup', { action, ...extra })
+      .then((d) => {
+        if (d?.ok) {
+          if (action === 'create') {
+            showToast('success',
+              t('settings_backup_done', 'Backup selesai ({size}) ✓')
+                .replace('{size}', fmtBytes(d.sizeBytes || 0)), '');
+          } else if (action === 'restore') {
+            showToast('success', t('settings_backup_restored', 'Data dipulihkan dari cadangan ✓'), '');
+          }
+        } else {
+          showToast('info',
+            t('settings_backup_failed', 'Backup gagal: {error}')
+              .replace('{error}', String(d?.error || 'unknown')), '');
+        }
+        load();
+      })
+      .catch((e) => showToast('info',
+        t('settings_backup_failed', 'Backup gagal: {error}')
+          .replace('{error}', String((e as any)?.message || e)), ''))
+      .finally(() => setBusy(false));
+  };
+
+  if (!st) return null;
+
+  return (
+    <div className="ct-panel rounded-3xl p-6 space-y-4">
+      <h3 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+        <Cloud className="w-4 h-4 text-sky-400" />
+        <span>{t('settings_backup_title', 'Backup Cloud')}</span>
+      </h3>
+
+      <p className="text-[11px] text-slate-400">
+        {t('settings_backup_desc',
+          'Salinan seluruh data tracker Anda disimpan ke cloud setiap hari. Melindungi Anda kalau perangkat hilang atau database bermasalah.')}
+      </p>
+
+      {!st.linked && (
+        <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-xl p-2.5">
+          ⚠️ {t('settings_backup_not_linked', 'Hubungkan akun cloud dulu untuk memakai backup.')}
+        </p>
+      )}
+
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-slate-300 font-bold">
+          {t('settings_backup_last', 'Backup terakhir')}:{' '}
+          <span className="ct-num text-emerald-300">
+            {st.lastBackupAt ? String(st.lastBackupAt).slice(0, 16).replace('T', ' ')
+              : t('settings_backup_never', 'Belum pernah')}
+          </span>
+        </span>
+        <span className="px-2.5 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-slate-300 font-bold">
+          {t('settings_backup_list', 'Cadangan tersimpan')}:{' '}
+          <span className="ct-num text-sky-300">{(st.backups || []).length}</span>
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={st.backupAuto}
+            disabled={busy}
+            onChange={() => run('set-auto', { enabled: !st.backupAuto })}
+            className="accent-sky-500 w-4 h-4"
+          />
+          {t('settings_backup_auto', 'Backup otomatis setiap hari')}
+        </label>
+        <button
+          type="button"
+          disabled={busy || !st.linked}
+          onClick={() => run('create')}
+          className="px-3 py-2 rounded-xl bg-sky-500/80 hover:bg-sky-500 text-white text-xs font-black disabled:opacity-40"
+        >
+          {busy ? t('settings_backup_running', 'Sedang mencadangkan…')
+                : t('settings_backup_cloud_now', 'Backup Sekarang')}
+        </button>
+      </div>
+
+      {(st.backups || []).length === 0 && st.linked && (
+        <p className="text-[11px] text-slate-500">
+          {t('settings_backup_empty', 'Belum ada cadangan')}
+        </p>
+      )}
+
+      {(st.backups || []).length > 0 && (
+        <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-800 divide-y divide-slate-800/60">
+          {st.backups.map((b) => (
+            <div key={b.path} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px]">
+              <span className="text-slate-300 font-mono truncate flex-1">{b.name}</span>
+              <span className="ct-num text-slate-200 w-16 text-right">{fmtBytes(b.sizeBytes)}</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(t('settings_backup_restore_confirm',
+                    'Pulihkan dari cadangan ini? Data Anda saat ini akan DITIMPA. Backup lokal dibuat lebih dulu supaya bisa dibatalkan.'))) {
+                    run('restore', { path: b.path });
+                  }
+                }}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold disabled:opacity-40"
+              >
+                {t('settings_backup_restore', 'Pulihkan')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -578,6 +709,7 @@ export const SettingsView: React.FC = () => {
 
       {/* ===== P62: Pemeliharaan Data (cleanup history tracker) ===== */}
       <MaintenanceSection />
+      <CloudBackupSection />
 
       {/* ===== Parity SettingsPage: THEME group — kartu preview semua db.THEMES (I02: 12 tema) ===== */}
       <div className="ct-panel p-5 space-y-3">

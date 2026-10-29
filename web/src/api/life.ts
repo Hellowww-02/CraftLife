@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost } from '@craftlife/core';
 
 export const life = {
   addSport: (body: Record<string, unknown>) => apiPost<any>('/api/sport', body),

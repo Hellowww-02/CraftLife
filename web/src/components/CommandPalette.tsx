@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActiveView } from '../types';
+import { ActiveView } from '@craftlife/core';
 import { t } from '../i18n';
 import { useGame } from '../context/GameContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';

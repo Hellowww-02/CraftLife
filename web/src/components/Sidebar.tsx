@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useEscapeClose } from '../hooks/useEscapeClose';
 import { useGame } from '../context/GameContext';
 import { t } from '../i18n';
-import { ActiveView, NavTab } from '../types';
+import { ActiveView, NavTab } from '@craftlife/core';
 import {
   LayoutDashboard,
   Zap,

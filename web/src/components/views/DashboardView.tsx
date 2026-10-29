@@ -4,7 +4,7 @@ import { nextSpecialFromProfile } from '../love/overviewUtils';
 import { useGame } from '../../context/GameContext';
 import { rpg } from '../../api/rpg';
 import { life } from '../../api/life';
-import { fmtYmd } from '../../utils/serverTime';
+import { fmtYmd } from '@craftlife/core';
 import {
   DashboardRankCard,
   DashboardStatCards,
@@ -36,7 +36,7 @@ import {
   Settings2,
   Trophy,
 } from 'lucide-react';
-import { ActiveView, NavTab } from '../../types';
+import { ActiveView, NavTab } from '@craftlife/core';
 import { ProgressRing } from '../charts';
 import { t } from '../../i18n';
 import { DashboardWidgetsDialog } from '../DashboardWidgetsDialog';

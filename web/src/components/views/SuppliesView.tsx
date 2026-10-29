@@ -3,7 +3,7 @@ import { PageSignature } from '../ui/SignatureKit';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
 import { t } from '../../i18n';
-import { formatMoney, fromIdr } from '../../utils/currency';
+import { formatMoney, fromIdr } from '@craftlife/core';
 import { Package, Plus, Trash2, Equal, Pencil, X, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 
 type SupplyItem = {

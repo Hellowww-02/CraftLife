@@ -18,7 +18,7 @@
  *  - Nilai 0 eksternal (form baru) tampil sebagai kotak kosong, bukan "0".
  */
 import React from 'react';
-import { currencySymbol, maskMoney, parseMoneyInput } from '../utils/currency';
+import { currencySymbol, maskMoney, parseMoneyInput } from '@craftlife/core';
 
 interface MoneyInputProps {
   value: number | string;

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
-import { saveFileToComputer, downloadTargetInfo, downloadApiFile, apiPost, apiBase } from '../../api/client';
+import { saveFileToComputer, downloadTargetInfo, downloadApiFile, apiPost, apiBase } from '@craftlife/core';
 import {
   BookOpen,
   Plus,

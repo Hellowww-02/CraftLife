@@ -3,9 +3,9 @@ import { PageSignature } from '../ui/SignatureKit';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
-import { downloadApiFile, downloadTargetInfo } from '../../api/client';
+import { downloadApiFile, downloadTargetInfo } from '@craftlife/core';
 import { t } from '../../i18n';
-import { fmtChatTime } from '../../utils/serverTime';
+import { fmtChatTime } from '@craftlife/core';
 import { Send, MessageCircle, Search } from 'lucide-react';
 
 const tr = (key: string, vars?: Record<string, string | number>) => {

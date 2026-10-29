@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { t as i18nT } from '../i18n';
 import { startPomoAlarm, stopPomoAlarm } from '../utils/pomoAlarm';
-import { computeDateKey } from '../utils/serverClock';
+import { computeDateKey } from '@craftlife/core';
 import { playReminderSound, ReminderSound, startReminderLoop, stopReminderLoop } from '../utils/sound';
 import confetti from 'canvas-confetti';
 import {
@@ -39,15 +39,15 @@ import {
   PvPChallenge,
   ReminderItem,
   NoteAttachment,
-} from '../types';
+} from '@craftlife/core';
 import {
   SHOP_ITEMS,
   PETS_DATA,
   BOSSES,
   CRAFT_RECIPES,
 } from '../data/gameData';
-import { apiGet, apiPost } from '../api/client';
-import { ensureCurrencyRates } from '../utils/currency';
+import { apiGet, apiPost } from '@craftlife/core';
+import { ensureCurrencyRates } from '@craftlife/core';
 import { rpg } from '../api/rpg';
 import { life } from '../api/life';
 import { studio } from '../api/studio';
@@ -168,7 +168,6 @@ interface GameContextType {
   // Pets
   userPets: UserPet[];
   maxActivePets: number; // P43: slot pet aktif bertingkat (dari backend db.max_active_pets)
-  adoptPet: (petId: string, nickname?: string) => boolean;
   feedPet: (petId: string) => void;
   trainPet: (petId: string) => void;
   equipPet: (petId: string) => void;
@@ -1228,11 +1227,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [applyLive, showToast])
 
   // Pets
-  const adoptPet = useCallback((petId: string, nickname?: string): boolean => {
-    rpg.adoptPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
-    return true;
-  }, [applyLive])
-
   const feedPet = useCallback((petId: string) => {
     rpg.feedPet(petId).then((res) => applyLive(res)).catch(notifyApiErr);
   }, [applyLive])
@@ -2039,7 +2033,6 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         enchantItem,
         userPets,
         maxActivePets,
-        adoptPet,
         feedPet,
         trainPet,
         equipPet,

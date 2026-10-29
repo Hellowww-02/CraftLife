@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost } from '@craftlife/core';
 
 export const rpg = {
   bootstrap: () => apiGet<any>('/api/bootstrap'),
@@ -32,7 +32,6 @@ export const rpg = {
     apiPost<any>('/api/shop/craft', { recipeId, idempotencyKey: idempotencyKey || crypto.randomUUID() }),
   enchantItem: (itemId: string, idempotencyKey?: string) =>
     apiPost<any>('/api/shop/enchant', { itemId, idempotencyKey: idempotencyKey || crypto.randomUUID() }),
-  adoptPet: (petId: string) => apiPost<any>('/api/pets/adopt', { petId }),
   feedPet: (petId: string) => apiPost<any>('/api/pets/feed', { petId }),
   trainPet: (petId: string) => apiPost<any>('/api/pets/train', { petId }),
   equipPet: (petId: string) => apiPost<any>('/api/pets/equip', { petId }),

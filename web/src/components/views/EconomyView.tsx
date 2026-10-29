@@ -5,12 +5,12 @@ import { useGame } from '../../context/GameContext';
 import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, CreditCard, DollarSign, CheckCircle, Activity, PieChart, Package, Search, FolderOpen, Pencil } from 'lucide-react';
 import { DualLineChart, DonutChart } from '../charts';
 import { t } from '../../i18n';
-import { formatMoney as fmtMoney, currencySymbol } from '../../utils/currency';
+import { formatMoney as fmtMoney, currencySymbol } from '@craftlife/core';
 import { MoneyInput } from '../MoneyInput';
 import { CountUp } from '../CountUp';
 // TaskFolderBar dihapus dari Economy (bukan elemen PyQt EconomyPage — lihat komentar di atas).
 import { life } from '../../api/life';
-import { fmtYmd, addDays } from '../../utils/serverTime';
+import { fmtYmd, addDays } from '@craftlife/core';
 
 export const EconomyView: React.FC<{ onNavigate?: (tab: any) => void }> = ({ onNavigate }) => {
   const {

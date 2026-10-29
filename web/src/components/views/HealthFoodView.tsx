@@ -4,7 +4,7 @@ import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { life } from '../../api/life';
-import { downloadApiFile, downloadTargetInfo } from '../../api/client';
+import { downloadApiFile, downloadTargetInfo } from '@craftlife/core';
 import { DEFAULT_FOODS } from '../../data/gameData';
 import { t } from '../../i18n';
 import { Salad, Droplets, Plus, Trash2, Search, LineChart as LineIcon, ChefHat, X, Download, ChevronLeft, ChevronRight, Activity, ClipboardList, Pencil, Target } from 'lucide-react';

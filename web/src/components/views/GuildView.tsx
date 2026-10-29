@@ -4,9 +4,9 @@ import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { NumberInput } from '../NumberInput';
 import { useGame } from '../../context/GameContext';
 import { studio } from '../../api/studio';
-import { authToken } from '../../api/client';
+import { authToken } from '@craftlife/core';
 import { t } from '../../i18n';
-import { fmtChatTime } from '../../utils/serverTime';
+import { fmtChatTime } from '@craftlife/core';
 import { X } from 'lucide-react';
 
 const tr = (key: string, vars?: Record<string, string | number>) => {

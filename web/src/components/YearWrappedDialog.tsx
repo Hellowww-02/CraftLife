@@ -5,13 +5,13 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { rpg } from '../api/rpg';
-import { saveBlobToFile } from '../api/client';
+import { saveBlobToFile } from '@craftlife/core';
 import { useGame } from '../context/GameContext';
 import { t } from '../i18n';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   currencySymbol, ensureCurrencyRates, formatMoney, getCurrencyRates,
-} from '../utils/currency';
+} from '@craftlife/core';
 import {
   wrappedCurrencyNote, wrappedFileName, wrappedHabitRows, wrappedHasData, wrappedNet,
   wrappedSavingRate, wrappedSummaryText, wrappedTypeLabel, wrappedTypeRows, wrappedYearOptions,
