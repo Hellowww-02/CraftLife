@@ -1,0 +1,37 @@
+# Apa pun yang tidak boleh masuk konteks build.
+#
+# Tiga kelompok: rahasia, artefak runtime (§9 melarang keduanya di-commit juga),
+# dan milik desktop yang tidak dipakai server.
+
+# -- rahasia -------------------------------------------------------------
+.env
+.env.*
+*.pem
+*.key
+
+# -- artefak runtime (§9) ------------------------------------------------
+craftlife.db
+craftlife.db-*
+logs/
+_update_state.json
+learning_audio/
+backups/
+
+# -- milik desktop, bukan server ----------------------------------------
+web/
+packages/
+MainPyQt6.py
+main.py
+requirements.txt
+tests/
+scripts/
+supabase/
+*.md
+.git/
+.gitignore
+Dockerfile
+docker-compose.yml
+.dockerignore
+__pycache__/
+*.pyc
+node_modules/
