@@ -53,6 +53,10 @@ verifies this and aborts otherwise). **Never include:** `.env`,
 `craftlife.db*` (`-wal`/`-shm`), `_update_state.json`, `_update_apply.log`,
 `backups/`, `logs/`, `_update_staging/`.
 
+Also place `scripts/Start-CraftLife-LAN.bat` next to `CraftLife.exe` in the
+zip — it starts the app with LAN access so the Android companion can connect
+(the phone-facing mode explained in the Android repository's README).
+
 Mandatory quick check:
 
 ```powershell

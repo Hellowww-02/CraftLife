@@ -25111,7 +25111,7 @@ def main():
 
     try:
         import api_server
-        api_server.start_server("127.0.0.1", int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
+        api_server.start_server(os.environ.get("CRAFTLIFE_API_HOST", "127.0.0.1"), int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
     except OSError:
         pass
     except Exception:
@@ -25123,7 +25123,7 @@ def main():
     if os.environ.get("CRAFTLIFE_WEB_LOGIN", "0") == "1":
         try:
             import api_server
-            api_server.start_server("127.0.0.1", int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
+            api_server.start_server(os.environ.get("CRAFTLIFE_API_HOST", "127.0.0.1"), int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
         except Exception:
             pass
         from web_shell import WebMainWindow, HAS_WEBENGINE, default_web_url
@@ -25156,7 +25156,7 @@ def main():
             try:
                 import api_server
                 api_server.configure(user["id"], token)
-                api_server.start_server("127.0.0.1", int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
+                api_server.start_server(os.environ.get("CRAFTLIFE_API_HOST", "127.0.0.1"), int(os.environ.get("CRAFTLIFE_API_PORT", "8765")))
             except Exception as api_error:
                 QMessageBox.warning(login, tr("gagal_title"), tr("web_api_start_failed", error=str(api_error)))
             from web_shell import (
