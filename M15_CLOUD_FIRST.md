@@ -58,3 +58,24 @@ inkremental — pola router sudah siap tinggal menambah rute.
   `_map_*`, routing RPC, fallback `cloud_pending` yang jujur.
 - **Batas jujur:** sandbox tanpa Postgres — eksekusi RPC nyata diverifikasi
   lewat `scripts/m15_parity_live.py` + uji perangkat oleh pengguna.
+
+
+## M15.5 — Laporan uji HP & perbaikan (2026-11-03)
+
+Dua temuan uji di HP fisik, keduanya sudah diperbaiki di `CraftLife-Android` (sumber
+di luar repo ini; zip rilis diperbarui):
+
+1. **Loading tak berujung.** Penyebab: `fetch` tanpa batas waktu — kalau alamat server
+   benar tapi tak terjangkau (beda jaringan, router mati), koneksi TCP menggantung
+   puluhan detik per request sehingga layar terasa macet selamanya. Perbaikan:
+   batas waktu 12 detik global di shim fetch (upload besar tetap tanpa batas) +
+   batas 15 detik per langkah di `useRemote` (session/SQLite/jam/data). Hasil kini
+   selalu "data ATAU error yang jelas + tombol coba lagi" — tidak pernah kail.
+2. **Bar sistem (tombol home/back & status bar) menimpa konten.** Penyebab: tab bar
+   tidak menghitung inset bawah dan root layout tidak memasang `SafeAreaProvider`
+   eksplisit. Perbaikan: tab bar menambah tinggi & padding sesuai inset tombol
+   sistem; `SafeAreaProvider` dipasang di root. Di Android 15+ (edge-to-edge) bar
+   tidak lagi menimpa label tab/header.
+
+Bukti kualitas setelah perbaikan: `tsc` 0 error · vitest **304/304** (20 files) ·
+gates **17/0/1** · parity M15 **11/11**.
