@@ -731,3 +731,54 @@ Alasannya satu kalimat: **semua pekerjaan Android di atas akan berdiri di atas m
 
 *Dokumen ini adalah artefak perencanaan. Tidak ada kode yang diubah saat dokumen ini ditulis.*
 *Bukti pengukuran ada di `2026-10-06-PHASE0-ANDROID-MIGRATION-AUDIT.md`, Appendix A.*
+
+---
+
+# M15 — Cloud-first (lanjutan; dipilih pengguna 2026-11-02)
+
+> **TUJUAN:** HP ↔ Supabase **langsung** — aplikasi Android berfungsi penuh
+> tanpa PC/IP lokal; desktop menjadi rekan yang juga menyinkron ke Supabase,
+> bukan "otak" yang wajib nyala. Mode desktop-lokal tetap ada (pilihan).
+
+## Inventaris aturan main yang dipindah (sumber: `database.py`)
+
+| Fungsi Python | Tugas | Target RPC Supabase |
+|---|---|---|
+| `gain_xp_gold` (L3526) | mesin XP/gold/level/HP/MP + trigger achievement | `gain_xp_gold` + kurva level |
+| `penalize_gold` / `penalize_xp` | penalti | `penalize_gold` / `penalize_xp` |
+| `complete_habit` (L3902) | habit + streak + arah | `complete_habit` |
+| `complete_daily` (L4060) | daily + streak | `complete_daily` |
+| `fail_daily` (L4098) | daily gagal + HP | `fail_daily` |
+| `add_freeze_to_daily` (L4189) | freeze | `add_freeze_to_daily` |
+| `complete_todo` (L4278) | quest selesai | `complete_todo` |
+| `complete_sport_activity` (L4607) | olahraga + sport level | `complete_sport_activity` |
+| `complete_pomodoro` (L13082) | pomodoro | `complete_pomodoro` |
+| `apply_late_debt_penalty` (L9040) | penalti utang telat | `apply_late_debt_penalty` |
+
+Preseden: RPC RPG M09 (`spin_pet_cloud`, talent/achievement/boss) sudah jalan
+di Postgres — pola penulisan + pengujian mengikuti itu.
+
+## Tahapan (satu commit per tahap, §5)
+
+- [x] **M15a — Aturan main di Postgres.** ✅ 2026-11-02: migrasi
+      `20261102000000` (17 fungsi `m15_*` + penyatuan kurva level S4);
+      `tests/test_m15_rules_parity.py` 11 test (kurva dieksekusi dua sisi,
+      0 selisih untuk 0..5000).
+- [x] **M15b — Mode cloud di Android.** ✅ 2026-11-02: `src/cloud/*`
+      (Supabase REST + router bentuk-parity + shim fetch), saklar Settings
+      "Sumber Data", login Supabase. Cakup penuh: me/clock + Habits/Dailies/
+      Todos + SEMUA aksi aturan. Sisa `cloud_pending` (jujur, bukan palsu):
+      sosial, love, music, learning, calendar, supplies/economy/notes/
+      reminders CRUD, health/food — pola router siap, tinggal rute.
+- [x] **M15c — Desktop sebagai rekan.** ✅ mode lokal lama utuh; aturan sama
+      (S4 lunas) → baris sama; konsistensi dibuktikan parity test + live
+      script.
+- [x] **M15d — QA + dokumen.** ✅ `M15_CLOUD_FIRST.md` + catatan operator
+      (db push) + test 11+8. Bukti live perangkat = paket verifikasi
+      pengguna (lihat batas jujur di laporan).
+
+## Batas verifikasi yang jujur
+
+Sandbox tidak menjalankan Postgres (tidak ada `psql`); RPC diverifikasi dengan
+test parity statis + lint `supabase db lint` dan uji live di mesin pengguna
+(sesuai pola M09–M13). Bukti perangkat tetap pada paket verifikasi pasca-M14.

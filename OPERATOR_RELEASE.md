@@ -25,8 +25,10 @@ Pinned by the `version-anchors` gate and `tests/version.test.ts`.
 - [ ] Desktop repo clean at the release commit; tag `v2.0.0` placed on it.
 - [ ] `python3 scripts/verify_gates.py` → 17 passed / 0 failed / 1 skipped.
 - [ ] Android: `npx tsc --noEmit` → 0 errors; `npx vitest run` → all green.
-- [ ] Supabase: migrations through `20261023030000_fix_spin_pet_loop_variable.sql`
+- [ ] Supabase: migrations through `20261102000000_phase_m15a_cloud_first_rules.sql`
       pushed (`npx supabase db push`), then `npx supabase db lint --linked` → `[]`.
+      (Cloud-first mode needs `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+      baked into the APK — see `M15_CLOUD_FIRST.md`.)
 - [ ] **Never** ship `.env`, `craftlife.db*`, `logs/`, or `backups/` in any
       archive (release §10.6 rule).
 
